@@ -6,6 +6,9 @@
 #include <SD.h>
 #include <SPI.h>
 
+extern "C" void deleteSelectedFile(void);
+
+
 /* ================= DISPLAY ================= */
 LGFX gfx;
 
@@ -15,8 +18,7 @@ static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf1[800 * 40];
 
 /* ================= SD ================= */
-// ⚠️ CS-Pin ggf. anpassen (Elecrow meist GPIO10 oder GPIO13)
-#define SD_CS 10
+#define SD_CS 10   // ggf. an dein CrowPanel anpassen
 
 bool sd_ok = false;
 uint64_t totalBytes = 0;
@@ -80,7 +82,7 @@ void readSDInfo()
 }
 
 /* =========================================================
-   SYSTEM INFO (DEIN ORIGINAL – UNVERÄNDERT)
+   SYSTEM INFO
    ========================================================= */
 extern "C" void updateSystemInfoData(void)
 {
@@ -149,6 +151,72 @@ extern "C" void updateSDUIData(void)
   lv_bar_set_value(uic_BarSD, usedPercent, LV_ANIM_ON);
 }
 
+/* =========================================================
+   FILE ROLLER FUNKTIONEN (NEU)
+   ========================================================= */
+void fillFileRoller()
+{
+  if (!sd_ok) return;
+
+  File root = SD.open("/");
+  if (!root) return;
+
+  String rollerText = "";
+
+  File file = root.openNextFile();
+  while (file) {
+    if (!file.isDirectory()) {
+      rollerText += file.name();
+      rollerText += "\n";
+    }
+    file = root.openNextFile();
+  }
+
+  root.close();
+
+  if (rollerText.length() == 0) {
+    rollerText = "Keine Dateien";
+  }
+
+  lv_roller_set_options(
+    uic_FileRollerFileManager,
+    rollerText.c_str(),
+    LV_ROLLER_MODE_NORMAL
+  );
+}
+
+String getSelectedFileFromRoller()
+{
+  char buf[128];
+  lv_roller_get_selected_str(
+    uic_FileRollerFileManager,
+    buf,
+    sizeof(buf)
+  );
+  return String(buf);
+}
+
+extern "C" void deleteSelectedFile(void)
+{
+  if (!sd_ok) return;
+
+  String filename = getSelectedFileFromRoller();
+  if (filename.length() == 0 || filename == "Keine Dateien") return;
+
+  String path = "/" + filename;
+
+  if (SD.exists(path)) {
+    SD.remove(path);
+    Serial.println("Datei gelöscht: " + path);
+  } else {
+    Serial.println("Datei nicht gefunden: " + path);
+  }
+
+  fillFileRoller();
+  updateSDUIData();
+}
+
+
 /* ================= SETUP ================= */
 void setup()
 {
@@ -175,8 +243,11 @@ void setup()
   indev_drv.read_cb = my_touchpad_read;
   lv_indev_drv_register(&indev_drv);
 
-  initSD();      // SD beim Start initialisieren
-  ui_init();     // SquareLine UI starten
+  initSD();
+  ui_init();
+
+  fillFileRoller();
+  updateSDUIData();
 }
 
 /* ================= LOOP ================= */

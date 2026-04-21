@@ -17,7 +17,9 @@ void updateSystemInfo(lv_event_t * e)
 
 void DeleteFileSelected(lv_event_t * e)
 {
-	// Your code here
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        deleteSelectedFile();
+    }
 }
 
 void save_text_file(lv_event_t * e)

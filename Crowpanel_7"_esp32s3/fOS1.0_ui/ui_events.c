@@ -10,6 +10,11 @@ void updateSDUI(lv_event_t * e)
 	// Your code here
 }
 
+void fillFileRoller_TextViewer(lv_event_t * e)
+{
+	// Your code here
+}
+
 void updateSystemInfo(lv_event_t * e)
 {
 	// Your code here

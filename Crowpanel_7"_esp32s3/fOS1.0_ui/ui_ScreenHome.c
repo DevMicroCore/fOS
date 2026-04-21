@@ -50,6 +50,9 @@ void ui_event_AppText( lv_event_t * e) {
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenText, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0, &ui_ScreenText_screen_init);
 }
+if ( event_code == LV_EVENT_CLICKED) {
+      fillFileRoller_TextViewer( e );
+}
 }
 
 void ui_event_AppRadio( lv_event_t * e) {
