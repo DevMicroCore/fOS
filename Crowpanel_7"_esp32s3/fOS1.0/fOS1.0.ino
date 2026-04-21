@@ -6,10 +6,14 @@
 #include <SD.h>
 #include <SPI.h>
 #include "Audio.h"
+#include <WiFi.h>
 
-
+#define WIFI_DIR  "/system/wifi"
+#define WIFI_FILE "/system/wifi/wlans.txt"
 #define TEXT_DIR "/text"
 #define MUSIC_DIR "/music"
+
+#define MAX_WIFI_PROFILES 5
 
 
 extern "C" void deleteSelectedFile(void);
@@ -37,6 +41,11 @@ uint64_t usedBytes  = 0;
 uint64_t freeBytes  = 0;
 int usedPercent     = 0;
 
+/* ================= Wifi ================= */
+struct WifiProfile {
+  String ssid;
+  String pass;
+};
 
 /* ================= Boot Progress ================= */
 int mapPercent(int value, int inMin, int inMax, int outMin, int outMax)
@@ -182,6 +191,16 @@ void initSD()
       Serial.println("Ordner /music erstellt");
     }
 
+    if (!SD.exists("/system")) {
+      SD.mkdir("/system");
+      Serial.println("Ordner /system erstellt");
+    }
+
+    if (!SD.exists(WIFI_DIR)) {
+      SD.mkdir(WIFI_DIR);
+      Serial.println("Ordner //system/wifi erstellt");
+    }
+
   } else {
     sd_ok = false;
     Serial.println("SD Karte NICHT gefunden");
@@ -204,6 +223,132 @@ void readSDInfo()
     usedPercent = 0;
   }
 }
+
+/* =========================================================
+   WIFI
+   ========================================================= */
+extern "C" void SaveWifiConnection_Data(lv_event_t * e)
+{
+  if (!sd_ok) return;
+
+  const char* ssid = lv_textarea_get_text(uic_TextAreaWifiSSID);
+  const char* pass = lv_textarea_get_text(uic_TextAreaWifiPassword);
+
+  if (strlen(ssid) == 0) return;
+
+  File f = SD.open(WIFI_FILE, FILE_APPEND);
+  if (!f) return;
+
+  f.print(ssid);
+  f.print("|");
+  f.println(pass);
+  f.close();
+
+  Serial.println("WLAN Profil hinzugefügt");
+}
+
+int loadWifiProfiles(WifiProfile profiles[])
+{
+  if (!sd_ok) return 0;
+  if (!SD.exists(WIFI_FILE)) return 0;
+
+  File f = SD.open(WIFI_FILE, FILE_READ);
+  if (!f) return 0;
+
+  int count = 0;
+
+  while (f.available() && count < MAX_WIFI_PROFILES) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+
+    int sep = line.indexOf('|');
+    if (sep < 0) continue;
+
+    profiles[count].ssid = line.substring(0, sep);
+    profiles[count].pass = line.substring(sep + 1);
+
+    profiles[count].ssid.trim();
+    profiles[count].pass.trim();
+
+    count++;
+  }
+
+  f.close();
+  return count;
+}
+
+bool connectKnownWifi()
+{
+  WifiProfile profiles[MAX_WIFI_PROFILES];
+  int profileCount = loadWifiProfiles(profiles);
+
+  if (profileCount == 0) {
+    Serial.println("Keine WLAN Profile gespeichert");
+    return false;
+  }
+
+  Serial.println("Scanne WLANs...");
+  int n = WiFi.scanNetworks();
+  if (n <= 0) {
+    Serial.println("Keine WLANs gefunden");
+    return false;
+  }
+
+  int bestProfile = -1;
+  int bestRSSI = -999;
+
+  // 🔍 Alle gefundenen WLANs mit gespeicherten vergleichen
+  for (int i = 0; i < n; i++) {
+    String foundSSID = WiFi.SSID(i);
+    int rssi = WiFi.RSSI(i);
+
+    for (int p = 0; p < profileCount; p++) {
+      if (foundSSID == profiles[p].ssid) {
+
+        Serial.printf(
+          "Bekanntes WLAN gefunden: %s (RSSI %d)\n",
+          foundSSID.c_str(), rssi
+        );
+
+        if (rssi > bestRSSI) {
+          bestRSSI = rssi;
+          bestProfile = p;
+        }
+      }
+    }
+  }
+
+  if (bestProfile < 0) {
+    Serial.println("Kein bekanntes WLAN erreichbar");
+    return false;
+  }
+
+  // 🚀 Nur EIN Verbindungsversuch
+  Serial.println("Verbinde bestes WLAN: " + profiles[bestProfile].ssid);
+  WiFi.begin(
+    profiles[bestProfile].ssid.c_str(),
+    profiles[bestProfile].pass.c_str()
+  );
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - start < 10000) {
+    delay(200);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWLAN verbunden!");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+
+  Serial.println("\nVerbindung fehlgeschlagen");
+  return false;
+}
+
+
 
 /* =========================================================
    SYSTEM INFO
@@ -651,13 +796,17 @@ void setup()
 
   /* ================= BOOT PROGRESS ================= */
 bootProgress(5,  "Start system");
-bootProgress(15, "Initialize display");
+bootProgress(10, "Initialize display");
 
-bootProgress(25, "Initialize SD card");
+bootProgress(15, "Initialize SD card");
 initSD();
 
-bootProgress(30, "Scan files");
-fillFileRoller_WithLiveProgress(30, 60);
+bootProgress(20, "Scan files");
+fillFileRoller_WithLiveProgress(20, 50);
+
+bootProgress(60, "Initialize WiFi");
+WiFi.mode(WIFI_STA);
+connectKnownWifi();
 
 /* ================= AUDIO INIT ================= */
 bootProgress(70, "Initialize Audio");
@@ -666,7 +815,6 @@ audio.setPinout(
   18,   // I2S_LRC
   17    // I2S_DOUT
 );
-
 audio.setVolume(21); // 0..21 (CrowPanel Lautsprecher brauchen meist 10–14)
 
 

@@ -7,59 +7,62 @@
 
 void updateSDUI(lv_event_t * e)
 {
-	updateSDUIData();
+	// Your code here
 }
 
 void fillFileRoller_TextViewer(lv_event_t * e)
 {
-	fillFileRoller_TextViewer_Data();
+	// Your code here
 }
 
 void fillFileRoller_Radio(lv_event_t * e)
 {
-	fillFileRoller_Radio_Data();
+	// Your code here
 }
 
 void updateSystemInfo(lv_event_t * e)
 {
-	updateSystemInfoData();
+	// Your code here
+}
+
+void ReloadWiFiConnection(lv_event_t * e)
+{
+	// Your code here
 }
 
 void SaveWifiConnection(lv_event_t * e)
 {
-	SaveWifiConnection_Data();
+	// Your code here
 }
 
 void DeleteFileSelected(lv_event_t * e)
 {
-	if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        deleteSelectedFile();
-    }
+	// Your code here
 }
 
 void OpenNewFile(lv_event_t * e)
 {
-	OpenNewFile_Data();
+	// Your code here
 }
 
 void save_text_file(lv_event_t * e)
 {
-	save_text_file_data();
+	// Your code here
 }
 
 void load_selected_file(lv_event_t * e)
 {
-	load_selected_file_Data();
+	// Your code here
 }
 
 void setRadioVolume(lv_event_t * e)
 {
-	//setRadioVolume_Data();
+	// Your code here
 }
 
 void PlayRadio(lv_event_t * e)
 {
-	PlayRadio_data();
+	// Your code here
 }
 
 void StopwatchPlay(lv_event_t * e)

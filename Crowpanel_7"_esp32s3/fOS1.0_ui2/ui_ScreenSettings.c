@@ -16,7 +16,7 @@ lv_obj_t *uic_ButtonBack;
 lv_obj_t *uic_InfoScreenContainer;
 lv_obj_t *uic_ButtonSettingsSystemInfo;
 lv_obj_t *uic_ScreenSettings;
-lv_obj_t *ui_ScreenSettings = NULL;lv_obj_t *ui_HomeButton = NULL;lv_obj_t *ui_LabelMenu1 = NULL;lv_obj_t *ui_ButtonSettingsSystemInfo = NULL;lv_obj_t *ui_LabelSettingsSystemInfo = NULL;lv_obj_t *ui_ButtonSettingsSystemInfo1 = NULL;lv_obj_t *ui_LabelSettingsWifi = NULL;lv_obj_t *ui_InfoScreenContainer = NULL;lv_obj_t *ui_ButtonBack = NULL;lv_obj_t *ui_LabelBack = NULL;lv_obj_t *ui_LabelHardwareInformation = NULL;lv_obj_t *ui_systemInfoLabel = NULL;lv_obj_t *ui_LabelSoftwareInformation = NULL;lv_obj_t *ui_LabelSoftwareInformationData = NULL;lv_obj_t *ui_WifiScreenContainer = NULL;lv_obj_t *ui_ButtonBack1 = NULL;lv_obj_t *ui_LabelBack1 = NULL;lv_obj_t *ui_ButtonSaveWifi = NULL;lv_obj_t *ui_LabelBack2 = NULL;lv_obj_t *ui_LabelWifiSSID = NULL;lv_obj_t *ui_TextAreaWifiSSID = NULL;lv_obj_t *ui_LabelWifiPassword = NULL;lv_obj_t *ui_TextAreaWifiPassword = NULL;lv_obj_t *ui_KeyboardWifi = NULL;lv_obj_t *ui_LabelWifiConnection = NULL;
+lv_obj_t *ui_ScreenSettings = NULL;lv_obj_t *ui_HomeButton = NULL;lv_obj_t *ui_LabelMenu1 = NULL;lv_obj_t *ui_ButtonSettingsSystemInfo = NULL;lv_obj_t *ui_LabelSettingsSystemInfo = NULL;lv_obj_t *ui_ButtonSettingsWiFi = NULL;lv_obj_t *ui_LabelSettingsWiFi = NULL;lv_obj_t *ui_ButtonSettingsWiFi1 = NULL;lv_obj_t *ui_LabelSettingsWiFi1 = NULL;lv_obj_t *ui_InfoScreenContainer = NULL;lv_obj_t *ui_ButtonBack = NULL;lv_obj_t *ui_LabelBack = NULL;lv_obj_t *ui_LabelHardwareInformation = NULL;lv_obj_t *ui_systemInfoLabel = NULL;lv_obj_t *ui_LabelSoftwareInformation = NULL;lv_obj_t *ui_LabelSoftwareInformationData = NULL;lv_obj_t *ui_WifiScreenContainer = NULL;lv_obj_t *ui_ButtonBack1 = NULL;lv_obj_t *ui_LabelBack1 = NULL;lv_obj_t *ui_ButtonSaveWifi = NULL;lv_obj_t *ui_LabelBack2 = NULL;lv_obj_t *ui_LabelWifiSSID = NULL;lv_obj_t *ui_TextAreaWifiSSID = NULL;lv_obj_t *ui_LabelWifiPassword = NULL;lv_obj_t *ui_TextAreaWifiPassword = NULL;lv_obj_t *ui_KeyboardWifi = NULL;lv_obj_t *ui_LabelWifiConnection = NULL;
 // event funtions
 void ui_event_HomeButton( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -37,14 +37,19 @@ if ( event_code == LV_EVENT_CLICKED) {
 }
 }
 
-void ui_event_ButtonSettingsSystemInfo1( lv_event_t * e) {
+void ui_event_ButtonSettingsWiFi( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_flag_modify( ui_WifiScreenContainer, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
 }
+}
+
+void ui_event_ButtonSettingsWiFi1( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
 if ( event_code == LV_EVENT_CLICKED) {
-      updateSystemInfo( e );
+      ReloadWiFiConnection( e );
 }
 }
 
@@ -139,25 +144,45 @@ lv_obj_set_style_text_opa(ui_LabelSettingsSystemInfo, 255, LV_PART_MAIN| LV_STAT
 lv_obj_set_style_text_decor(ui_LabelSettingsSystemInfo, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelSettingsSystemInfo, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_ButtonSettingsSystemInfo1 = lv_btn_create(ui_ScreenSettings);
-lv_obj_set_width( ui_ButtonSettingsSystemInfo1, 190);
-lv_obj_set_height( ui_ButtonSettingsSystemInfo1, 50);
-lv_obj_set_x( ui_ButtonSettingsSystemInfo1, -295 );
-lv_obj_set_y( ui_ButtonSettingsSystemInfo1, -89 );
-lv_obj_set_align( ui_ButtonSettingsSystemInfo1, LV_ALIGN_CENTER );
-lv_obj_add_flag( ui_ButtonSettingsSystemInfo1, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
-lv_obj_clear_flag( ui_ButtonSettingsSystemInfo1, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
-lv_obj_set_style_radius(ui_ButtonSettingsSystemInfo1, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
+ui_ButtonSettingsWiFi = lv_btn_create(ui_ScreenSettings);
+lv_obj_set_width( ui_ButtonSettingsWiFi, 190);
+lv_obj_set_height( ui_ButtonSettingsWiFi, 50);
+lv_obj_set_x( ui_ButtonSettingsWiFi, -295 );
+lv_obj_set_y( ui_ButtonSettingsWiFi, -89 );
+lv_obj_set_align( ui_ButtonSettingsWiFi, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonSettingsWiFi, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonSettingsWiFi, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonSettingsWiFi, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_LabelSettingsWifi = lv_label_create(ui_ButtonSettingsSystemInfo1);
-lv_obj_set_width( ui_LabelSettingsWifi, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_LabelSettingsWifi, LV_SIZE_CONTENT);   /// 0
-lv_obj_set_align( ui_LabelSettingsWifi, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelSettingsWifi,"WIFI Setting");
-lv_obj_set_style_text_color(ui_LabelSettingsWifi, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
-lv_obj_set_style_text_opa(ui_LabelSettingsWifi, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_text_decor(ui_LabelSettingsWifi, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_text_font(ui_LabelSettingsWifi, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+ui_LabelSettingsWiFi = lv_label_create(ui_ButtonSettingsWiFi);
+lv_obj_set_width( ui_LabelSettingsWiFi, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelSettingsWiFi, LV_SIZE_CONTENT);   /// 0
+lv_obj_set_align( ui_LabelSettingsWiFi, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelSettingsWiFi,"WI-FI Setting");
+lv_obj_set_style_text_color(ui_LabelSettingsWiFi, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_text_opa(ui_LabelSettingsWiFi, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_decor(ui_LabelSettingsWiFi, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_LabelSettingsWiFi, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_ButtonSettingsWiFi1 = lv_btn_create(ui_ScreenSettings);
+lv_obj_set_width( ui_ButtonSettingsWiFi1, 190);
+lv_obj_set_height( ui_ButtonSettingsWiFi1, 50);
+lv_obj_set_x( ui_ButtonSettingsWiFi1, -92 );
+lv_obj_set_y( ui_ButtonSettingsWiFi1, -89 );
+lv_obj_set_align( ui_ButtonSettingsWiFi1, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonSettingsWiFi1, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonSettingsWiFi1, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonSettingsWiFi1, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelSettingsWiFi1 = lv_label_create(ui_ButtonSettingsWiFi1);
+lv_obj_set_width( ui_LabelSettingsWiFi1, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelSettingsWiFi1, LV_SIZE_CONTENT);   /// 0
+lv_obj_set_align( ui_LabelSettingsWiFi1, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelSettingsWiFi1,"Reload Wi-Fi");
+lv_obj_set_style_text_color(ui_LabelSettingsWiFi1, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_text_opa(ui_LabelSettingsWiFi1, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_decor(ui_LabelSettingsWiFi1, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_LabelSettingsWiFi1, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_InfoScreenContainer = lv_obj_create(ui_ScreenSettings);
 lv_obj_remove_style_all(ui_InfoScreenContainer);
@@ -296,7 +321,7 @@ lv_obj_set_height( ui_TextAreaWifiSSID, LV_SIZE_CONTENT);   /// 49
 lv_obj_set_x( ui_TextAreaWifiSSID, 0 );
 lv_obj_set_y( ui_TextAreaWifiSSID, -105 );
 lv_obj_set_align( ui_TextAreaWifiSSID, LV_ALIGN_CENTER );
-lv_textarea_set_placeholder_text(ui_TextAreaWifiSSID,"Here you can enter your WiFi name . . .");
+lv_textarea_set_placeholder_text(ui_TextAreaWifiSSID,"Here you can enter your Wi-Fi name . . .");
 lv_textarea_set_one_line(ui_TextAreaWifiSSID,true);
 lv_obj_set_style_text_font(ui_TextAreaWifiSSID, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
@@ -321,7 +346,7 @@ lv_obj_set_height( ui_TextAreaWifiPassword, LV_SIZE_CONTENT);   /// 49
 lv_obj_set_x( ui_TextAreaWifiPassword, 0 );
 lv_obj_set_y( ui_TextAreaWifiPassword, -5 );
 lv_obj_set_align( ui_TextAreaWifiPassword, LV_ALIGN_CENTER );
-lv_textarea_set_placeholder_text(ui_TextAreaWifiPassword,"Here you can enter your WiFi password . . .");
+lv_textarea_set_placeholder_text(ui_TextAreaWifiPassword,"Here you can enter your Wi-Fi password . . .");
 lv_textarea_set_one_line(ui_TextAreaWifiPassword,true);
 lv_textarea_set_password_mode(ui_TextAreaWifiPassword, true);
 lv_obj_set_style_text_font(ui_TextAreaWifiPassword, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -352,7 +377,8 @@ lv_obj_set_style_text_font(ui_LabelWifiConnection, &lv_font_montserrat_24, LV_PA
 
 lv_obj_add_event_cb(ui_HomeButton, ui_event_HomeButton, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonSettingsSystemInfo, ui_event_ButtonSettingsSystemInfo, LV_EVENT_ALL, NULL);
-lv_obj_add_event_cb(ui_ButtonSettingsSystemInfo1, ui_event_ButtonSettingsSystemInfo1, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_ButtonSettingsWiFi, ui_event_ButtonSettingsWiFi, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_ButtonSettingsWiFi1, ui_event_ButtonSettingsWiFi1, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonBack, ui_event_ButtonBack, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonBack1, ui_event_ButtonBack1, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonSaveWifi, ui_event_ButtonSaveWifi, LV_EVENT_ALL, NULL);
@@ -384,8 +410,10 @@ ui_LabelMenu1= NULL;
 uic_ButtonSettingsSystemInfo= NULL;
 ui_ButtonSettingsSystemInfo= NULL;
 ui_LabelSettingsSystemInfo= NULL;
-ui_ButtonSettingsSystemInfo1= NULL;
-ui_LabelSettingsWifi= NULL;
+ui_ButtonSettingsWiFi= NULL;
+ui_LabelSettingsWiFi= NULL;
+ui_ButtonSettingsWiFi1= NULL;
+ui_LabelSettingsWiFi1= NULL;
 uic_InfoScreenContainer= NULL;
 ui_InfoScreenContainer= NULL;
 uic_ButtonBack= NULL;

@@ -14,6 +14,7 @@ void updateSDUI(lv_event_t * e);
 void fillFileRoller_TextViewer(lv_event_t * e);
 void fillFileRoller_Radio(lv_event_t * e);
 void updateSystemInfo(lv_event_t * e);
+void ReloadWiFiConnection(lv_event_t * e);
 void SaveWifiConnection(lv_event_t * e);
 void DeleteFileSelected(lv_event_t * e);
 void OpenNewFile(lv_event_t * e);
