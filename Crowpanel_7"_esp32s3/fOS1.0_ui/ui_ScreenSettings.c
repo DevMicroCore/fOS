@@ -5,6 +5,8 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_SliderBrightness;
+lv_obj_t *uic_ColorwheelSettings;
 lv_obj_t *uic_ButtonSaveAppearance;
 lv_obj_t *uic_AppearanceContainer;
 lv_obj_t *uic_TimeZoneManager;
@@ -22,7 +24,7 @@ lv_obj_t *uic_ButtonSettingsAppearance;
 lv_obj_t *uic_ButtonSettingsTimeZone;
 lv_obj_t *uic_ButtonSettingsSystemInfo;
 lv_obj_t *uic_ScreenSettings;
-lv_obj_t *ui_ScreenSettings = NULL;lv_obj_t *ui_HomeButton = NULL;lv_obj_t *ui_LabelMenu1 = NULL;lv_obj_t *ui_ButtonSettingsSystemInfo = NULL;lv_obj_t *ui_LabelSettingsSystemInfo = NULL;lv_obj_t *ui_ButtonSettingsWiFi = NULL;lv_obj_t *ui_LabelSettingsWiFi = NULL;lv_obj_t *ui_ButtonSettingsWiFi1 = NULL;lv_obj_t *ui_LabelSettingsWiFi1 = NULL;lv_obj_t *ui_ButtonSettingsTimeZone = NULL;lv_obj_t *ui_LabelSettingsTimeZone = NULL;lv_obj_t *ui_ButtonSettingsAppearance = NULL;lv_obj_t *ui_LabelSettingsTimeZone1 = NULL;lv_obj_t *ui_InfoScreenContainer = NULL;lv_obj_t *ui_ButtonBack = NULL;lv_obj_t *ui_LabelBack = NULL;lv_obj_t *ui_LabelHardwareInformation = NULL;lv_obj_t *ui_systemInfoLabel = NULL;lv_obj_t *ui_LabelSoftwareInformation = NULL;lv_obj_t *ui_LabelSoftwareInformationData = NULL;lv_obj_t *ui_WifiScreenContainer = NULL;lv_obj_t *ui_ButtonBack1 = NULL;lv_obj_t *ui_LabelBack1 = NULL;lv_obj_t *ui_ButtonSaveWifi = NULL;lv_obj_t *ui_LabelBack2 = NULL;lv_obj_t *ui_LabelWifiSSID = NULL;lv_obj_t *ui_TextAreaWifiSSID = NULL;lv_obj_t *ui_LabelWifiPassword = NULL;lv_obj_t *ui_TextAreaWifiPassword = NULL;lv_obj_t *ui_KeyboardWifi = NULL;lv_obj_t *ui_TimeZoneContainer = NULL;lv_obj_t *ui_ButtonBack2 = NULL;lv_obj_t *ui_LabelBack3 = NULL;lv_obj_t *ui_ButtonSaveTimeZone = NULL;lv_obj_t *ui_LabelBack4 = NULL;lv_obj_t *ui_TimeZoneManager = NULL;lv_obj_t *ui_AppearanceContainer = NULL;lv_obj_t *ui_ButtonBack3 = NULL;lv_obj_t *ui_LabelBack5 = NULL;lv_obj_t *ui_ButtonSaveAppearance = NULL;lv_obj_t *ui_LabelBack6 = NULL;lv_obj_t *ui_Colorwheel1 = NULL;lv_obj_t *ui_LabelColorwheel = NULL;lv_obj_t *ui_Slider1 = NULL;lv_obj_t *ui_LabelBrightness = NULL;
+lv_obj_t *ui_ScreenSettings = NULL;lv_obj_t *ui_HomeButton = NULL;lv_obj_t *ui_LabelMenu1 = NULL;lv_obj_t *ui_ButtonSettingsSystemInfo = NULL;lv_obj_t *ui_LabelSettingsSystemInfo = NULL;lv_obj_t *ui_ButtonSettingsWiFi = NULL;lv_obj_t *ui_LabelSettingsWiFi = NULL;lv_obj_t *ui_ButtonSettingsWiFi1 = NULL;lv_obj_t *ui_LabelSettingsWiFi1 = NULL;lv_obj_t *ui_ButtonSettingsTimeZone = NULL;lv_obj_t *ui_LabelSettingsTimeZone = NULL;lv_obj_t *ui_ButtonSettingsAppearance = NULL;lv_obj_t *ui_LabelSettingsTimeZone1 = NULL;lv_obj_t *ui_InfoScreenContainer = NULL;lv_obj_t *ui_ButtonBack = NULL;lv_obj_t *ui_LabelBack = NULL;lv_obj_t *ui_LabelHardwareInformation = NULL;lv_obj_t *ui_systemInfoLabel = NULL;lv_obj_t *ui_LabelSoftwareInformation = NULL;lv_obj_t *ui_LabelSoftwareInformationData = NULL;lv_obj_t *ui_WifiScreenContainer = NULL;lv_obj_t *ui_ButtonBack1 = NULL;lv_obj_t *ui_LabelBack1 = NULL;lv_obj_t *ui_ButtonSaveWifi = NULL;lv_obj_t *ui_LabelBack2 = NULL;lv_obj_t *ui_LabelWifiSSID = NULL;lv_obj_t *ui_TextAreaWifiSSID = NULL;lv_obj_t *ui_LabelWifiPassword = NULL;lv_obj_t *ui_TextAreaWifiPassword = NULL;lv_obj_t *ui_KeyboardWifi = NULL;lv_obj_t *ui_TimeZoneContainer = NULL;lv_obj_t *ui_ButtonBack2 = NULL;lv_obj_t *ui_LabelBack3 = NULL;lv_obj_t *ui_ButtonSaveTimeZone = NULL;lv_obj_t *ui_LabelBack4 = NULL;lv_obj_t *ui_TimeZoneManager = NULL;lv_obj_t *ui_AppearanceContainer = NULL;lv_obj_t *ui_ButtonBack3 = NULL;lv_obj_t *ui_LabelBack5 = NULL;lv_obj_t *ui_ButtonSaveAppearance = NULL;lv_obj_t *ui_LabelBack6 = NULL;lv_obj_t *ui_ColorwheelSettings = NULL;lv_obj_t *ui_LabelColorwheel = NULL;lv_obj_t *ui_SliderBrightness = NULL;lv_obj_t *ui_LabelBrightness = NULL;
 // event funtions
 void ui_event_HomeButton( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -97,6 +99,9 @@ void ui_event_ButtonSaveWifi( lv_event_t * e) {
 if ( event_code == LV_EVENT_CLICKED) {
       SaveWifiConnection( e );
 }
+if ( event_code == LV_EVENT_CLICKED) {
+      _ui_flag_modify( ui_WifiScreenContainer, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+}
 }
 
 void ui_event_TextAreaWifiSSID( lv_event_t * e) {
@@ -129,6 +134,9 @@ void ui_event_ButtonSaveTimeZone( lv_event_t * e) {
 if ( event_code == LV_EVENT_CLICKED) {
       SaveTimeZone( e );
 }
+if ( event_code == LV_EVENT_CLICKED) {
+      _ui_flag_modify( ui_TimeZoneContainer, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+}
 }
 
 void ui_event_ButtonBack3( lv_event_t * e) {
@@ -144,6 +152,9 @@ void ui_event_ButtonSaveAppearance( lv_event_t * e) {
 
 if ( event_code == LV_EVENT_CLICKED) {
       SaveAppearanceChanges( e );
+}
+if ( event_code == LV_EVENT_CLICKED) {
+      _ui_flag_modify( ui_AppearanceContainer, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
 }
 }
 
@@ -578,12 +589,12 @@ lv_obj_set_style_text_opa(ui_LabelBack6, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelBack6, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelBack6, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_Colorwheel1 = lv_colorwheel_create(ui_AppearanceContainer,true);
-lv_obj_set_width( ui_Colorwheel1, 200);
-lv_obj_set_height( ui_Colorwheel1, 200);
-lv_obj_set_x( ui_Colorwheel1, -208 );
-lv_obj_set_y( ui_Colorwheel1, 25 );
-lv_obj_set_align( ui_Colorwheel1, LV_ALIGN_CENTER );
+ui_ColorwheelSettings = lv_colorwheel_create(ui_AppearanceContainer,true);
+lv_obj_set_width( ui_ColorwheelSettings, 200);
+lv_obj_set_height( ui_ColorwheelSettings, 200);
+lv_obj_set_x( ui_ColorwheelSettings, -208 );
+lv_obj_set_y( ui_ColorwheelSettings, 25 );
+lv_obj_set_align( ui_ColorwheelSettings, LV_ALIGN_CENTER );
 
 ui_LabelColorwheel = lv_label_create(ui_AppearanceContainer);
 lv_obj_set_width( ui_LabelColorwheel, LV_SIZE_CONTENT);  /// 1
@@ -594,14 +605,14 @@ lv_obj_set_align( ui_LabelColorwheel, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelColorwheel,"Color");
 lv_obj_set_style_text_font(ui_LabelColorwheel, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_Slider1 = lv_slider_create(ui_AppearanceContainer);
-lv_slider_set_value( ui_Slider1, 100, LV_ANIM_OFF);
-if (lv_slider_get_mode(ui_Slider1)==LV_SLIDER_MODE_RANGE ) lv_slider_set_left_value( ui_Slider1, 0, LV_ANIM_OFF);
-lv_obj_set_width( ui_Slider1, 344);
-lv_obj_set_height( ui_Slider1, 15);
-lv_obj_set_x( ui_Slider1, 146 );
-lv_obj_set_y( ui_Slider1, 25 );
-lv_obj_set_align( ui_Slider1, LV_ALIGN_CENTER );
+ui_SliderBrightness = lv_slider_create(ui_AppearanceContainer);
+lv_slider_set_value( ui_SliderBrightness, 100, LV_ANIM_OFF);
+if (lv_slider_get_mode(ui_SliderBrightness)==LV_SLIDER_MODE_RANGE ) lv_slider_set_left_value( ui_SliderBrightness, 0, LV_ANIM_OFF);
+lv_obj_set_width( ui_SliderBrightness, 344);
+lv_obj_set_height( ui_SliderBrightness, 15);
+lv_obj_set_x( ui_SliderBrightness, 146 );
+lv_obj_set_y( ui_SliderBrightness, 25 );
+lv_obj_set_align( ui_SliderBrightness, LV_ALIGN_CENTER );
 
 ui_LabelBrightness = lv_label_create(ui_AppearanceContainer);
 lv_obj_set_width( ui_LabelBrightness, LV_SIZE_CONTENT);  /// 1
@@ -644,6 +655,8 @@ uic_ButtonSaveTimeZone = ui_ButtonSaveTimeZone;
 uic_TimeZoneManager = ui_TimeZoneManager;
 uic_AppearanceContainer = ui_AppearanceContainer;
 uic_ButtonSaveAppearance = ui_ButtonSaveAppearance;
+uic_ColorwheelSettings = ui_ColorwheelSettings;
+uic_SliderBrightness = ui_SliderBrightness;
 
 }
 
@@ -710,9 +723,11 @@ ui_LabelBack5= NULL;
 uic_ButtonSaveAppearance= NULL;
 ui_ButtonSaveAppearance= NULL;
 ui_LabelBack6= NULL;
-ui_Colorwheel1= NULL;
+uic_ColorwheelSettings= NULL;
+ui_ColorwheelSettings= NULL;
 ui_LabelColorwheel= NULL;
-ui_Slider1= NULL;
+uic_SliderBrightness= NULL;
+ui_SliderBrightness= NULL;
 ui_LabelBrightness= NULL;
 
 }

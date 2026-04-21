@@ -20,6 +20,11 @@ void fillFileRoller_Radio(lv_event_t * e)
 	// Your code here
 }
 
+void StartWeatherApp(lv_event_t * e)
+{
+	// Your code here
+}
+
 void updateSystemInfo(lv_event_t * e)
 {
 	// Your code here
