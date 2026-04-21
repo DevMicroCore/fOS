@@ -22,6 +22,7 @@ SET(SOURCES ui_comp_button1.c
     ui_img_1607212695.c
     ui_img_1045517857.c
     ui_img_294430296.c
-    ui_img_1548352994.c)
+    ui_img_1548352994.c
+    ui_img_fos_256x256_png.c)
 
 add_library(ui ${SOURCES})

@@ -152,7 +152,7 @@ extern "C" void updateSDUIData(void)
 }
 
 /* =========================================================
-   FILE ROLLER FUNKTIONEN (NEU)
+   FILE ROLLER FUNKTIONEN
    ========================================================= */
 void fillFileRoller()
 {
@@ -217,15 +217,113 @@ extern "C" void deleteSelectedFile(void)
 }
 
 
+/* =========================================================
+   FILE ROLLER – TEXT VIEWER SCREEN
+   wird beim Laden des Text-Screens aufgerufen
+   ========================================================= */
+extern "C" void fillFileRoller_TextViewer_Data(void)
+{
+  if (!sd_ok) return;
+
+  File root = SD.open("/");
+  if (!root) return;
+
+  String rollerText = "";
+
+  File file = root.openNextFile();
+  while (file) {
+    if (!file.isDirectory()) {
+      rollerText += file.name();
+      rollerText += "\n";
+    }
+    file = root.openNextFile();
+  }
+
+  root.close();
+
+  if (rollerText.length() == 0) {
+    rollerText = "Keine Dateien";
+  }
+
+  lv_roller_set_options(
+    uic_FileRollerText,
+    rollerText.c_str(),
+    LV_ROLLER_MODE_NORMAL
+  );
+}
+
+
+extern "C" void load_selected_file_Data(void)
+{
+  if (!sd_ok) {
+    lv_textarea_set_text(uic_TextArea, "SD Karte nicht verfügbar");
+    return;
+  }
+
+  /* ausgewählten Dateinamen aus dem Roller holen */
+  char buf[128];
+  lv_roller_get_selected_str(
+    uic_FileRollerText,
+    buf,
+    sizeof(buf)
+  );
+
+  String filename = String(buf);
+
+  if (filename.length() == 0 || filename == "Keine Dateien") {
+    lv_textarea_set_text(uic_TextArea, "Keine Datei ausgewählt");
+    return;
+  }
+
+  String path = "/" + filename;
+
+  /* Existenz prüfen */
+  if (!SD.exists(path)) {
+    lv_textarea_set_text(uic_TextArea, "Datei nicht gefunden");
+    return;
+  }
+
+  /* Datei öffnen */
+  File file = SD.open(path, FILE_READ);
+  if (!file) {
+    lv_textarea_set_text(uic_TextArea, "Datei konnte nicht geöffnet werden");
+    return;
+  }
+
+  /* Dateiinhalt lesen */
+  String content;
+  content.reserve(1024);   // RAM-schonend
+
+  while (file.available()) {
+    content += (char)file.read();
+
+    /* RAM-Schutz für ESP32 */
+    if (content.length() > 4000) {
+      content += "\n\n[Datei gekürzt]";
+      break;
+    }
+  }
+
+  file.close();
+
+  /* Textarea befüllen */
+  lv_textarea_set_text(uic_TextArea, content.c_str());
+}
+
+
+
+
 /* ================= SETUP ================= */
 void setup()
 {
   Serial.begin(115200);
 
+  /* ================= DISPLAY ================= */
   gfx.init();
   gfx.setRotation(0);
   gfx.setBrightness(255);
 
+  /* ================= LVGL ================= */
   lv_init();
   lv_disp_draw_buf_init(&draw_buf, buf1, NULL, 800 * 40);
 
@@ -243,12 +341,27 @@ void setup()
   indev_drv.read_cb = my_touchpad_read;
   lv_indev_drv_register(&indev_drv);
 
-  initSD();
+  /* ================= UI INIT ================= */
   ui_init();
 
+  /* HomeScreen sicher laden (falls nicht Default) */
+  lv_scr_load(uic_ScreenHome);
+
+  /* ================= BOOT OVERLAY ANZEIGEN ================= */
+  lv_obj_move_foreground(uic_BootOverlay);
+  lv_obj_clear_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
+  lv_timer_handler();   // SOFORT zeichnen
+  delay(20);
+
+  /* ================= LANGSAME INIT ================= */
+  initSD();
   fillFileRoller();
   updateSDUIData();
+
+  /* ================= BOOT OVERLAY AUSBLENDEN ================= */
+  lv_obj_add_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
 }
+
 
 /* ================= LOOP ================= */
 void loop()

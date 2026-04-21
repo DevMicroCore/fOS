@@ -5,6 +5,13 @@
 
 #include "ui.h"
 
+
+
+void fillFileRoller_TextViewer(lv_event_t * e)
+{
+	fillFileRoller_TextViewer_Data();
+}
+
 void updateSDUI(lv_event_t * e)
 {
 	updateSDUIData();
@@ -29,5 +36,5 @@ void save_text_file(lv_event_t * e)
 
 void load_selected_file(lv_event_t * e)
 {
-	// Your code here
+	load_selected_file_Data();
 }
