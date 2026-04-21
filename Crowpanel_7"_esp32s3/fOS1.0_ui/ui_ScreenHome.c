@@ -63,6 +63,9 @@ void ui_event_AppRadio( lv_event_t * e) {
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenRadio, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0, &ui_ScreenRadio_screen_init);
 }
+if ( event_code == LV_EVENT_CLICKED) {
+      fillFileRoller_Radio( e );
+}
 }
 
 void ui_event_AppWeather( lv_event_t * e) {

@@ -20,9 +20,44 @@ extern lv_obj_t *ui_LabelMenu1;
 extern void ui_event_ButtonSettingsSystemInfo( lv_event_t * e);
 extern lv_obj_t *ui_ButtonSettingsSystemInfo;
 extern lv_obj_t *ui_LabelSettingsSystemInfo;
+extern void ui_event_ButtonSettingsSystemInfo1( lv_event_t * e);
+extern lv_obj_t *ui_ButtonSettingsSystemInfo1;
+extern lv_obj_t *ui_LabelSettingsWifi;
+extern lv_obj_t *ui_InfoScreenContainer;
+extern void ui_event_ButtonBack( lv_event_t * e);
+extern lv_obj_t *ui_ButtonBack;
+extern lv_obj_t *ui_LabelBack;
+extern lv_obj_t *ui_LabelHardwareInformation;
+extern lv_obj_t *ui_systemInfoLabel;
+extern lv_obj_t *ui_LabelSoftwareInformation;
+extern lv_obj_t *ui_LabelSoftwareInformationData;
+extern lv_obj_t *ui_WifiScreenContainer;
+extern void ui_event_ButtonBack1( lv_event_t * e);
+extern lv_obj_t *ui_ButtonBack1;
+extern lv_obj_t *ui_LabelBack1;
+extern void ui_event_ButtonSaveWifi( lv_event_t * e);
+extern lv_obj_t *ui_ButtonSaveWifi;
+extern lv_obj_t *ui_LabelBack2;
+extern lv_obj_t *ui_LabelWifiSSID;
+extern void ui_event_TextAreaWifiSSID( lv_event_t * e);
+extern lv_obj_t *ui_TextAreaWifiSSID;
+extern lv_obj_t *ui_LabelWifiPassword;
+extern void ui_event_TextAreaWifiPassword( lv_event_t * e);
+extern lv_obj_t *ui_TextAreaWifiPassword;
+extern lv_obj_t *ui_KeyboardWifi;
+extern lv_obj_t *ui_LabelWifiConnection;
 // CUSTOM VARIABLES
 extern lv_obj_t *uic_ScreenSettings;
 extern lv_obj_t *uic_ButtonSettingsSystemInfo;
+extern lv_obj_t *uic_InfoScreenContainer;
+extern lv_obj_t *uic_ButtonBack;
+extern lv_obj_t *uic_systemInfoLabel;
+extern lv_obj_t *uic_WifiScreenContainer;
+extern lv_obj_t *uic_ButtonSaveWifi;
+extern lv_obj_t *uic_TextAreaWifiSSID;
+extern lv_obj_t *uic_TextAreaWifiPassword;
+extern lv_obj_t *uic_KeyboardWifi;
+extern lv_obj_t *uic_LabelWifiConnection;
 
 #ifdef __cplusplus
 } /*extern "C"*/

@@ -30,7 +30,7 @@ extern "C" {
 ///////////////////// SCREENS ////////////////////
 #include "ui_ScreenHome.h"
 #include "ui_ScreenSettings.h"
-#include "ui_ScreenSettingsSystemInfo.h"
+#include "ui_NoFunktion.h"
 #include "ui_ScreenFileManager.h"
 #include "ui_ScreenWeb.h"
 #include "ui_ScreenText.h"

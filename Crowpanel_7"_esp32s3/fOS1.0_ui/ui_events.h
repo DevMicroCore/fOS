@@ -12,11 +12,14 @@ extern "C" {
 
 void updateSDUI(lv_event_t * e);
 void fillFileRoller_TextViewer(lv_event_t * e);
+void fillFileRoller_Radio(lv_event_t * e);
 void updateSystemInfo(lv_event_t * e);
+void SaveWifiConnection(lv_event_t * e);
 void DeleteFileSelected(lv_event_t * e);
+void OpenNewFile(lv_event_t * e);
 void save_text_file(lv_event_t * e);
 void load_selected_file(lv_event_t * e);
-void OpenNewFile(lv_event_t * e);
+void setRadioVolume(lv_event_t * e);
 void PlayRadio(lv_event_t * e);
 void StopwatchPlay(lv_event_t * e);
 void keypad_event_handler(lv_event_t * e);

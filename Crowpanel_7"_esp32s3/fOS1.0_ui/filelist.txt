@@ -3,7 +3,7 @@ ui_comp_switch.c
 ui_comp.c
 ui_ScreenHome.c
 ui_ScreenSettings.c
-ui_ScreenSettingsSystemInfo.c
+ui_NoFunktion.c
 ui_ScreenFileManager.c
 ui_ScreenWeb.c
 ui_ScreenText.c

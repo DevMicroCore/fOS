@@ -3,7 +3,7 @@ SET(SOURCES ui_comp_button1.c
     ui_comp.c
     ui_ScreenHome.c
     ui_ScreenSettings.c
-    ui_ScreenSettingsSystemInfo.c
+    ui_NoFunktion.c
     ui_ScreenFileManager.c
     ui_ScreenWeb.c
     ui_ScreenText.c

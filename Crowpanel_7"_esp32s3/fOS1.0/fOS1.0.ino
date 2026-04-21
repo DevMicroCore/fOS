@@ -6,6 +6,9 @@
 #include <SD.h>
 #include <SPI.h>
 
+#define TEXT_DIR "/text"
+
+
 extern "C" void deleteSelectedFile(void);
 
 
@@ -59,11 +62,17 @@ void initSD()
   if (SD.begin(SD_CS)) {
     sd_ok = true;
     Serial.println("SD Karte initialisiert");
+
+    if (!SD.exists(TEXT_DIR)) {
+      SD.mkdir(TEXT_DIR);
+      Serial.println("Ordner /text erstellt");
+    }
   } else {
     sd_ok = false;
     Serial.println("SD Karte NICHT gefunden");
   }
 }
+
 
 /* ================= SD READ ================= */
 void readSDInfo()
@@ -158,7 +167,7 @@ void fillFileRoller()
 {
   if (!sd_ok) return;
 
-  File root = SD.open("/");
+  File root = SD.open(TEXT_DIR);
   if (!root) return;
 
   String rollerText = "";
@@ -203,7 +212,7 @@ extern "C" void deleteSelectedFile(void)
   String filename = getSelectedFileFromRoller();
   if (filename.length() == 0 || filename == "Keine Dateien") return;
 
-  String path = "/" + filename;
+  String path = String(TEXT_DIR) + "/" + filename;
 
   if (SD.exists(path)) {
     SD.remove(path);
@@ -225,7 +234,7 @@ extern "C" void fillFileRoller_TextViewer_Data(void)
 {
   if (!sd_ok) return;
 
-  File root = SD.open("/");
+  File root = SD.open(TEXT_DIR);
   if (!root) return;
 
   String rollerText = "";
@@ -275,7 +284,7 @@ extern "C" void load_selected_file_Data(void)
     return;
   }
 
-  String path = "/" + filename;
+  String path = String(TEXT_DIR) + "/" + filename;
 
   /* Existenz prüfen */
   if (!SD.exists(path)) {
@@ -333,9 +342,8 @@ extern "C" void save_text_file_data(lv_event_t * e)
     return;
   }
 
-  String path = "/";
-  path += filename;
-  path += ".txt";
+  String path = String(TEXT_DIR) + "/" + filename + ".txt";
+
 
   // 🔥 Datei IMMER überschreiben
   if (SD.exists(path.c_str())) {
@@ -393,23 +401,25 @@ void setup()
   /* ================= UI INIT ================= */
   ui_init();
 
-  /* HomeScreen sicher laden (falls nicht Default) */
+  /* HomeScreen sicher laden */
   lv_scr_load(uic_ScreenHome);
 
-  /* ================= BOOT OVERLAY ANZEIGEN ================= */
+  /* ================= BOOT OVERLAY EIN ================= */
   lv_obj_move_foreground(uic_BootOverlay);
   lv_obj_clear_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
-  lv_timer_handler();   // SOFORT zeichnen
+  lv_timer_handler();   // sofort zeichnen
   delay(20);
 
   /* ================= LANGSAME INIT ================= */
   initSD();
   fillFileRoller();
   updateSDUIData();
+  fillFileRoller_TextViewer_Data();
 
-  /* ================= BOOT OVERLAY AUSBLENDEN ================= */
+  /* ================= BOOT OVERLAY AUS ================= */
   lv_obj_add_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
 }
+
 
 
 /* ================= LOOP ================= */

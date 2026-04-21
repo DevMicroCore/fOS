@@ -26,6 +26,9 @@ extern lv_obj_t *ui_LabelSaveAs;
 extern void ui_event_BtnOpenFile( lv_event_t * e);
 extern lv_obj_t *ui_BtnOpenFile;
 extern lv_obj_t *ui_LabelOpenFile;
+extern void ui_event_BtnOpenNewFile( lv_event_t * e);
+extern lv_obj_t *ui_BtnOpenNewFile;
+extern lv_obj_t *ui_LabelOpenNewFile;
 extern lv_obj_t *ui_PopupSave;
 extern void ui_event_ButtonTextSaveCancel( lv_event_t * e);
 extern lv_obj_t *ui_ButtonTextSaveCancel;
@@ -43,14 +46,12 @@ extern void ui_event_BtnFileOpen( lv_event_t * e);
 extern lv_obj_t *ui_BtnFileOpen;
 extern lv_obj_t *ui_LabelSaveConfirm1;
 extern lv_obj_t *ui_FileRollerText;
-extern void ui_event_BtnOpenNewFile( lv_event_t * e);
-extern lv_obj_t *ui_BtnOpenNewFile;
-extern lv_obj_t *ui_LabelOpenNewFile;
 // CUSTOM VARIABLES
 extern lv_obj_t *uic_KeyboardText;
 extern lv_obj_t *uic_TextArea;
 extern lv_obj_t *uic_BtnSaveAs;
 extern lv_obj_t *uic_BtnOpenFile;
+extern lv_obj_t *uic_BtnOpenNewFile;
 extern lv_obj_t *uic_PopupSave;
 extern lv_obj_t *uic_ButtonTextSaveCancel;
 extern lv_obj_t *uic_BtnSaveConfirm;
@@ -59,7 +60,6 @@ extern lv_obj_t *uic_PopupList;
 extern lv_obj_t *uic_ButtonTextOpenCancel;
 extern lv_obj_t *uic_BtnFileOpen;
 extern lv_obj_t *uic_FileRollerText;
-extern lv_obj_t *uic_BtnOpenNewFile;
 
 #ifdef __cplusplus
 } /*extern "C"*/
