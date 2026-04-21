@@ -17,7 +17,11 @@ extern lv_obj_t *ui_ScreenWeather;
 extern void ui_event_HomeButton5( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton5;
 extern lv_obj_t *ui_LabelMenu6;
+extern lv_obj_t *ui_RollerWeatherData;
+extern lv_obj_t *ui_Label2;
+extern lv_obj_t *ui_Label3;
 // CUSTOM VARIABLES
+extern lv_obj_t *uic_RollerWeatherData;
 
 #ifdef __cplusplus
 } /*extern "C"*/

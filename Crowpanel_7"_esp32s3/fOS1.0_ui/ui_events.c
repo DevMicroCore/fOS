@@ -50,7 +50,17 @@ void SaveAppearanceChanges(lv_event_t * e)
 	// Your code here
 }
 
+void BackToHomeFromFileManager(lv_event_t * e)
+{
+	// Your code here
+}
+
 void DeleteFileSelected(lv_event_t * e)
+{
+	// Your code here
+}
+
+void BackToHomeFromText(lv_event_t * e)
 {
 	// Your code here
 }
@@ -70,12 +80,22 @@ void load_selected_file(lv_event_t * e)
 	// Your code here
 }
 
+void BackToHomeFromRadio(lv_event_t * e)
+{
+	// Your code here
+}
+
 void setRadioVolume(lv_event_t * e)
 {
 	// Your code here
 }
 
 void PlayRadio(lv_event_t * e)
+{
+	// Your code here
+}
+
+void BackToHomeFromWeather(lv_event_t * e)
 {
 	// Your code here
 }

@@ -14,7 +14,7 @@ extern "C" {
 extern void ui_ScreenHome_screen_init(void);
 extern void ui_ScreenHome_screen_destroy(void);
 extern lv_obj_t *ui_ScreenHome;
-extern lv_obj_t *ui_TabView2;
+extern lv_obj_t *ui_TabViewHome;
 extern lv_obj_t *ui_HomePage1;
 extern void ui_event_AppSettings( lv_event_t * e);
 extern lv_obj_t *ui_AppSettings;
@@ -33,7 +33,6 @@ extern lv_obj_t *ui_AppClock;
 extern void ui_event_AppCalculator( lv_event_t * e);
 extern lv_obj_t *ui_AppCalculator;
 extern lv_obj_t *ui_HomePage2;
-extern lv_obj_t *ui_HomePage3;
 extern lv_obj_t *ui_WiFiImage;
 extern lv_obj_t *ui_labelClockTopLine;
 extern lv_obj_t *ui_BootOverlay;
@@ -42,6 +41,7 @@ extern lv_obj_t *ui_BootProgressBar;
 extern lv_obj_t *ui_BootProgressLabel;
 // CUSTOM VARIABLES
 extern lv_obj_t *uic_ScreenHome;
+extern lv_obj_t *uic_TabViewHome;
 extern lv_obj_t *uic_AppSettings;
 extern lv_obj_t *uic_AppFileManager;
 extern lv_obj_t *uic_AppWeb;

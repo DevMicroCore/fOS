@@ -229,7 +229,7 @@ void initSD()
 
     if (!SD.exists(WIFI_DIR)) {
       SD.mkdir(WIFI_DIR);
-      Serial.println("Ordner //system/wifi erstellt");
+      Serial.println("Ordner /system/wifi erstellt");
     }
 
   } else {
@@ -256,8 +256,11 @@ void readSDInfo()
 }
 
 /* =========================================================
-   WIFI
+   WI-FI
    ========================================================= */
+unsigned long lastReconnectAttempt = 0;
+bool wifiConnecting = false;
+
 extern "C" void SaveWifiConnection_Data(lv_event_t * e)
 {
   if (!sd_ok) return;
@@ -372,11 +375,50 @@ bool connectKnownWifi()
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWLAN verbunden!");
     Serial.println(WiFi.localIP());
+
+    updateWifiIcon();   // ← HIER NEU
     return true;
   }
 
   Serial.println("\nVerbindung fehlgeschlagen");
+  updateWifiIcon();
   return false;
+
+}
+
+void reconnectWifi()
+{
+  if (wifiConnecting) return;
+
+  wifiConnecting = true;
+
+  Serial.println("Starte WLAN Reconnect...");
+
+  WiFi.disconnect(true);
+  delay(100);
+
+  connectKnownWifi();
+
+  wifiConnecting = false;
+}
+
+extern "C" void ReloadWiFiConnection_Data(lv_event_t * e)
+{
+  Serial.println("Manueller WLAN Reload");
+
+  reconnectWifi();
+  updateWifiIcon();
+}
+
+void updateWifiIcon()
+{
+  if (WiFi.status() == WL_CONNECTED) {
+    // Icon anzeigen
+    lv_obj_clear_flag(uic_WiFiImage, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    // Icon ausblenden
+    lv_obj_add_flag(uic_WiFiImage, LV_OBJ_FLAG_HIDDEN);
+  }
 }
 
 
@@ -991,9 +1033,26 @@ void loop()
     lv_timer_handler();
   }
 
-  // 🔊 Audio MUSS ständig laufen
+  // alle 10 Sekunden Wi-Fi prüfen
+  if (millis() - lastReconnectAttempt > 10000) {
+
+    lastReconnectAttempt = millis();
+
+    if (WiFi.status() != WL_CONNECTED) {
+
+      Serial.println("WLAN verloren → suche neu...");
+      reconnectWifi();
+    }
+  }
+
+  static unsigned long lastWifiCheck = 0;
+  if (millis() - lastWifiCheck > 2000) {   // alle 2 Sekunden
+    lastWifiCheck = millis();
+    updateWifiIcon();
+  }
+
+  // Audio
   audio.loop();
 
   delay(5);
 }
-
