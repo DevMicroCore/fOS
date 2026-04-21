@@ -35,6 +35,16 @@ void SaveWifiConnection(lv_event_t * e)
 	// Your code here
 }
 
+void SaveTimeZone(lv_event_t * e)
+{
+	// Your code here
+}
+
+void SaveAppearanceChanges(lv_event_t * e)
+{
+	// Your code here
+}
+
 void DeleteFileSelected(lv_event_t * e)
 {
 	// Your code here
@@ -66,6 +76,11 @@ void PlayRadio(lv_event_t * e)
 }
 
 void StopwatchPlay(lv_event_t * e)
+{
+	// Your code here
+}
+
+void StopwatchReset(lv_event_t * e)
 {
 	// Your code here
 }

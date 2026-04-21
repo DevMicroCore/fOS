@@ -11,7 +11,13 @@
 #define WIFI_DIR  "/system/wifi"
 #define WIFI_FILE "/system/wifi/wlans.txt"
 #define TEXT_DIR "/text"
-#define MUSIC_DIR "/music"
+#define MUSIC_FILES_DIR   "/music/files"
+#define WEBRADIO_DIR      "/music/webradio"
+#define WEBRADIO_FILE     "/music/webradio/webradio.txt"
+
+#define MUSIC_DIR MUSIC_FILES_DIR   // wichtig: Rest vom Code bleibt kompatibel
+#define MAX_WEBRADIOS 30
+
 
 #define MAX_WIFI_PROFILES 5
 
@@ -34,19 +40,12 @@ AudioSource currentSource = AUDIO_NONE;
 bool audioPlaying = false;
 
 struct WebRadioStation {
-  const char* name;
-  const char* url;
+  String name;
+  String url;
 };
 
-WebRadioStation webRadios[] = {
-  { "Radio Paradise", "http://stream.radioparadise.com/mp3-192" },
-  { "SomaFM Groove",  "http://ice1.somafm.com/groovesalad-128-mp3" },
-  { "1LIVE",          "http://wdr-1live-live.icecastssl.wdr.de/wdr/1live/live/mp3/128/stream.mp3" }
-};
-
-const uint8_t WEB_RADIO_COUNT =
-  sizeof(webRadios) / sizeof(webRadios[0]);
-
+WebRadioStation webRadios[MAX_WEBRADIOS];
+int webRadioCount = 0;
 
 /* ================= LVGL ================= */
 static uint32_t last_tick = 0;
@@ -207,10 +206,21 @@ void initSD()
       Serial.println("Ordner /text erstellt");
     }
 
-     if (!SD.exists(MUSIC_DIR)) {
+    if (!SD.exists(MUSIC_DIR)) {
       SD.mkdir(MUSIC_DIR);
       Serial.println("Ordner /music erstellt");
     }
+
+    if (!SD.exists(MUSIC_FILES_DIR)) {
+      SD.mkdir(MUSIC_FILES_DIR);
+      Serial.println("Ordner /music/files erstellt");
+    }
+
+    if (!SD.exists(WEBRADIO_DIR)) {
+      SD.mkdir(WEBRADIO_DIR);
+      Serial.println("Ordner /music/webradio erstellt");
+    }
+
 
     if (!SD.exists("/system")) {
       SD.mkdir("/system");
@@ -659,6 +669,38 @@ extern "C" void OpenNewFile_Data(lv_event_t * e)
    MUSIK ROLLER – RADIO SCREEN
    wird beim Laden des Radio-Screens aufgerufen
    ========================================================= */
+bool loadWebRadiosFromSD()
+{
+  webRadioCount = 0;
+
+  if (!sd_ok) return false;
+  if (!SD.exists(WEBRADIO_FILE)) return false;
+
+  File f = SD.open(WEBRADIO_FILE, FILE_READ);
+  if (!f) return false;
+
+  while (f.available() && webRadioCount < MAX_WEBRADIOS) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+
+    int sep = line.indexOf('|');
+    if (sep < 0) continue;
+
+    webRadios[webRadioCount].name = line.substring(0, sep);
+    webRadios[webRadioCount].url  = line.substring(sep + 1);
+
+    webRadios[webRadioCount].name.trim();
+    webRadios[webRadioCount].url.trim();
+
+    webRadioCount++;
+  }
+
+  f.close();
+  return webRadioCount > 0;
+}
+
+
 extern "C" void fillFileRoller_Radio_Data(void)
 {
   if (!sd_ok) return;
@@ -713,9 +755,17 @@ extern "C" void fillFileRoller_Radio_Data(void)
 
 extern "C" void fillWebRadioRoller_Data(void)
 {
-  String rollerText = "";
+  if (!loadWebRadiosFromSD()) {
+    lv_roller_set_options(
+      uic_RollerOptionWebRadio,
+      "Keine Sender",
+      LV_ROLLER_MODE_NORMAL
+    );
+    return;
+  }
 
-  for (int i = 0; i < WEB_RADIO_COUNT; i++) {
+  String rollerText = "";
+  for (int i = 0; i < webRadioCount; i++) {
     rollerText += webRadios[i].name;
     rollerText += "\n";
   }
@@ -726,11 +776,7 @@ extern "C" void fillWebRadioRoller_Data(void)
     LV_ROLLER_MODE_NORMAL
   );
 
-  lv_roller_set_selected(
-    uic_RollerOptionWebRadio,
-    0,
-    LV_ANIM_OFF
-  );
+  lv_roller_set_selected(uic_RollerOptionWebRadio, 0, LV_ANIM_OFF);
 }
 
 
@@ -823,7 +869,7 @@ int getSelectedWebRadioIndex()
 void playWebRadio()
 {
   int index = getSelectedWebRadioIndex();
-  if (index < 0 || index >= WEB_RADIO_COUNT) return;
+  if (index < 0 || index >= webRadioCount) return;
 
   // Toggle Stop
   if (audioPlaying && currentSource == AUDIO_WEB) {
@@ -842,7 +888,7 @@ void playWebRadio()
   Serial.println("Play Webradio: " + String(webRadios[index].name));
   Serial.println("URL: " + String(webRadios[index].url));
 
-  audio.connecttohost(webRadios[index].url);
+  audio.connecttohost(webRadios[index].url.c_str());
 
   audioPlaying = true;
   currentSource = AUDIO_WEB;

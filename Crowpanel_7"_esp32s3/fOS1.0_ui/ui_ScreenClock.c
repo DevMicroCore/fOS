@@ -6,18 +6,27 @@
 #include "ui.h"
 
 lv_obj_t *uic_LabelStopwatchDisplay;
+lv_obj_t *uic_ButtonStopwatchReset;
 lv_obj_t *uic_LabelStopwatchPlay;
 lv_obj_t *uic_ButtonStopwatchPlay;
 lv_obj_t *uic_Calendar;
 lv_obj_t *uic_RealTimeClock;
 lv_obj_t *uic_TabView1;
-lv_obj_t *ui_ScreenClock = NULL;lv_obj_t *ui_TabView1 = NULL;lv_obj_t *ui_Current_Time = NULL;lv_obj_t *ui_RealTimeClock = NULL;lv_obj_t *ui_Calendar = NULL;lv_obj_t *ui_Stopwatch = NULL;lv_obj_t *ui_ButtonStopwatchPlay = NULL;lv_obj_t *ui_LabelStopwatchPlay = NULL;lv_obj_t *ui_LabelStopwatchDisplay = NULL;lv_obj_t *ui_HomeButton6 = NULL;lv_obj_t *ui_LabelMenu7 = NULL;
+lv_obj_t *ui_ScreenClock = NULL;lv_obj_t *ui_TabView1 = NULL;lv_obj_t *ui_Current_Time = NULL;lv_obj_t *ui_RealTimeClock = NULL;lv_obj_t *ui_Calendar = NULL;lv_obj_t *ui_Stopwatch = NULL;lv_obj_t *ui_ButtonStopwatchPlay = NULL;lv_obj_t *ui_LabelStopwatchPlay = NULL;lv_obj_t *ui_ButtonStopwatchReset = NULL;lv_obj_t *ui_LabelStopwatchReset = NULL;lv_obj_t *ui_LabelStopwatchDisplay = NULL;lv_obj_t *ui_HomeButton6 = NULL;lv_obj_t *ui_LabelMenu7 = NULL;
 // event funtions
 void ui_event_ButtonStopwatchPlay( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_CLICKED) {
       StopwatchPlay( e );
+}
+}
+
+void ui_event_ButtonStopwatchReset( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
+if ( event_code == LV_EVENT_CLICKED) {
+      StopwatchReset( e );
 }
 }
 
@@ -73,6 +82,8 @@ ui_Stopwatch = lv_tabview_add_tab(ui_TabView1, "Stopwatch");
 ui_ButtonStopwatchPlay = lv_btn_create(ui_Stopwatch);
 lv_obj_set_width( ui_ButtonStopwatchPlay, 191);
 lv_obj_set_height( ui_ButtonStopwatchPlay, 50);
+lv_obj_set_x( ui_ButtonStopwatchPlay, 102 );
+lv_obj_set_y( ui_ButtonStopwatchPlay, 0 );
 lv_obj_set_align( ui_ButtonStopwatchPlay, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonStopwatchPlay, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
 lv_obj_clear_flag( ui_ButtonStopwatchPlay, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
@@ -89,6 +100,28 @@ lv_obj_set_style_text_color(ui_LabelStopwatchPlay, lv_color_hex(0x000000), LV_PA
 lv_obj_set_style_text_opa(ui_LabelStopwatchPlay, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelStopwatchPlay, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelStopwatchPlay, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_ButtonStopwatchReset = lv_btn_create(ui_Stopwatch);
+lv_obj_set_width( ui_ButtonStopwatchReset, 191);
+lv_obj_set_height( ui_ButtonStopwatchReset, 50);
+lv_obj_set_x( ui_ButtonStopwatchReset, -102 );
+lv_obj_set_y( ui_ButtonStopwatchReset, 0 );
+lv_obj_set_align( ui_ButtonStopwatchReset, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonStopwatchReset, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonStopwatchReset, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonStopwatchReset, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_ButtonStopwatchReset, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_ButtonStopwatchReset, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelStopwatchReset = lv_label_create(ui_ButtonStopwatchReset);
+lv_obj_set_width( ui_LabelStopwatchReset, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelStopwatchReset, LV_SIZE_CONTENT);   /// 0
+lv_obj_set_align( ui_LabelStopwatchReset, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelStopwatchReset,"Reset");
+lv_obj_set_style_text_color(ui_LabelStopwatchReset, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_text_opa(ui_LabelStopwatchReset, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_decor(ui_LabelStopwatchReset, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_LabelStopwatchReset, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_LabelStopwatchDisplay = lv_label_create(ui_Stopwatch);
 lv_obj_set_width( ui_LabelStopwatchDisplay, LV_SIZE_CONTENT);  /// 1
@@ -122,12 +155,14 @@ lv_obj_set_style_text_decor(ui_LabelMenu7, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_
 lv_obj_set_style_text_font(ui_LabelMenu7, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 lv_obj_add_event_cb(ui_ButtonStopwatchPlay, ui_event_ButtonStopwatchPlay, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_ButtonStopwatchReset, ui_event_ButtonStopwatchReset, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_HomeButton6, ui_event_HomeButton6, LV_EVENT_ALL, NULL);
 uic_TabView1 = ui_TabView1;
 uic_RealTimeClock = ui_RealTimeClock;
 uic_Calendar = ui_Calendar;
 uic_ButtonStopwatchPlay = ui_ButtonStopwatchPlay;
 uic_LabelStopwatchPlay = ui_LabelStopwatchPlay;
+uic_ButtonStopwatchReset = ui_ButtonStopwatchReset;
 uic_LabelStopwatchDisplay = ui_LabelStopwatchDisplay;
 
 }
@@ -150,6 +185,9 @@ uic_ButtonStopwatchPlay= NULL;
 ui_ButtonStopwatchPlay= NULL;
 uic_LabelStopwatchPlay= NULL;
 ui_LabelStopwatchPlay= NULL;
+uic_ButtonStopwatchReset= NULL;
+ui_ButtonStopwatchReset= NULL;
+ui_LabelStopwatchReset= NULL;
 uic_LabelStopwatchDisplay= NULL;
 ui_LabelStopwatchDisplay= NULL;
 ui_HomeButton6= NULL;
