@@ -30,6 +30,9 @@ void ui_event_AppFileManager( lv_event_t * e) {
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenFileManager, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0, &ui_ScreenFileManager_screen_init);
 }
+if ( event_code == LV_EVENT_CLICKED) {
+      updateSDUI( e );
+}
 }
 
 void ui_event_AppWeb( lv_event_t * e) {

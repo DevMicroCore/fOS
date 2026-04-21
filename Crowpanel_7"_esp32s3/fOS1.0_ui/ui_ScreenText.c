@@ -337,6 +337,7 @@ lv_obj_set_style_text_decor(ui_LabelSaveConfirm1, LV_TEXT_DECOR_NONE, LV_PART_MA
 lv_obj_set_style_text_font(ui_LabelSaveConfirm1, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_FileRollerText = lv_roller_create(ui_PopupList);
+lv_roller_set_options( ui_FileRollerText, "No file found", LV_ROLLER_MODE_NORMAL );
 lv_obj_set_width( ui_FileRollerText, 576);
 lv_obj_set_height( ui_FileRollerText, 266);
 lv_obj_set_x( ui_FileRollerText, 0 );

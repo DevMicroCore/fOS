@@ -5,6 +5,11 @@
 
 #include "ui.h"
 
+void updateSDUI(lv_event_t * e)
+{
+	updateSDUIData();
+}
+
 void updateSystemInfo(lv_event_t * e)
 {
 	updateSystemInfoData();
