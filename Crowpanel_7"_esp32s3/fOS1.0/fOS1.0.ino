@@ -311,6 +311,55 @@ extern "C" void load_selected_file_Data(void)
 }
 
 
+/* =========================================================
+   TEXTDATEI SPEICHERN (IMMER ÜBERSCHREIBEN)
+   wird von SquareLine Button aufgerufen
+   ========================================================= */
+extern "C" void save_text_file_data(lv_event_t * e)
+{
+  if (!sd_ok) {
+    Serial.println("SD Karte nicht verfügbar");
+    return;
+  }
+
+  // Text aus der TextArea
+  const char* text = lv_textarea_get_text(uic_TextArea);
+
+  // Dateiname aus dem Input
+  const char* filename = lv_textarea_get_text(uic_FileNameInput);
+
+  if (strlen(filename) == 0) {
+    Serial.println("Dateiname leer");
+    return;
+  }
+
+  String path = "/";
+  path += filename;
+  path += ".txt";
+
+  // 🔥 Datei IMMER überschreiben
+  if (SD.exists(path.c_str())) {
+    SD.remove(path.c_str());
+  }
+
+  File file = SD.open(path.c_str(), FILE_WRITE);
+  if (!file) {
+    Serial.println("Datei konnte nicht erstellt werden");
+    return;
+  }
+
+  file.print(text);   // kein zusätzlicher Zeilenumbruch
+  file.close();
+
+  Serial.println("Datei gespeichert: " + path);
+
+  // 🔄 UI aktualisieren
+  fillFileRoller();
+  updateSDUIData();
+  fillFileRoller_TextViewer_Data();
+}
+
+
 
 
 /* ================= SETUP ================= */

@@ -17,7 +17,15 @@ extern lv_obj_t *ui_ScreenRadio;
 extern void ui_event_HomeButton4( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton4;
 extern lv_obj_t *ui_LabelMenu5;
+extern lv_obj_t *ui_RollerOptionRadio;
+extern lv_obj_t *ui_SliderVolumeRadio;
+extern void ui_event_ButtonPlayRadio( lv_event_t * e);
+extern lv_obj_t *ui_ButtonPlayRadio;
+extern lv_obj_t *ui_LabelPlayRadio;
 // CUSTOM VARIABLES
+extern lv_obj_t *uic_RollerOptionRadio;
+extern lv_obj_t *uic_SliderVolumeRadio;
+extern lv_obj_t *uic_ButtonPlayRadio;
 
 #ifdef __cplusplus
 } /*extern "C"*/

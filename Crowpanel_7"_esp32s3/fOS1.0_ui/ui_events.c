@@ -35,6 +35,21 @@ void load_selected_file(lv_event_t * e)
 	// Your code here
 }
 
+void OpenNewFile(lv_event_t * e)
+{
+	// Your code here
+}
+
+void PlayRadio(lv_event_t * e)
+{
+	// Your code here
+}
+
+void StopwatchPlay(lv_event_t * e)
+{
+	// Your code here
+}
+
 void keypad_event_handler(lv_event_t * e)
 {
 	// Your code here

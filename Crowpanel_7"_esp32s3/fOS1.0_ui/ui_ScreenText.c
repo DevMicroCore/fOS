@@ -5,6 +5,7 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_BtnOpenNewFile;
 lv_obj_t *uic_FileRollerText;
 lv_obj_t *uic_BtnFileOpen;
 lv_obj_t *uic_ButtonTextOpenCancel;
@@ -17,7 +18,7 @@ lv_obj_t *uic_BtnOpenFile;
 lv_obj_t *uic_BtnSaveAs;
 lv_obj_t *uic_TextArea;
 lv_obj_t *uic_KeyboardText;
-lv_obj_t *ui_ScreenText = NULL;lv_obj_t *ui_HomeButton3 = NULL;lv_obj_t *ui_LabelMenu4 = NULL;lv_obj_t *ui_KeyboardText = NULL;lv_obj_t *ui_TextArea = NULL;lv_obj_t *ui_BtnSaveAs = NULL;lv_obj_t *ui_LabelSaveAs = NULL;lv_obj_t *ui_BtnOpenFile = NULL;lv_obj_t *ui_LabelOpenFile = NULL;lv_obj_t *ui_PopupSave = NULL;lv_obj_t *ui_ButtonTextSaveCancel = NULL;lv_obj_t *ui_LabelTextSaveCancel = NULL;lv_obj_t *ui_BtnSaveConfirm = NULL;lv_obj_t *ui_LabelSaveConfirm = NULL;lv_obj_t *ui_FileNameInput = NULL;lv_obj_t *ui_PopupList = NULL;lv_obj_t *ui_ButtonTextOpenCancel = NULL;lv_obj_t *ui_LabelTextOpenCancel = NULL;lv_obj_t *ui_BtnFileOpen = NULL;lv_obj_t *ui_LabelSaveConfirm1 = NULL;lv_obj_t *ui_FileRollerText = NULL;
+lv_obj_t *ui_ScreenText = NULL;lv_obj_t *ui_HomeButton3 = NULL;lv_obj_t *ui_LabelMenu4 = NULL;lv_obj_t *ui_KeyboardText = NULL;lv_obj_t *ui_TextArea = NULL;lv_obj_t *ui_BtnSaveAs = NULL;lv_obj_t *ui_LabelSaveAs = NULL;lv_obj_t *ui_BtnOpenFile = NULL;lv_obj_t *ui_LabelOpenFile = NULL;lv_obj_t *ui_PopupSave = NULL;lv_obj_t *ui_ButtonTextSaveCancel = NULL;lv_obj_t *ui_LabelTextSaveCancel = NULL;lv_obj_t *ui_BtnSaveConfirm = NULL;lv_obj_t *ui_LabelSaveConfirm = NULL;lv_obj_t *ui_FileNameInput = NULL;lv_obj_t *ui_PopupList = NULL;lv_obj_t *ui_ButtonTextOpenCancel = NULL;lv_obj_t *ui_LabelTextOpenCancel = NULL;lv_obj_t *ui_BtnFileOpen = NULL;lv_obj_t *ui_LabelSaveConfirm1 = NULL;lv_obj_t *ui_FileRollerText = NULL;lv_obj_t *ui_BtnOpenNewFile = NULL;lv_obj_t *ui_LabelOpenNewFile = NULL;
 // event funtions
 void ui_event_HomeButton3( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -98,6 +99,14 @@ if ( event_code == LV_EVENT_RELEASED) {
 }
 }
 
+void ui_event_BtnOpenNewFile( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
+if ( event_code == LV_EVENT_CLICKED) {
+      OpenNewFile( e );
+}
+}
+
 // build funtions
 
 void ui_ScreenText_screen_init(void)
@@ -154,9 +163,9 @@ lv_obj_set_style_text_font(ui_TextArea, &lv_font_montserrat_20, LV_PART_CURSOR| 
 lv_obj_set_style_text_font(ui_TextArea, &lv_font_montserrat_20, LV_PART_TEXTAREA_PLACEHOLDER| LV_STATE_DEFAULT);
 
 ui_BtnSaveAs = lv_btn_create(ui_ScreenText);
-lv_obj_set_width( ui_BtnSaveAs, 180);
+lv_obj_set_width( ui_BtnSaveAs, 200);
 lv_obj_set_height( ui_BtnSaveAs, 50);
-lv_obj_set_x( ui_BtnSaveAs, 105 );
+lv_obj_set_x( ui_BtnSaveAs, 76 );
 lv_obj_set_y( ui_BtnSaveAs, -210 );
 lv_obj_set_align( ui_BtnSaveAs, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_BtnSaveAs, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
@@ -165,11 +174,9 @@ lv_obj_set_style_radius(ui_BtnSaveAs, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_bg_color(ui_BtnSaveAs, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_bg_opa(ui_BtnSaveAs, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_LabelSaveAs = lv_label_create(ui_ScreenText);
+ui_LabelSaveAs = lv_label_create(ui_BtnSaveAs);
 lv_obj_set_width( ui_LabelSaveAs, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_LabelSaveAs, LV_SIZE_CONTENT);   /// 0
-lv_obj_set_x( ui_LabelSaveAs, 105 );
-lv_obj_set_y( ui_LabelSaveAs, -210 );
 lv_obj_set_align( ui_LabelSaveAs, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelSaveAs,"Save as . . .");
 lv_obj_set_style_text_color(ui_LabelSaveAs, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
@@ -178,9 +185,9 @@ lv_obj_set_style_text_decor(ui_LabelSaveAs, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV
 lv_obj_set_style_text_font(ui_LabelSaveAs, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_BtnOpenFile = lv_btn_create(ui_ScreenText);
-lv_obj_set_width( ui_BtnOpenFile, 180);
+lv_obj_set_width( ui_BtnOpenFile, 200);
 lv_obj_set_height( ui_BtnOpenFile, 50);
-lv_obj_set_x( ui_BtnOpenFile, 297 );
+lv_obj_set_x( ui_BtnOpenFile, 286 );
 lv_obj_set_y( ui_BtnOpenFile, -210 );
 lv_obj_set_align( ui_BtnOpenFile, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_BtnOpenFile, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
@@ -189,11 +196,9 @@ lv_obj_set_style_radius(ui_BtnOpenFile, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_bg_color(ui_BtnOpenFile, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_bg_opa(ui_BtnOpenFile, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_LabelOpenFile = lv_label_create(ui_ScreenText);
+ui_LabelOpenFile = lv_label_create(ui_BtnOpenFile);
 lv_obj_set_width( ui_LabelOpenFile, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_LabelOpenFile, LV_SIZE_CONTENT);   /// 0
-lv_obj_set_x( ui_LabelOpenFile, 297 );
-lv_obj_set_y( ui_LabelOpenFile, -210 );
 lv_obj_set_align( ui_LabelOpenFile, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelOpenFile,"Open file");
 lv_obj_set_style_text_color(ui_LabelOpenFile, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
@@ -348,6 +353,28 @@ lv_obj_set_align( ui_FileRollerText, LV_ALIGN_CENTER );
 lv_obj_set_style_text_align(ui_FileRollerText, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_FileRollerText, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_BtnOpenNewFile = lv_btn_create(ui_ScreenText);
+lv_obj_set_width( ui_BtnOpenNewFile, 200);
+lv_obj_set_height( ui_BtnOpenNewFile, 50);
+lv_obj_set_x( ui_BtnOpenNewFile, -134 );
+lv_obj_set_y( ui_BtnOpenNewFile, -210 );
+lv_obj_set_align( ui_BtnOpenNewFile, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_BtnOpenNewFile, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_BtnOpenNewFile, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_BtnOpenNewFile, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_BtnOpenNewFile, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_BtnOpenNewFile, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelOpenNewFile = lv_label_create(ui_BtnOpenNewFile);
+lv_obj_set_width( ui_LabelOpenNewFile, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelOpenNewFile, LV_SIZE_CONTENT);   /// 0
+lv_obj_set_align( ui_LabelOpenNewFile, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelOpenNewFile,"Open New File");
+lv_obj_set_style_text_color(ui_LabelOpenNewFile, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_text_opa(ui_LabelOpenNewFile, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_decor(ui_LabelOpenNewFile, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_LabelOpenNewFile, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
 lv_obj_add_event_cb(ui_HomeButton3, ui_event_HomeButton3, LV_EVENT_ALL, NULL);
 lv_keyboard_set_textarea(ui_KeyboardText,ui_TextArea);
 lv_obj_add_event_cb(ui_TextArea, ui_event_TextArea, LV_EVENT_ALL, NULL);
@@ -358,6 +385,7 @@ lv_obj_add_event_cb(ui_BtnSaveConfirm, ui_event_BtnSaveConfirm, LV_EVENT_ALL, NU
 lv_obj_add_event_cb(ui_FileNameInput, ui_event_FileNameInput, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonTextOpenCancel, ui_event_ButtonTextOpenCancel, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_BtnFileOpen, ui_event_BtnFileOpen, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_BtnOpenNewFile, ui_event_BtnOpenNewFile, LV_EVENT_ALL, NULL);
 uic_KeyboardText = ui_KeyboardText;
 uic_TextArea = ui_TextArea;
 uic_BtnSaveAs = ui_BtnSaveAs;
@@ -370,6 +398,7 @@ uic_PopupList = ui_PopupList;
 uic_ButtonTextOpenCancel = ui_ButtonTextOpenCancel;
 uic_BtnFileOpen = ui_BtnFileOpen;
 uic_FileRollerText = ui_FileRollerText;
+uic_BtnOpenNewFile = ui_BtnOpenNewFile;
 
 }
 
@@ -411,5 +440,8 @@ ui_BtnFileOpen= NULL;
 ui_LabelSaveConfirm1= NULL;
 uic_FileRollerText= NULL;
 ui_FileRollerText= NULL;
+uic_BtnOpenNewFile= NULL;
+ui_BtnOpenNewFile= NULL;
+ui_LabelOpenNewFile= NULL;
 
 }

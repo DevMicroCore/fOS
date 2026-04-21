@@ -32,6 +32,8 @@ extern void ui_event_AppCalculator( lv_event_t * e);
 extern lv_obj_t *ui_AppCalculator;
 extern lv_obj_t *ui_BootOverlay;
 extern lv_obj_t *ui_Image1;
+extern lv_obj_t *ui_BootProgressBar;
+extern lv_obj_t *ui_BootProgressLabel;
 // CUSTOM VARIABLES
 extern lv_obj_t *uic_ScreenHome;
 extern lv_obj_t *uic_AppSettings;
@@ -43,6 +45,8 @@ extern lv_obj_t *uic_AppWeather;
 extern lv_obj_t *uic_AppClock;
 extern lv_obj_t *uic_AppCalculator;
 extern lv_obj_t *uic_BootOverlay;
+extern lv_obj_t *uic_BootProgressBar;
+extern lv_obj_t *uic_BootProgressLabel;
 
 #ifdef __cplusplus
 } /*extern "C"*/
