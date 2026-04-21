@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 void updateSDUI(lv_event_t * e);
+void StartAppLauncher(lv_event_t * e);
 void fillFileRoller_TextViewer(lv_event_t * e);
 void fillFileRoller_Radio(lv_event_t * e);
 void StartWeatherApp(lv_event_t * e);

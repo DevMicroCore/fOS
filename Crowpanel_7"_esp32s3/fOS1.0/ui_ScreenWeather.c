@@ -5,14 +5,19 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_LabelWeatherInformation;
+lv_obj_t *uic_LabelWeatherTemperature;
 lv_obj_t *uic_RollerWeatherData;
-lv_obj_t *ui_ScreenWeather = NULL;lv_obj_t *ui_HomeButton5 = NULL;lv_obj_t *ui_LabelMenu6 = NULL;lv_obj_t *ui_RollerWeatherData = NULL;lv_obj_t *ui_Label2 = NULL;lv_obj_t *ui_Label3 = NULL;
+lv_obj_t *ui_ScreenWeather = NULL;lv_obj_t *ui_HomeButton5 = NULL;lv_obj_t *ui_LabelMenu6 = NULL;lv_obj_t *ui_RollerWeatherData = NULL;lv_obj_t *ui_LabelWeatherTemperature = NULL;lv_obj_t *ui_LabelWeatherInformation = NULL;
 // event funtions
 void ui_event_HomeButton5( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_CLICKED) {
-      _ui_screen_change( &ui_ScreenHome, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0, &ui_ScreenHome_screen_init);
+      _ui_screen_change( &ui_ScreenHome, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_ScreenHome_screen_init);
+}
+if ( event_code == LV_EVENT_CLICKED) {
+      BackToHomeFromWeather( e );
 }
 }
 
@@ -58,26 +63,28 @@ lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART
 
 lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_SELECTED| LV_STATE_DEFAULT);
 
-ui_Label2 = lv_label_create(ui_ScreenWeather);
-lv_obj_set_width( ui_Label2, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_Label2, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_Label2, 0 );
-lv_obj_set_y( ui_Label2, -183 );
-lv_obj_set_align( ui_Label2, LV_ALIGN_CENTER );
-lv_label_set_text(ui_Label2,"--°C   --%");
-lv_obj_set_style_text_font(ui_Label2, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
+ui_LabelWeatherTemperature = lv_label_create(ui_ScreenWeather);
+lv_obj_set_width( ui_LabelWeatherTemperature, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelWeatherTemperature, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_LabelWeatherTemperature, 0 );
+lv_obj_set_y( ui_LabelWeatherTemperature, -183 );
+lv_obj_set_align( ui_LabelWeatherTemperature, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelWeatherTemperature,"--°C   --%");
+lv_obj_set_style_text_font(ui_LabelWeatherTemperature, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_Label3 = lv_label_create(ui_ScreenWeather);
-lv_obj_set_width( ui_Label3, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_Label3, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_Label3, 0 );
-lv_obj_set_y( ui_Label3, -124 );
-lv_obj_set_align( ui_Label3, LV_ALIGN_CENTER );
-lv_label_set_text(ui_Label3,"No weather data found");
-lv_obj_set_style_text_font(ui_Label3, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
+ui_LabelWeatherInformation = lv_label_create(ui_ScreenWeather);
+lv_obj_set_width( ui_LabelWeatherInformation, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelWeatherInformation, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_LabelWeatherInformation, 0 );
+lv_obj_set_y( ui_LabelWeatherInformation, -124 );
+lv_obj_set_align( ui_LabelWeatherInformation, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelWeatherInformation,"No weather data found");
+lv_obj_set_style_text_font(ui_LabelWeatherInformation, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 lv_obj_add_event_cb(ui_HomeButton5, ui_event_HomeButton5, LV_EVENT_ALL, NULL);
 uic_RollerWeatherData = ui_RollerWeatherData;
+uic_LabelWeatherTemperature = ui_LabelWeatherTemperature;
+uic_LabelWeatherInformation = ui_LabelWeatherInformation;
 
 }
 
@@ -91,7 +98,9 @@ ui_HomeButton5= NULL;
 ui_LabelMenu6= NULL;
 uic_RollerWeatherData= NULL;
 ui_RollerWeatherData= NULL;
-ui_Label2= NULL;
-ui_Label3= NULL;
+uic_LabelWeatherTemperature= NULL;
+ui_LabelWeatherTemperature= NULL;
+uic_LabelWeatherInformation= NULL;
+ui_LabelWeatherInformation= NULL;
 
 }

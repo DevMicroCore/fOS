@@ -5,7 +5,7 @@
 
 #include "ui.h"
 
-lv_obj_t *ui_ScreenWeb = NULL;lv_obj_t *ui_HomeButton2 = NULL;lv_obj_t *ui_LabelMenu3 = NULL;
+lv_obj_t *ui_ScreenAppLauncher = NULL;lv_obj_t *ui_TabView2 = NULL;lv_obj_t *ui_Page1 = NULL;lv_obj_t *ui_Page2 = NULL;lv_obj_t *ui_Page3 = NULL;lv_obj_t *ui_HomeButton2 = NULL;lv_obj_t *ui_LabelMenu3 = NULL;
 // event funtions
 void ui_event_HomeButton2( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -17,12 +17,29 @@ if ( event_code == LV_EVENT_CLICKED) {
 
 // build funtions
 
-void ui_ScreenWeb_screen_init(void)
+void ui_ScreenAppLauncher_screen_init(void)
 {
-ui_ScreenWeb = lv_obj_create(NULL);
-lv_obj_clear_flag( ui_ScreenWeb, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+ui_ScreenAppLauncher = lv_obj_create(NULL);
+lv_obj_clear_flag( ui_ScreenAppLauncher, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 
-ui_HomeButton2 = lv_btn_create(ui_ScreenWeb);
+ui_TabView2 = lv_tabview_create(ui_ScreenAppLauncher, LV_DIR_BOTTOM, 40);
+lv_obj_set_width( ui_TabView2, 786);
+lv_obj_set_height( ui_TabView2, 461);
+lv_obj_set_align( ui_TabView2, LV_ALIGN_CENTER );
+lv_obj_clear_flag( ui_TabView2, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+
+lv_obj_set_style_text_font(lv_tabview_get_tab_btns(ui_TabView2), &lv_font_montserrat_20,  LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_radius(lv_tabview_get_tab_btns(ui_TabView2), 90,  LV_PART_MAIN| LV_STATE_DEFAULT);
+
+lv_obj_set_style_radius(lv_tabview_get_tab_btns(ui_TabView2), 90,  LV_PART_ITEMS| LV_STATE_DEFAULT);
+
+ui_Page1 = lv_tabview_add_tab(ui_TabView2, "1");
+
+ui_Page2 = lv_tabview_add_tab(ui_TabView2, "2");
+
+ui_Page3 = lv_tabview_add_tab(ui_TabView2, "3");
+
+ui_HomeButton2 = lv_btn_create(ui_ScreenAppLauncher);
 lv_obj_set_width( ui_HomeButton2, 100);
 lv_obj_set_height( ui_HomeButton2, 50);
 lv_obj_set_x( ui_HomeButton2, -340 );
@@ -34,7 +51,7 @@ lv_obj_set_style_radius(ui_HomeButton2, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_bg_color(ui_HomeButton2, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_bg_opa(ui_HomeButton2, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_LabelMenu3 = lv_label_create(ui_ScreenWeb);
+ui_LabelMenu3 = lv_label_create(ui_ScreenAppLauncher);
 lv_obj_set_width( ui_LabelMenu3, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_LabelMenu3, LV_SIZE_CONTENT);   /// 0
 lv_obj_set_x( ui_LabelMenu3, -340 );
@@ -50,12 +67,16 @@ lv_obj_add_event_cb(ui_HomeButton2, ui_event_HomeButton2, LV_EVENT_ALL, NULL);
 
 }
 
-void ui_ScreenWeb_screen_destroy(void)
+void ui_ScreenAppLauncher_screen_destroy(void)
 {
-   if (ui_ScreenWeb) lv_obj_del(ui_ScreenWeb);
+   if (ui_ScreenAppLauncher) lv_obj_del(ui_ScreenAppLauncher);
 
 // NULL screen variables
-ui_ScreenWeb= NULL;
+ui_ScreenAppLauncher= NULL;
+ui_TabView2= NULL;
+ui_Page1= NULL;
+ui_Page2= NULL;
+ui_Page3= NULL;
 ui_HomeButton2= NULL;
 ui_LabelMenu3= NULL;
 

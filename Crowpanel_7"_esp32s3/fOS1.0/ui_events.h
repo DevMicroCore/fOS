@@ -11,18 +11,27 @@ extern "C" {
 #endif
 
 void updateSDUI(lv_event_t * e);
+void StartAppLauncher(lv_event_t * e);
 void fillFileRoller_TextViewer(lv_event_t * e);
 void fillFileRoller_Radio(lv_event_t * e);
+void StartWeatherApp(lv_event_t * e);
 void updateSystemInfo(lv_event_t * e);
 void ReloadWiFiConnection(lv_event_t * e);
 void SaveWifiConnection(lv_event_t * e);
+void SaveTimeZone(lv_event_t * e);
+void SaveAppearanceChanges(lv_event_t * e);
+void BackToHomeFromFileManager(lv_event_t * e);
 void DeleteFileSelected(lv_event_t * e);
+void BackToHomeFromText(lv_event_t * e);
 void OpenNewFile(lv_event_t * e);
 void save_text_file(lv_event_t * e);
 void load_selected_file(lv_event_t * e);
+void BackToHomeFromRadio(lv_event_t * e);
 void setRadioVolume(lv_event_t * e);
 void PlayRadio(lv_event_t * e);
+void BackToHomeFromWeather(lv_event_t * e);
 void StopwatchPlay(lv_event_t * e);
+void StopwatchReset(lv_event_t * e);
 void keypad_event_handler(lv_event_t * e);
 void operator_event_handler(lv_event_t * e);
 

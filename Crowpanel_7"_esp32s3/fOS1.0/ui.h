@@ -31,7 +31,7 @@ extern "C" {
 #include "ui_ScreenHome.h"
 #include "ui_ScreenSettings.h"
 #include "ui_ScreenFileManager.h"
-#include "ui_ScreenWeb.h"
+#include "ui_ScreenAppLauncher.h"
 #include "ui_ScreenText.h"
 #include "ui_ScreenRadio.h"
 #include "ui_ScreenWeather.h"
@@ -46,7 +46,7 @@ extern lv_obj_t *ui____initial_actions0;
 // IMAGES AND IMAGE SETS
 LV_IMG_DECLARE( ui_img_350490791);   // assets/settings-2.png
 LV_IMG_DECLARE( ui_img_folder_png);   // assets/folder.png
-LV_IMG_DECLARE( ui_img_2114985472);   // assets/web-search-engine-2.png
+LV_IMG_DECLARE( ui_img_application_png);   // assets/application.png
 LV_IMG_DECLARE( ui_img_1781796769);   // assets/text-size-2.png
 LV_IMG_DECLARE( ui_img_1607212695);   // assets/radio-11.png
 LV_IMG_DECLARE( ui_img_1045517857);   // assets/cloudy-day-2.png

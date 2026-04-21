@@ -36,7 +36,7 @@ lv_disp_set_theme(dispp, theme);
 ui_ScreenHome_screen_init();
 ui_ScreenSettings_screen_init();
 ui_ScreenFileManager_screen_init();
-ui_ScreenWeb_screen_init();
+ui_ScreenAppLauncher_screen_init();
 ui_ScreenText_screen_init();
 ui_ScreenRadio_screen_init();
 ui_ScreenWeather_screen_init();
@@ -50,7 +50,7 @@ void ui_destroy( void )
 {ui_ScreenHome_screen_destroy();
 ui_ScreenSettings_screen_destroy();
 ui_ScreenFileManager_screen_destroy();
-ui_ScreenWeb_screen_destroy();
+ui_ScreenAppLauncher_screen_destroy();
 ui_ScreenText_screen_destroy();
 ui_ScreenRadio_screen_destroy();
 ui_ScreenWeather_screen_destroy();

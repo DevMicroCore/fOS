@@ -10,6 +10,11 @@ void updateSDUI(lv_event_t * e)
 	updateSDUIData();
 }
 
+void StartAppLauncher(lv_event_t * e)
+{
+	// Your code here
+}
+
 void fillFileRoller_TextViewer(lv_event_t * e)
 {
 	fillFileRoller_TextViewer_Data();
@@ -19,6 +24,11 @@ void fillFileRoller_Radio(lv_event_t * e)
 {
 	fillFileRoller_Radio_Data();
 	fillWebRadioRoller_Data();
+}
+
+void StartWeatherApp(lv_event_t * e)
+{
+	// Your code here
 }
 
 void updateSystemInfo(lv_event_t * e)
@@ -36,11 +46,31 @@ void SaveWifiConnection(lv_event_t * e)
 	SaveWifiConnection_Data();
 }
 
+void SaveTimeZone(lv_event_t * e)
+{
+	// Your code here
+}
+
+void SaveAppearanceChanges(lv_event_t * e)
+{
+	// Your code here
+}
+
+void BackToHomeFromFileManager(lv_event_t * e)
+{
+	// Your code here
+}
+
 void DeleteFileSelected(lv_event_t * e)
 {
 	if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         deleteSelectedFile();
     }
+}
+
+void BackToHomeFromText(lv_event_t * e)
+{
+	// Your code here
 }
 
 void OpenNewFile(lv_event_t * e)
@@ -58,6 +88,11 @@ void load_selected_file(lv_event_t * e)
 	load_selected_file_Data();
 }
 
+void BackToHomeFromRadio(lv_event_t * e)
+{
+	// Your code here
+}
+
 void setRadioVolume(lv_event_t * e)
 {
 	//setRadioVolume_Data();
@@ -68,7 +103,17 @@ void PlayRadio(lv_event_t * e)
 	PlayRadio_data();
 }
 
+void BackToHomeFromWeather(lv_event_t * e)
+{
+	// Your code here
+}
+
 void StopwatchPlay(lv_event_t * e)
+{
+	// Your code here
+}
+
+void StopwatchReset(lv_event_t * e)
 {
 	// Your code here
 }

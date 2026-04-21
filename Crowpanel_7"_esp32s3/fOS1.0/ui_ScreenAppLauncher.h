@@ -3,17 +3,21 @@
 // LVGL version: 8.3.11
 // Project name: fOS_1
 
-#ifndef UI_SCREENWEB_H
-#define UI_SCREENWEB_H
+#ifndef UI_SCREENAPPLAUNCHER_H
+#define UI_SCREENAPPLAUNCHER_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// SCREEN: ui_ScreenWeb
-extern void ui_ScreenWeb_screen_init(void);
-extern void ui_ScreenWeb_screen_destroy(void);
-extern lv_obj_t *ui_ScreenWeb;
+// SCREEN: ui_ScreenAppLauncher
+extern void ui_ScreenAppLauncher_screen_init(void);
+extern void ui_ScreenAppLauncher_screen_destroy(void);
+extern lv_obj_t *ui_ScreenAppLauncher;
+extern lv_obj_t *ui_TabView2;
+extern lv_obj_t *ui_Page1;
+extern lv_obj_t *ui_Page2;
+extern lv_obj_t *ui_Page3;
 extern void ui_event_HomeButton2( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton2;
 extern lv_obj_t *ui_LabelMenu3;
