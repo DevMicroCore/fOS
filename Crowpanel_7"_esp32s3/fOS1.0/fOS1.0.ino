@@ -5,12 +5,14 @@
 #include "Arduino.h"
 #include <SD.h>
 #include <SPI.h>
+#include "Audio.h"
+
 
 #define TEXT_DIR "/text"
+#define MUSIC_DIR "/music"
 
 
 extern "C" void deleteSelectedFile(void);
-
 
 /* ================= DISPLAY ================= */
 LGFX gfx;
@@ -28,6 +30,107 @@ uint64_t totalBytes = 0;
 uint64_t usedBytes  = 0;
 uint64_t freeBytes  = 0;
 int usedPercent     = 0;
+
+
+/* ================= Boot Progress ================= */
+int mapPercent(int value, int inMin, int inMax, int outMin, int outMax)
+{
+  return outMin + (value - inMin) * (outMax - outMin) / (inMax - inMin);
+}
+
+void bootProgress(uint8_t percent, const char* text)
+{
+  lv_tick_inc(20);
+
+  lv_bar_set_value(uic_BootProgressBar, percent, LV_ANIM_ON);
+  lv_label_set_text(uic_BootProgressLabel, text);
+
+  lv_timer_handler();
+  delay(20);
+}
+
+int countTextFiles()
+{
+  int count = 0;
+
+  File dir = SD.open(TEXT_DIR);
+  if (!dir) return 0;
+
+  File file = dir.openNextFile();
+  while (file) {
+    if (!file.isDirectory()) {
+      count++;
+    }
+    file = dir.openNextFile();
+  }
+
+  dir.close();
+  return count;
+}
+
+void fillFileRoller_WithLiveProgress(int bootStart, int bootEnd)
+{
+  if (!sd_ok) return;
+
+  int totalFiles = countTextFiles();
+
+  File dir = SD.open(TEXT_DIR);
+  if (!dir) return;
+
+  String rollerText;
+  int processed = 0;
+
+  if (totalFiles == 0) {
+    bootProgress(bootEnd, "No files found");
+    fillFileRoller();
+    return;
+  }
+
+  File file = dir.openNextFile();
+  while (file) {
+
+    if (!file.isDirectory()) {
+      rollerText += file.name();
+      rollerText += "\n";
+      processed++;
+
+      // 🔁 Datei-Prozent (0–100)
+      int filePercent = (processed * 100) / totalFiles;
+
+      // 🔁 Umrechnen auf BOOT-Bereich (z. B. 30–70)
+      int bootPercent = mapPercent(
+        filePercent,
+        0, 100,
+        bootStart, bootEnd
+      );
+
+      char label[64];
+      snprintf(label, sizeof(label),
+               "Scan files (%d / %d)",
+               processed, totalFiles);
+
+      // 🔄 UI LIVE aktualisieren
+      lv_tick_inc(15);
+      lv_bar_set_value(uic_BootProgressBar, bootPercent, LV_ANIM_ON);
+      lv_label_set_text(uic_BootProgressLabel, label);
+      lv_timer_handler();
+      delay(15);
+    }
+
+    file = dir.openNextFile();
+  }
+
+  dir.close();
+
+  if (rollerText.length() == 0) rollerText = "Keine Dateien";
+
+  lv_roller_set_options(
+    uic_FileRollerFileManager,
+    rollerText.c_str(),
+    LV_ROLLER_MODE_NORMAL
+  );
+}
+
 
 /* ================= DISPLAY FLUSH ================= */
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
@@ -67,6 +170,12 @@ void initSD()
       SD.mkdir(TEXT_DIR);
       Serial.println("Ordner /text erstellt");
     }
+
+     if (!SD.exists(MUSIC_DIR)) {
+      SD.mkdir(MUSIC_DIR);
+      Serial.println("Ordner /music erstellt");
+    }
+
   } else {
     sd_ok = false;
     Serial.println("SD Karte NICHT gefunden");
@@ -367,6 +476,69 @@ extern "C" void save_text_file_data(lv_event_t * e)
   fillFileRoller_TextViewer_Data();
 }
 
+extern "C" void OpenNewFile_Data(lv_event_t * e)
+{
+  lv_textarea_set_text(uic_TextArea, "");
+}
+
+
+/* =========================================================
+   MUSIK
+   MUSIK ROLLER – RADIO SCREEN
+   wird beim Laden des Radio-Screens aufgerufen
+   ========================================================= */
+extern "C" void fillFileRoller_Radio_Data(void)
+{
+  if (!sd_ok) return;
+
+  File root = SD.open(MUSIC_DIR);
+  if (!root) {
+    lv_roller_set_options(
+      uic_RollerOptionRadio,
+      "SD Fehler",
+      LV_ROLLER_MODE_NORMAL
+    );
+    return;
+  }
+
+  String rollerText = "";
+  File file = root.openNextFile();
+
+  while (file) {
+    if (!file.isDirectory()) {
+
+      // optional: nur Musikdateien
+      String name = file.name();
+      name.toLowerCase();
+
+      if (
+        name.endsWith(".mp3") ||
+        name.endsWith(".wav") ||
+        name.endsWith(".ogg")
+      ) {
+        rollerText += file.name();
+        rollerText += "\n";
+      }
+    }
+    file = root.openNextFile();
+  }
+
+  root.close();
+
+  if (rollerText.length() == 0) {
+    rollerText = "Keine Musik";
+  }
+
+  lv_roller_set_options(
+    uic_RollerOptionRadio,
+    rollerText.c_str(),
+    LV_ROLLER_MODE_NORMAL
+  );
+
+  // optional: immer erstes Element auswählen
+  lv_roller_set_selected(uic_RollerOptionRadio, 0, LV_ANIM_OFF);
+}
+
 
 
 
@@ -400,35 +572,49 @@ void setup()
 
   /* ================= UI INIT ================= */
   ui_init();
-
-  /* HomeScreen sicher laden */
   lv_scr_load(uic_ScreenHome);
 
   /* ================= BOOT OVERLAY EIN ================= */
   lv_obj_move_foreground(uic_BootOverlay);
   lv_obj_clear_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
-  lv_timer_handler();   // sofort zeichnen
+  lv_timer_handler();
   delay(20);
 
-  /* ================= LANGSAME INIT ================= */
-  initSD();
-  fillFileRoller();
-  updateSDUIData();
-  fillFileRoller_TextViewer_Data();
 
-  /* ================= BOOT OVERLAY AUS ================= */
-  lv_obj_add_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
+
+  /* ================= BOOT PROGRESS ================= */
+bootProgress(5,  "Start system");
+bootProgress(15, "Initialize display");
+
+bootProgress(25, "Initialize SD card");
+initSD();
+
+bootProgress(30, "Scan files");
+fillFileRoller_WithLiveProgress(30, 70);
+
+bootProgress(80, "Update memory info");
+updateSDUIData();
+
+bootProgress(95, "Start user interface");
+bootProgress(100, "Finished");
+delay(500);
+
+lv_obj_add_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
+
+
 }
-
 
 
 /* ================= LOOP ================= */
 void loop()
 {
-  uint32_t now = millis();
-  lv_tick_inc(now - last_tick);
-  last_tick = now;
 
-  lv_timer_handler();
-  delay(5);
+
+    uint32_t now = millis();
+    if (now - last_tick >= 5) {
+        lv_tick_inc(now - last_tick);
+        last_tick = now;
+        lv_timer_handler();
+    }
+     delay(5);
 }

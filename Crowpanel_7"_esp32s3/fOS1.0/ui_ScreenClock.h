@@ -14,10 +14,25 @@ extern "C" {
 extern void ui_ScreenClock_screen_init(void);
 extern void ui_ScreenClock_screen_destroy(void);
 extern lv_obj_t *ui_ScreenClock;
+extern lv_obj_t *ui_TabView1;
+extern lv_obj_t *ui_Current_Time;
+extern lv_obj_t *ui_RealTimeClock;
+extern lv_obj_t *ui_Calendar;
+extern lv_obj_t *ui_Stopwatch;
+extern void ui_event_ButtonStopwatchPlay( lv_event_t * e);
+extern lv_obj_t *ui_ButtonStopwatchPlay;
+extern lv_obj_t *ui_LabelStopwatchPlay;
+extern lv_obj_t *ui_LabelStopwatchDisplay;
 extern void ui_event_HomeButton6( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton6;
 extern lv_obj_t *ui_LabelMenu7;
 // CUSTOM VARIABLES
+extern lv_obj_t *uic_TabView1;
+extern lv_obj_t *uic_RealTimeClock;
+extern lv_obj_t *uic_Calendar;
+extern lv_obj_t *uic_ButtonStopwatchPlay;
+extern lv_obj_t *uic_LabelStopwatchPlay;
+extern lv_obj_t *uic_LabelStopwatchDisplay;
 
 #ifdef __cplusplus
 } /*extern "C"*/

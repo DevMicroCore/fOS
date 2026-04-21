@@ -5,6 +5,8 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_BootProgressLabel;
+lv_obj_t *uic_BootProgressBar;
 lv_obj_t *uic_BootOverlay;
 lv_obj_t *uic_AppCalculator;
 lv_obj_t *uic_AppClock;
@@ -15,7 +17,7 @@ lv_obj_t *uic_AppWeb;
 lv_obj_t *uic_AppFileManager;
 lv_obj_t *uic_AppSettings;
 lv_obj_t *uic_ScreenHome;
-lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppFileManager = NULL;lv_obj_t *ui_AppWeb = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppRadio = NULL;lv_obj_t *ui_AppWeather = NULL;lv_obj_t *ui_AppClock = NULL;lv_obj_t *ui_AppCalculator = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_Image1 = NULL;
+lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppFileManager = NULL;lv_obj_t *ui_AppWeb = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppRadio = NULL;lv_obj_t *ui_AppWeather = NULL;lv_obj_t *ui_AppClock = NULL;lv_obj_t *ui_AppCalculator = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_Image1 = NULL;lv_obj_t *ui_BootProgressBar = NULL;lv_obj_t *ui_BootProgressLabel = NULL;
 // event funtions
 void ui_event_AppSettings( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -60,6 +62,9 @@ void ui_event_AppRadio( lv_event_t * e) {
 
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenRadio, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0, &ui_ScreenRadio_screen_init);
+}
+if ( event_code == LV_EVENT_CLICKED) {
+      fillFileRoller_Radio( e );
 }
 }
 
@@ -205,6 +210,22 @@ lv_obj_set_align( ui_Image1, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_Image1, LV_OBJ_FLAG_ADV_HITTEST );   /// Flags
 lv_obj_clear_flag( ui_Image1, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 
+ui_BootProgressBar = lv_bar_create(ui_BootOverlay);
+lv_obj_set_width( ui_BootProgressBar, 400);
+lv_obj_set_height( ui_BootProgressBar, 15);
+lv_obj_set_x( ui_BootProgressBar, 0 );
+lv_obj_set_y( ui_BootProgressBar, 128 );
+lv_obj_set_align( ui_BootProgressBar, LV_ALIGN_CENTER );
+
+ui_BootProgressLabel = lv_label_create(ui_BootOverlay);
+lv_obj_set_width( ui_BootProgressLabel, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_BootProgressLabel, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_BootProgressLabel, 2 );
+lv_obj_set_y( ui_BootProgressLabel, 164 );
+lv_obj_set_align( ui_BootProgressLabel, LV_ALIGN_CENTER );
+lv_label_set_text(ui_BootProgressLabel,"Booting . . .");
+lv_obj_set_style_text_font(ui_BootProgressLabel, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
 lv_obj_add_event_cb(ui_AppSettings, ui_event_AppSettings, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_AppFileManager, ui_event_AppFileManager, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_AppWeb, ui_event_AppWeb, LV_EVENT_ALL, NULL);
@@ -223,6 +244,8 @@ uic_AppWeather = ui_AppWeather;
 uic_AppClock = ui_AppClock;
 uic_AppCalculator = ui_AppCalculator;
 uic_BootOverlay = ui_BootOverlay;
+uic_BootProgressBar = ui_BootProgressBar;
+uic_BootProgressLabel = ui_BootProgressLabel;
 
 }
 
@@ -252,5 +275,9 @@ ui_AppCalculator= NULL;
 uic_BootOverlay= NULL;
 ui_BootOverlay= NULL;
 ui_Image1= NULL;
+uic_BootProgressBar= NULL;
+ui_BootProgressBar= NULL;
+uic_BootProgressLabel= NULL;
+ui_BootProgressLabel= NULL;
 
 }

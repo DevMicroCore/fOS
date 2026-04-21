@@ -25,6 +25,11 @@ void updateSystemInfo(lv_event_t * e)
 	// Your code here
 }
 
+void SaveWifiConnection(lv_event_t * e)
+{
+	// Your code here
+}
+
 void DeleteFileSelected(lv_event_t * e)
 {
 	// Your code here
@@ -45,6 +50,11 @@ void load_selected_file(lv_event_t * e)
 	// Your code here
 }
 
+void setRadioVolume(lv_event_t * e)
+{
+	// Your code here
+}
+
 void PlayRadio(lv_event_t * e)
 {
 	// Your code here
@@ -61,16 +71,6 @@ void keypad_event_handler(lv_event_t * e)
 }
 
 void operator_event_handler(lv_event_t * e)
-{
-	// Your code here
-}
-
-void SaveWifiConnection(lv_event_t * e)
-{
-	// Your code here
-}
-
-void setRadioVolume(lv_event_t * e)
 {
 	// Your code here
 }
