@@ -24,8 +24,29 @@ LGFX gfx;
 /* ================= AUDIO ================= */
 Audio audio;
 
-bool radioPlaying = false;
-String currentRadioFile = "";
+enum AudioSource {
+  AUDIO_NONE,
+  AUDIO_FILE,
+  AUDIO_WEB
+};
+
+AudioSource currentSource = AUDIO_NONE;
+bool audioPlaying = false;
+
+struct WebRadioStation {
+  const char* name;
+  const char* url;
+};
+
+WebRadioStation webRadios[] = {
+  { "Radio Paradise", "http://stream.radioparadise.com/mp3-192" },
+  { "SomaFM Groove",  "http://ice1.somafm.com/groovesalad-128-mp3" },
+  { "1LIVE",          "http://wdr-1live-live.icecastssl.wdr.de/wdr/1live/live/mp3/128/stream.mp3" }
+};
+
+const uint8_t WEB_RADIO_COUNT =
+  sizeof(webRadios) / sizeof(webRadios[0]);
+
 
 /* ================= LVGL ================= */
 static uint32_t last_tick = 0;
@@ -690,6 +711,29 @@ extern "C" void fillFileRoller_Radio_Data(void)
   lv_roller_set_selected(uic_RollerOptionRadio, 0, LV_ANIM_OFF);
 }
 
+extern "C" void fillWebRadioRoller_Data(void)
+{
+  String rollerText = "";
+
+  for (int i = 0; i < WEB_RADIO_COUNT; i++) {
+    rollerText += webRadios[i].name;
+    rollerText += "\n";
+  }
+
+  lv_roller_set_options(
+    uic_RollerOptionWebRadio,
+    rollerText.c_str(),
+    LV_ROLLER_MODE_NORMAL
+  );
+
+  lv_roller_set_selected(
+    uic_RollerOptionWebRadio,
+    0,
+    LV_ANIM_OFF
+  );
+}
+
+
 String getSelectedRadioFile()
 {
   char buf[128];
@@ -713,45 +757,105 @@ String getSelectedRadioFile()
   return file;
 }
 
-extern "C" void PlayRadio_data(void)
+void playFilePlayer()
 {
   if (!sd_ok) return;
 
-  // 🔁 Wenn bereits Musik läuft → STOP
-  if (radioPlaying) {
+  // STOP File Player
+  if (audioPlaying && currentSource == AUDIO_FILE) {
     audio.stopSong();
-    radioPlaying = false;
-    currentRadioFile = "";
-
-    Serial.println("Radio stopped");
+    audioPlaying = false;
+    currentSource = AUDIO_NONE;
+    Serial.println("File Player stopped");
     return;
   }
 
-  // ▶️ Neue Datei abspielen
-  String filename = getSelectedRadioFile();
-  if (filename == "") return;
-
-  String path = String(MUSIC_DIR) + "/" + filename;
-
-  if (!SD.exists(path)) {
-    Serial.println("Musikdatei nicht gefunden: " + path);
-    return;
+  // Falls Webradio läuft → stoppen
+  if (audioPlaying && currentSource == AUDIO_WEB) {
+    audio.stopSong();
   }
 
-  Serial.println("Play: " + path);
+  String file = getSelectedFilePlayerFile();
+  if (file == "") return;
 
-  audio.stopSong();                 // Sicherheit
+  String path = String(MUSIC_DIR) + "/" + file;
+  if (!SD.exists(path)) return;
+
   audio.connecttoFS(SD, path.c_str());
 
-  currentRadioFile = filename;
-  radioPlaying = true;
+  audioPlaying = true;
+  currentSource = AUDIO_FILE;
+
+  Serial.println("File Player play: " + path);
 }
+
 
 void audio_eof_mp3(const char *info)
 {
-  Serial.println("End of file");
-  radioPlaying = false;
-  currentRadioFile = "";
+  Serial.println("End of audio");
+
+  audioPlaying = false;
+  currentSource = AUDIO_NONE;
+}
+
+
+String getSelectedFilePlayerFile()
+{
+  char buf[128];
+  lv_roller_get_selected_str(
+    uic_RollerOptionRadio,   // File Player Roller
+    buf,
+    sizeof(buf)
+  );
+
+  String file = String(buf);
+  file.trim();
+
+  if (file.length() == 0 || file == "Keine Musik") return "";
+  return file;
+}
+
+int getSelectedWebRadioIndex()
+{
+  return lv_roller_get_selected(uic_RollerOptionWebRadio);
+}
+
+void playWebRadio()
+{
+  int index = getSelectedWebRadioIndex();
+  if (index < 0 || index >= WEB_RADIO_COUNT) return;
+
+  // Toggle Stop
+  if (audioPlaying && currentSource == AUDIO_WEB) {
+    audio.stopSong();
+    audioPlaying = false;
+    currentSource = AUDIO_NONE;
+    Serial.println("Webradio stopped");
+    return;
+  }
+
+  // Falls File Player läuft → stoppen
+  if (audioPlaying && currentSource == AUDIO_FILE) {
+    audio.stopSong();
+  }
+
+  Serial.println("Play Webradio: " + String(webRadios[index].name));
+  Serial.println("URL: " + String(webRadios[index].url));
+
+  audio.connecttohost(webRadios[index].url);
+
+  audioPlaying = true;
+  currentSource = AUDIO_WEB;
+}
+
+
+
+extern "C" void PlayRadio_data(lv_event_t * e)
+{
+  uint32_t tab = lv_tabview_get_tab_act(uic_TabViewMusicSelector);
+
+  if (tab == 0) playFilePlayer();
+  else if (tab == 1) playWebRadio();
 }
 
 

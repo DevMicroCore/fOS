@@ -8,6 +8,7 @@
 lv_obj_t *uic_BootProgressLabel;
 lv_obj_t *uic_BootProgressBar;
 lv_obj_t *uic_BootOverlay;
+lv_obj_t *uic_labelClockTopLine;
 lv_obj_t *uic_WiFiImage;
 lv_obj_t *uic_AppCalculator;
 lv_obj_t *uic_AppClock;
@@ -18,7 +19,7 @@ lv_obj_t *uic_AppWeb;
 lv_obj_t *uic_AppFileManager;
 lv_obj_t *uic_AppSettings;
 lv_obj_t *uic_ScreenHome;
-lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppFileManager = NULL;lv_obj_t *ui_AppWeb = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppRadio = NULL;lv_obj_t *ui_AppWeather = NULL;lv_obj_t *ui_AppClock = NULL;lv_obj_t *ui_AppCalculator = NULL;lv_obj_t *ui_WiFiImage = NULL;lv_obj_t *ui_Label1 = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_Image1 = NULL;lv_obj_t *ui_BootProgressBar = NULL;lv_obj_t *ui_BootProgressLabel = NULL;
+lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppFileManager = NULL;lv_obj_t *ui_AppWeb = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppRadio = NULL;lv_obj_t *ui_AppWeather = NULL;lv_obj_t *ui_AppClock = NULL;lv_obj_t *ui_AppCalculator = NULL;lv_obj_t *ui_WiFiImage = NULL;lv_obj_t *ui_labelClockTopLine = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_Image1 = NULL;lv_obj_t *ui_BootProgressBar = NULL;lv_obj_t *ui_BootProgressLabel = NULL;
 // event funtions
 void ui_event_AppSettings( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -204,14 +205,14 @@ lv_obj_set_align( ui_WiFiImage, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_WiFiImage, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_ADV_HITTEST );   /// Flags
 lv_obj_clear_flag( ui_WiFiImage, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 
-ui_Label1 = lv_label_create(ui_ScreenHome);
-lv_obj_set_width( ui_Label1, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_Label1, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_Label1, 292 );
-lv_obj_set_y( ui_Label1, -216 );
-lv_obj_set_align( ui_Label1, LV_ALIGN_CENTER );
-lv_label_set_text(ui_Label1,"Mo. 01. Jan. 00:00");
-lv_obj_set_style_text_font(ui_Label1, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
+ui_labelClockTopLine = lv_label_create(ui_ScreenHome);
+lv_obj_set_width( ui_labelClockTopLine, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_labelClockTopLine, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_labelClockTopLine, 292 );
+lv_obj_set_y( ui_labelClockTopLine, -216 );
+lv_obj_set_align( ui_labelClockTopLine, LV_ALIGN_CENTER );
+lv_label_set_text(ui_labelClockTopLine,"Mo. 01. Jan. 00:00");
+lv_obj_set_style_text_font(ui_labelClockTopLine, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_BootOverlay = lv_obj_create(ui_ScreenHome);
 lv_obj_remove_style_all(ui_BootOverlay);
@@ -264,6 +265,7 @@ uic_AppWeather = ui_AppWeather;
 uic_AppClock = ui_AppClock;
 uic_AppCalculator = ui_AppCalculator;
 uic_WiFiImage = ui_WiFiImage;
+uic_labelClockTopLine = ui_labelClockTopLine;
 uic_BootOverlay = ui_BootOverlay;
 uic_BootProgressBar = ui_BootProgressBar;
 uic_BootProgressLabel = ui_BootProgressLabel;
@@ -295,7 +297,8 @@ uic_AppCalculator= NULL;
 ui_AppCalculator= NULL;
 uic_WiFiImage= NULL;
 ui_WiFiImage= NULL;
-ui_Label1= NULL;
+uic_labelClockTopLine= NULL;
+ui_labelClockTopLine= NULL;
 uic_BootOverlay= NULL;
 ui_BootOverlay= NULL;
 ui_Image1= NULL;

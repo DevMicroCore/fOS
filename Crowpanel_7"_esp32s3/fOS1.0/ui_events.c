@@ -18,6 +18,7 @@ void fillFileRoller_TextViewer(lv_event_t * e)
 void fillFileRoller_Radio(lv_event_t * e)
 {
 	fillFileRoller_Radio_Data();
+	fillWebRadioRoller_Data();
 }
 
 void updateSystemInfo(lv_event_t * e)
