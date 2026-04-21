@@ -7,9 +7,12 @@
 #include <SPI.h>
 #include "Audio.h"
 #include <WiFi.h>
+#include <time.h>
 
 #define WIFI_DIR  "/system/wifi"
 #define WIFI_FILE "/system/wifi/wlans.txt"
+#define TIMEZONE_DIR  "/system/timezone"
+#define TIMEZONE_FILE "/system/timezone/timezone.txt"
 #define TEXT_DIR "/text"
 #define MUSIC_FILES_DIR   "/music/files"
 #define WEBRADIO_DIR      "/music/webradio"
@@ -66,6 +69,254 @@ struct WifiProfile {
   String ssid;
   String pass;
 };
+
+struct TimeZoneEntry {
+  const char* label;
+  const char* tzRule;
+};
+
+static const TimeZoneEntry kTimeZones[] = {
+  { "Europe/Berlin (CET/CEST)", "CET-1CEST,M3.5.0,M10.5.0/3" },
+  { "UTC (GMT+0)", "UTC0" },
+  { "Europe/London (GMT/BST)", "GMT0BST,M3.5.0/1,M10.5.0" },
+  { "America/New_York (EST/EDT)", "EST5EDT,M3.2.0/2,M11.1.0/2" },
+  { "America/Chicago (CST/CDT)", "CST6CDT,M3.2.0/2,M11.1.0/2" },
+  { "America/Denver (MST/MDT)", "MST7MDT,M3.2.0/2,M11.1.0/2" },
+  { "America/Los_Angeles (PST/PDT)", "PST8PDT,M3.2.0/2,M11.1.0/2" },
+  { "Europe/Helsinki (EET/EEST)", "EET-2EEST,M3.5.0/3,M10.5.0/4" },
+  { "Asia/Tokyo (JST)", "JST-9" },
+  { "Asia/Seoul (KST)", "KST-9" },
+  { "Asia/Shanghai (CST)", "CST-8" },
+  { "Asia/Kolkata (IST)", "IST-5:30" },
+  { "Australia/Sydney (AEST/AEDT)", "AEST-10AEDT,M10.1.0,M4.1.0/3" },
+  { "Pacific/Auckland (NZST/NZDT)", "NZST-12NZDT,M9.5.0/2,M4.1.0/3" }
+};
+
+static const int kDefaultTimeZoneIndex = 0;
+static int currentTimeZoneIndex = kDefaultTimeZoneIndex;
+static unsigned long lastNtpSyncAttempt = 0;
+static unsigned long lastClockUiUpdate = 0;
+
+static const char* kWeekdaysEn[] = {
+  "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+};
+static const char* kMonthsEn[] = {
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
+
+int getTimeZoneCount()
+{
+  return sizeof(kTimeZones) / sizeof(kTimeZones[0]);
+}
+
+int normalizeTimeZoneIndex(int index)
+{
+  if (index < 0 || index >= getTimeZoneCount()) {
+    return kDefaultTimeZoneIndex;
+  }
+  return index;
+}
+
+int findTimeZoneIndex(const String& value)
+{
+  for (int i = 0; i < getTimeZoneCount(); i++) {
+    if (value == kTimeZones[i].tzRule || value == kTimeZones[i].label) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+bool isSystemTimeValid()
+{
+  return time(nullptr) > 1609459200;  // 2021-01-01
+}
+
+void requestNtpSync(bool force)
+{
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (!force && isSystemTimeValid()) return;
+
+  if (!force && millis() - lastNtpSyncAttempt < 30000) return;
+  lastNtpSyncAttempt = millis();
+
+  configTzTime(
+    kTimeZones[currentTimeZoneIndex].tzRule,
+    "pool.ntp.org",
+    "time.nist.gov",
+    "time.google.com"
+  );
+}
+
+void applyTimeZone(int index, bool syncNtp)
+{
+  currentTimeZoneIndex = normalizeTimeZoneIndex(index);
+
+  setenv("TZ", kTimeZones[currentTimeZoneIndex].tzRule, 1);
+  tzset();
+
+  if (syncNtp) {
+    requestNtpSync(true);
+  }
+}
+
+bool saveCurrentTimeZone()
+{
+  if (!sd_ok) return false;
+
+  if (!SD.exists(TIMEZONE_DIR)) {
+    SD.mkdir(TIMEZONE_DIR);
+  }
+
+  if (SD.exists(TIMEZONE_FILE)) {
+    SD.remove(TIMEZONE_FILE);
+  }
+
+  File f = SD.open(TIMEZONE_FILE, FILE_WRITE);
+  if (!f) return false;
+
+  f.println(kTimeZones[currentTimeZoneIndex].tzRule);
+  f.close();
+  return true;
+}
+
+void loadSavedTimeZone()
+{
+  int zoneIndex = kDefaultTimeZoneIndex;
+
+  if (sd_ok && SD.exists(TIMEZONE_FILE)) {
+    File f = SD.open(TIMEZONE_FILE, FILE_READ);
+    if (f) {
+      String rule = f.readStringUntil('\n');
+      rule.trim();
+      f.close();
+
+      int found = findTimeZoneIndex(rule);
+      if (found >= 0) {
+        zoneIndex = found;
+      }
+    }
+  }
+
+  applyTimeZone(zoneIndex, false);
+
+  if (uic_TimeZoneManager) {
+    lv_roller_set_selected(
+      uic_TimeZoneManager,
+      currentTimeZoneIndex,
+      LV_ANIM_OFF
+    );
+  }
+}
+
+void setupTimeZoneRoller()
+{
+  if (!uic_TimeZoneManager) return;
+
+  String options;
+  options.reserve(512);
+
+  for (int i = 0; i < getTimeZoneCount(); i++) {
+    options += kTimeZones[i].label;
+    if (i + 1 < getTimeZoneCount()) {
+      options += "\n";
+    }
+  }
+
+  lv_roller_set_options(
+    uic_TimeZoneManager,
+    options.c_str(),
+    LV_ROLLER_MODE_NORMAL
+  );
+  lv_roller_set_selected(
+    uic_TimeZoneManager,
+    currentTimeZoneIndex,
+    LV_ANIM_OFF
+  );
+}
+
+void updateClockUI()
+{
+  if (!isSystemTimeValid()) {
+    if (uic_labelClockTopLine) {
+      lv_label_set_text(uic_labelClockTopLine, "Mon. 01. Jan. 00:00");
+    }
+    if (uic_RealTimeClock) {
+      lv_label_set_text(uic_RealTimeClock, "00:00:00");
+    }
+    return;
+  }
+
+  time_t nowTs = time(nullptr);
+  struct tm localTm;
+  localtime_r(&nowTs, &localTm);
+
+  char topLine[40];
+  char clockLine[16];
+
+  snprintf(
+    topLine,
+    sizeof(topLine),
+    "%s. %02d. %s. %02d:%02d",
+    kWeekdaysEn[localTm.tm_wday],
+    localTm.tm_mday,
+    kMonthsEn[localTm.tm_mon],
+    localTm.tm_hour,
+    localTm.tm_min
+  );
+
+  snprintf(
+    clockLine,
+    sizeof(clockLine),
+    "%02d:%02d:%02d",
+    localTm.tm_hour,
+    localTm.tm_min,
+    localTm.tm_sec
+  );
+
+  if (uic_labelClockTopLine) {
+    lv_label_set_text(uic_labelClockTopLine, topLine);
+  }
+  if (uic_RealTimeClock) {
+    lv_label_set_text(uic_RealTimeClock, clockLine);
+  }
+
+  static int lastYear = -1;
+  static int lastMonth = -1;
+  static int lastDay = -1;
+
+  int year = localTm.tm_year + 1900;
+  int month = localTm.tm_mon + 1;
+  int day = localTm.tm_mday;
+
+  if (uic_Calendar &&
+      (year != lastYear || month != lastMonth || day != lastDay)) {
+    lv_calendar_set_today_date(uic_Calendar, year, month, day);
+    lv_calendar_set_showed_date(uic_Calendar, year, month);
+
+    lastYear = year;
+    lastMonth = month;
+    lastDay = day;
+  }
+}
+
+extern "C" void SaveTimeZone_Data(lv_event_t * e)
+{
+  (void)e;
+  if (!uic_TimeZoneManager) return;
+
+  int selected = lv_roller_get_selected(uic_TimeZoneManager);
+  applyTimeZone(selected, true);
+
+  if (saveCurrentTimeZone()) {
+    Serial.println("Zeitzone gespeichert");
+  } else {
+    Serial.println("Zeitzone nicht gespeichert (SD nicht bereit?)");
+  }
+
+  updateClockUI();
+}
 
 /* ================= Boot Progress ================= */
 int mapPercent(int value, int inMin, int inMax, int outMin, int outMax)
@@ -230,6 +481,11 @@ void initSD()
     if (!SD.exists(WIFI_DIR)) {
       SD.mkdir(WIFI_DIR);
       Serial.println("Ordner /system/wifi erstellt");
+    }
+
+    if (!SD.exists(TIMEZONE_DIR)) {
+      SD.mkdir(TIMEZONE_DIR);
+      Serial.println("Ordner /system/timezone erstellt");
     }
 
   } else {
@@ -397,7 +653,9 @@ void reconnectWifi()
   WiFi.disconnect(true);
   delay(100);
 
-  connectKnownWifi();
+  if (connectKnownWifi()) {
+    requestNtpSync(true);
+  }
 
   wifiConnecting = false;
 }
@@ -979,6 +1237,8 @@ void setup()
   /* ================= UI INIT ================= */
   ui_init();
   lv_scr_load(uic_ScreenHome);
+  setupTimeZoneRoller();
+  updateClockUI();
 
   /* ================= BOOT OVERLAY EIN ================= */
   lv_obj_move_foreground(uic_BootOverlay);
@@ -992,6 +1252,8 @@ bootProgress(10, "Initialize display");
 
 bootProgress(15, "Initialize SD card");
 initSD();
+loadSavedTimeZone();
+updateClockUI();
 
 bootProgress(20, "Scan files");
 fillFileRoller_WithLiveProgress(20, 50);
@@ -999,6 +1261,7 @@ fillFileRoller_WithLiveProgress(20, 50);
 bootProgress(60, "Initialize WiFi");
 WiFi.mode(WIFI_STA);
 connectKnownWifi();
+requestNtpSync(true);
 
 /* ================= AUDIO INIT ================= */
 bootProgress(70, "Initialize Audio");
@@ -1018,6 +1281,7 @@ bootProgress(100, "Finished");
 delay(500);
 
 lv_obj_add_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
+updateClockUI();
 
 
 }
@@ -1049,6 +1313,12 @@ void loop()
   if (millis() - lastWifiCheck > 2000) {   // alle 2 Sekunden
     lastWifiCheck = millis();
     updateWifiIcon();
+  }
+
+  if (millis() - lastClockUiUpdate > 1000) {
+    lastClockUiUpdate = millis();
+    requestNtpSync(false);
+    updateClockUI();
   }
 
   // Audio

@@ -1,4 +1,4 @@
-# fOS 1.0
+# fOS 1.1.0
 
 fOS 1.0 is a touchscreen firmware project for ESP32-S3 CrowPanel devices.
 It provides a graphical interface (LVGL) with apps for home/system info, text file management, audio playback (local files + web radio), clock/timezone, and settings.

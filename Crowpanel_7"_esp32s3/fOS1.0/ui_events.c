@@ -5,6 +5,8 @@
 
 #include "ui.h"
 
+void SaveTimeZone_Data(lv_event_t * e);
+
 void updateSDUI(lv_event_t * e)
 {
 	updateSDUIData();
@@ -48,7 +50,7 @@ void SaveWifiConnection(lv_event_t * e)
 
 void SaveTimeZone(lv_event_t * e)
 {
-	// Your code here
+	SaveTimeZone_Data( e );
 }
 
 void BackToHomeFromFileManager(lv_event_t * e)
