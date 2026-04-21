@@ -17,7 +17,6 @@ extern lv_obj_t *ui_ScreenAppLauncher;
 extern lv_obj_t *ui_TabView2;
 extern lv_obj_t *ui_Page1;
 extern lv_obj_t *ui_Page2;
-extern lv_obj_t *ui_Page3;
 extern void ui_event_HomeButton2( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton2;
 extern lv_obj_t *ui_LabelMenu3;

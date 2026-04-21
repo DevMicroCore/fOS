@@ -10,7 +10,7 @@ lv_obj_t *uic_ButtonCalculatorMultiply;
 lv_obj_t *uic_ButtonCalculatorDivide;
 lv_obj_t *uic_TextAreaCalculator;
 lv_obj_t *uic_KeyboardCalculator;
-lv_obj_t *ui_ScreenCalculator = NULL;lv_obj_t *ui_HomeButton7 = NULL;lv_obj_t *ui_LabelMenu8 = NULL;lv_obj_t *ui_KeyboardCalculator = NULL;lv_obj_t *ui_TextAreaCalculator = NULL;lv_obj_t *ui_ButtonCalculatorDivide = NULL;lv_obj_t *ui_LabelDivide = NULL;lv_obj_t *ui_ButtonCalculatorMultiply = NULL;lv_obj_t *ui_LabelMultiply = NULL;lv_obj_t *ui_ButtonCalculatorSubtract = NULL;lv_obj_t *ui_LabelSubtract = NULL;lv_obj_t *ui_ButtonCalculatorAdd = NULL;lv_obj_t *ui_LabelAdd = NULL;
+lv_obj_t *ui_ScreenCalculator = NULL;lv_obj_t *ui_HomeButton7 = NULL;lv_obj_t *ui_LabelMenu8 = NULL;lv_obj_t *ui_KeyboardCalculator = NULL;lv_obj_t *ui_TextAreaCalculator = NULL;lv_obj_t *ui_Container1 = NULL;lv_obj_t *ui_ButtonCalculatorDivide = NULL;lv_obj_t *ui_LabelDivide = NULL;lv_obj_t *ui_ButtonCalculatorAdd = NULL;lv_obj_t *ui_LabelAdd = NULL;lv_obj_t *ui_ButtonCalculatorMultiply = NULL;lv_obj_t *ui_LabelMultiply = NULL;lv_obj_t *ui_ButtonCalculatorSubtract = NULL;lv_obj_t *ui_LabelSubtract = NULL;
 // event funtions
 void ui_event_HomeButton7( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -36,6 +36,14 @@ if ( event_code == LV_EVENT_CLICKED) {
 }
 }
 
+void ui_event_ButtonCalculatorAdd( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
+if ( event_code == LV_EVENT_CLICKED) {
+      operator_event_handler( e );
+}
+}
+
 void ui_event_ButtonCalculatorMultiply( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
@@ -45,14 +53,6 @@ if ( event_code == LV_EVENT_CLICKED) {
 }
 
 void ui_event_ButtonCalculatorSubtract( lv_event_t * e) {
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-if ( event_code == LV_EVENT_CLICKED) {
-      operator_event_handler( e );
-}
-}
-
-void ui_event_ButtonCalculatorAdd( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_CLICKED) {
@@ -96,6 +96,7 @@ lv_obj_set_height( ui_KeyboardCalculator, 286);
 lv_obj_set_x( ui_KeyboardCalculator, 64 );
 lv_obj_set_y( ui_KeyboardCalculator, 93 );
 lv_obj_set_align( ui_KeyboardCalculator, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_KeyboardCalculator, LV_OBJ_FLAG_HIDDEN );   /// Flags
 
 ui_TextAreaCalculator = lv_textarea_create(ui_ScreenCalculator);
 lv_obj_set_width( ui_TextAreaCalculator, 773);
@@ -119,7 +120,15 @@ lv_obj_set_style_text_font(ui_TextAreaCalculator, &lv_font_montserrat_20, LV_PAR
 lv_obj_set_style_text_align(ui_TextAreaCalculator, LV_TEXT_ALIGN_RIGHT, LV_PART_TEXTAREA_PLACEHOLDER| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_TextAreaCalculator, &lv_font_montserrat_20, LV_PART_TEXTAREA_PLACEHOLDER| LV_STATE_DEFAULT);
 
-ui_ButtonCalculatorDivide = lv_btn_create(ui_ScreenCalculator);
+ui_Container1 = lv_obj_create(ui_ScreenCalculator);
+lv_obj_remove_style_all(ui_Container1);
+lv_obj_set_width( ui_Container1, 800);
+lv_obj_set_height( ui_Container1, 480);
+lv_obj_set_align( ui_Container1, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_Container1, LV_OBJ_FLAG_HIDDEN );   /// Flags
+lv_obj_clear_flag( ui_Container1, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+
+ui_ButtonCalculatorDivide = lv_btn_create(ui_Container1);
 lv_obj_set_width( ui_ButtonCalculatorDivide, 120);
 lv_obj_set_height( ui_ButtonCalculatorDivide, 59);
 lv_obj_set_x( ui_ButtonCalculatorDivide, -328 );
@@ -138,45 +147,7 @@ lv_obj_set_align( ui_LabelDivide, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelDivide,"/");
 lv_obj_set_style_text_font(ui_LabelDivide, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_ButtonCalculatorMultiply = lv_btn_create(ui_ScreenCalculator);
-lv_obj_set_width( ui_ButtonCalculatorMultiply, 120);
-lv_obj_set_height( ui_ButtonCalculatorMultiply, 59);
-lv_obj_set_x( ui_ButtonCalculatorMultiply, -328 );
-lv_obj_set_y( ui_ButtonCalculatorMultiply, 57 );
-lv_obj_set_align( ui_ButtonCalculatorMultiply, LV_ALIGN_CENTER );
-lv_obj_add_flag( ui_ButtonCalculatorMultiply, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
-lv_obj_clear_flag( ui_ButtonCalculatorMultiply, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
-lv_obj_set_style_radius(ui_ButtonCalculatorMultiply, 10, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_bg_color(ui_ButtonCalculatorMultiply, lv_color_hex(0x292831), LV_PART_MAIN | LV_STATE_DEFAULT );
-lv_obj_set_style_bg_opa(ui_ButtonCalculatorMultiply, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_LabelMultiply = lv_label_create(ui_ButtonCalculatorMultiply);
-lv_obj_set_width( ui_LabelMultiply, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_LabelMultiply, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_align( ui_LabelMultiply, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelMultiply,"x");
-lv_obj_set_style_text_font(ui_LabelMultiply, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_ButtonCalculatorSubtract = lv_btn_create(ui_ScreenCalculator);
-lv_obj_set_width( ui_ButtonCalculatorSubtract, 120);
-lv_obj_set_height( ui_ButtonCalculatorSubtract, 59);
-lv_obj_set_x( ui_ButtonCalculatorSubtract, -328 );
-lv_obj_set_y( ui_ButtonCalculatorSubtract, 127 );
-lv_obj_set_align( ui_ButtonCalculatorSubtract, LV_ALIGN_CENTER );
-lv_obj_add_flag( ui_ButtonCalculatorSubtract, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
-lv_obj_clear_flag( ui_ButtonCalculatorSubtract, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
-lv_obj_set_style_radius(ui_ButtonCalculatorSubtract, 10, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_bg_color(ui_ButtonCalculatorSubtract, lv_color_hex(0x292831), LV_PART_MAIN | LV_STATE_DEFAULT );
-lv_obj_set_style_bg_opa(ui_ButtonCalculatorSubtract, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_LabelSubtract = lv_label_create(ui_ButtonCalculatorSubtract);
-lv_obj_set_width( ui_LabelSubtract, LV_SIZE_CONTENT);  /// 1
-lv_obj_set_height( ui_LabelSubtract, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_align( ui_LabelSubtract, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelSubtract,"-");
-lv_obj_set_style_text_font(ui_LabelSubtract, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_ButtonCalculatorAdd = lv_btn_create(ui_ScreenCalculator);
+ui_ButtonCalculatorAdd = lv_btn_create(ui_Container1);
 lv_obj_set_width( ui_ButtonCalculatorAdd, 120);
 lv_obj_set_height( ui_ButtonCalculatorAdd, 59);
 lv_obj_set_x( ui_ButtonCalculatorAdd, -328 );
@@ -195,12 +166,50 @@ lv_obj_set_align( ui_LabelAdd, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelAdd,"+");
 lv_obj_set_style_text_font(ui_LabelAdd, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_ButtonCalculatorMultiply = lv_btn_create(ui_Container1);
+lv_obj_set_width( ui_ButtonCalculatorMultiply, 120);
+lv_obj_set_height( ui_ButtonCalculatorMultiply, 59);
+lv_obj_set_x( ui_ButtonCalculatorMultiply, -328 );
+lv_obj_set_y( ui_ButtonCalculatorMultiply, 57 );
+lv_obj_set_align( ui_ButtonCalculatorMultiply, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonCalculatorMultiply, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonCalculatorMultiply, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonCalculatorMultiply, 10, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_ButtonCalculatorMultiply, lv_color_hex(0x292831), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_ButtonCalculatorMultiply, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelMultiply = lv_label_create(ui_ButtonCalculatorMultiply);
+lv_obj_set_width( ui_LabelMultiply, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelMultiply, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_align( ui_LabelMultiply, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelMultiply,"x");
+lv_obj_set_style_text_font(ui_LabelMultiply, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_ButtonCalculatorSubtract = lv_btn_create(ui_Container1);
+lv_obj_set_width( ui_ButtonCalculatorSubtract, 120);
+lv_obj_set_height( ui_ButtonCalculatorSubtract, 59);
+lv_obj_set_x( ui_ButtonCalculatorSubtract, -328 );
+lv_obj_set_y( ui_ButtonCalculatorSubtract, 127 );
+lv_obj_set_align( ui_ButtonCalculatorSubtract, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonCalculatorSubtract, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonCalculatorSubtract, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonCalculatorSubtract, 10, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_ButtonCalculatorSubtract, lv_color_hex(0x292831), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_ButtonCalculatorSubtract, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelSubtract = lv_label_create(ui_ButtonCalculatorSubtract);
+lv_obj_set_width( ui_LabelSubtract, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelSubtract, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_align( ui_LabelSubtract, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelSubtract,"-");
+lv_obj_set_style_text_font(ui_LabelSubtract, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
 lv_obj_add_event_cb(ui_HomeButton7, ui_event_HomeButton7, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_KeyboardCalculator, ui_event_KeyboardCalculator, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonCalculatorDivide, ui_event_ButtonCalculatorDivide, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_ButtonCalculatorAdd, ui_event_ButtonCalculatorAdd, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonCalculatorMultiply, ui_event_ButtonCalculatorMultiply, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonCalculatorSubtract, ui_event_ButtonCalculatorSubtract, LV_EVENT_ALL, NULL);
-lv_obj_add_event_cb(ui_ButtonCalculatorAdd, ui_event_ButtonCalculatorAdd, LV_EVENT_ALL, NULL);
 uic_KeyboardCalculator = ui_KeyboardCalculator;
 uic_TextAreaCalculator = ui_TextAreaCalculator;
 uic_ButtonCalculatorDivide = ui_ButtonCalculatorDivide;
@@ -221,16 +230,17 @@ uic_KeyboardCalculator= NULL;
 ui_KeyboardCalculator= NULL;
 uic_TextAreaCalculator= NULL;
 ui_TextAreaCalculator= NULL;
+ui_Container1= NULL;
 uic_ButtonCalculatorDivide= NULL;
 ui_ButtonCalculatorDivide= NULL;
 ui_LabelDivide= NULL;
+ui_ButtonCalculatorAdd= NULL;
+ui_LabelAdd= NULL;
 uic_ButtonCalculatorMultiply= NULL;
 ui_ButtonCalculatorMultiply= NULL;
 ui_LabelMultiply= NULL;
 uic_ButtonCalculatorSubtract= NULL;
 ui_ButtonCalculatorSubtract= NULL;
 ui_LabelSubtract= NULL;
-ui_ButtonCalculatorAdd= NULL;
-ui_LabelAdd= NULL;
 
 }

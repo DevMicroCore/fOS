@@ -29,9 +29,6 @@ extern lv_obj_t *ui_LabelSettingsWiFi1;
 extern void ui_event_ButtonSettingsTimeZone( lv_event_t * e);
 extern lv_obj_t *ui_ButtonSettingsTimeZone;
 extern lv_obj_t *ui_LabelSettingsTimeZone;
-extern void ui_event_ButtonSettingsAppearance( lv_event_t * e);
-extern lv_obj_t *ui_ButtonSettingsAppearance;
-extern lv_obj_t *ui_LabelSettingsTimeZone1;
 extern lv_obj_t *ui_InfoScreenContainer;
 extern void ui_event_ButtonBack( lv_event_t * e);
 extern lv_obj_t *ui_ButtonBack;
@@ -62,22 +59,10 @@ extern void ui_event_ButtonSaveTimeZone( lv_event_t * e);
 extern lv_obj_t *ui_ButtonSaveTimeZone;
 extern lv_obj_t *ui_LabelBack4;
 extern lv_obj_t *ui_TimeZoneManager;
-extern lv_obj_t *ui_AppearanceContainer;
-extern void ui_event_ButtonBack3( lv_event_t * e);
-extern lv_obj_t *ui_ButtonBack3;
-extern lv_obj_t *ui_LabelBack5;
-extern void ui_event_ButtonSaveAppearance( lv_event_t * e);
-extern lv_obj_t *ui_ButtonSaveAppearance;
-extern lv_obj_t *ui_LabelBack6;
-extern lv_obj_t *ui_ColorwheelSettings;
-extern lv_obj_t *ui_LabelColorwheel;
-extern lv_obj_t *ui_SliderBrightness;
-extern lv_obj_t *ui_LabelBrightness;
 // CUSTOM VARIABLES
 extern lv_obj_t *uic_ScreenSettings;
 extern lv_obj_t *uic_ButtonSettingsSystemInfo;
 extern lv_obj_t *uic_ButtonSettingsTimeZone;
-extern lv_obj_t *uic_ButtonSettingsAppearance;
 extern lv_obj_t *uic_InfoScreenContainer;
 extern lv_obj_t *uic_ButtonBack;
 extern lv_obj_t *uic_systemInfoLabel;
@@ -89,10 +74,6 @@ extern lv_obj_t *uic_KeyboardWifi;
 extern lv_obj_t *uic_TimeZoneContainer;
 extern lv_obj_t *uic_ButtonSaveTimeZone;
 extern lv_obj_t *uic_TimeZoneManager;
-extern lv_obj_t *uic_AppearanceContainer;
-extern lv_obj_t *uic_ButtonSaveAppearance;
-extern lv_obj_t *uic_ColorwheelSettings;
-extern lv_obj_t *uic_SliderBrightness;
 
 #ifdef __cplusplus
 } /*extern "C"*/

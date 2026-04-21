@@ -225,6 +225,7 @@ lv_obj_remove_style_all(ui_BootOverlay);
 lv_obj_set_width( ui_BootOverlay, 800);
 lv_obj_set_height( ui_BootOverlay, 480);
 lv_obj_set_align( ui_BootOverlay, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_BootOverlay, LV_OBJ_FLAG_HIDDEN );   /// Flags
 lv_obj_clear_flag( ui_BootOverlay, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 lv_obj_set_style_bg_color(ui_BootOverlay, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_bg_opa(ui_BootOverlay, 255, LV_PART_MAIN| LV_STATE_DEFAULT);

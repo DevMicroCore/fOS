@@ -11,25 +11,13 @@ lv_obj_t *uic_RollerOptionRadio;
 lv_obj_t *uic_FilePlayerSelector;
 lv_obj_t *uic_TabViewMusicSelector;
 lv_obj_t *uic_ButtonPlayRadio;
-lv_obj_t *uic_SliderVolumeRadio;
-lv_obj_t *ui_ScreenRadio = NULL;lv_obj_t *ui_HomeButton4 = NULL;lv_obj_t *ui_LabelMenu5 = NULL;lv_obj_t *ui_SliderVolumeRadio = NULL;lv_obj_t *ui_ButtonPlayRadio = NULL;lv_obj_t *ui_LabelPlayRadio = NULL;lv_obj_t *ui_TabViewMusicSelector = NULL;lv_obj_t *ui_FilePlayerSelector = NULL;lv_obj_t *ui_RollerOptionRadio = NULL;lv_obj_t *ui_WebRadioSelector = NULL;lv_obj_t *ui_RollerOptionWebRadio = NULL;
+lv_obj_t *ui_ScreenRadio = NULL;lv_obj_t *ui_HomeButton4 = NULL;lv_obj_t *ui_LabelMenu5 = NULL;lv_obj_t *ui_ButtonPlayRadio = NULL;lv_obj_t *ui_LabelPlayRadio = NULL;lv_obj_t *ui_TabViewMusicSelector = NULL;lv_obj_t *ui_FilePlayerSelector = NULL;lv_obj_t *ui_RollerOptionRadio = NULL;lv_obj_t *ui_WebRadioSelector = NULL;lv_obj_t *ui_RollerOptionWebRadio = NULL;
 // event funtions
 void ui_event_HomeButton4( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenHome, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_ScreenHome_screen_init);
-}
-if ( event_code == LV_EVENT_CLICKED) {
-      BackToHomeFromRadio( e );
-}
-}
-
-void ui_event_SliderVolumeRadio( lv_event_t * e) {
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-if ( event_code == LV_EVENT_VALUE_CHANGED) {
-      setRadioVolume( e );
 }
 }
 
@@ -70,20 +58,11 @@ lv_obj_set_style_text_opa(ui_LabelMenu5, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelMenu5, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelMenu5, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_SliderVolumeRadio = lv_slider_create(ui_ScreenRadio);
-lv_slider_set_value( ui_SliderVolumeRadio, 50, LV_ANIM_OFF);
-if (lv_slider_get_mode(ui_SliderVolumeRadio)==LV_SLIDER_MODE_RANGE ) lv_slider_set_left_value( ui_SliderVolumeRadio, 0, LV_ANIM_OFF);
-lv_obj_set_width( ui_SliderVolumeRadio, 770);
-lv_obj_set_height( ui_SliderVolumeRadio, 15);
-lv_obj_set_x( ui_SliderVolumeRadio, 0 );
-lv_obj_set_y( ui_SliderVolumeRadio, -148 );
-lv_obj_set_align( ui_SliderVolumeRadio, LV_ALIGN_CENTER );
-
 ui_ButtonPlayRadio = lv_btn_create(ui_ScreenRadio);
 lv_obj_set_width( ui_ButtonPlayRadio, 162);
 lv_obj_set_height( ui_ButtonPlayRadio, 50);
 lv_obj_set_x( ui_ButtonPlayRadio, 0 );
-lv_obj_set_y( ui_ButtonPlayRadio, -210 );
+lv_obj_set_y( ui_ButtonPlayRadio, -162 );
 lv_obj_set_align( ui_ButtonPlayRadio, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonPlayRadio, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
 lv_obj_clear_flag( ui_ButtonPlayRadio, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
@@ -141,9 +120,7 @@ lv_obj_set_style_text_font(ui_RollerOptionWebRadio, &lv_font_montserrat_20, LV_P
 lv_obj_set_style_text_font(ui_RollerOptionWebRadio, &lv_font_montserrat_20, LV_PART_SELECTED| LV_STATE_DEFAULT);
 
 lv_obj_add_event_cb(ui_HomeButton4, ui_event_HomeButton4, LV_EVENT_ALL, NULL);
-lv_obj_add_event_cb(ui_SliderVolumeRadio, ui_event_SliderVolumeRadio, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonPlayRadio, ui_event_ButtonPlayRadio, LV_EVENT_ALL, NULL);
-uic_SliderVolumeRadio = ui_SliderVolumeRadio;
 uic_ButtonPlayRadio = ui_ButtonPlayRadio;
 uic_TabViewMusicSelector = ui_TabViewMusicSelector;
 uic_FilePlayerSelector = ui_FilePlayerSelector;
@@ -161,8 +138,6 @@ void ui_ScreenRadio_screen_destroy(void)
 ui_ScreenRadio= NULL;
 ui_HomeButton4= NULL;
 ui_LabelMenu5= NULL;
-uic_SliderVolumeRadio= NULL;
-ui_SliderVolumeRadio= NULL;
 uic_ButtonPlayRadio= NULL;
 ui_ButtonPlayRadio= NULL;
 ui_LabelPlayRadio= NULL;

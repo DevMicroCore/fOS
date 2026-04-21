@@ -51,11 +51,6 @@ void SaveTimeZone(lv_event_t * e)
 	// Your code here
 }
 
-void SaveAppearanceChanges(lv_event_t * e)
-{
-	// Your code here
-}
-
 void BackToHomeFromFileManager(lv_event_t * e)
 {
 	// Your code here
@@ -88,24 +83,9 @@ void load_selected_file(lv_event_t * e)
 	load_selected_file_Data();
 }
 
-void BackToHomeFromRadio(lv_event_t * e)
-{
-	// Your code here
-}
-
-void setRadioVolume(lv_event_t * e)
-{
-	//setRadioVolume_Data();
-}
-
 void PlayRadio(lv_event_t * e)
 {
 	PlayRadio_data();
-}
-
-void BackToHomeFromWeather(lv_event_t * e)
-{
-	// Your code here
 }
 
 void StopwatchPlay(lv_event_t * e)

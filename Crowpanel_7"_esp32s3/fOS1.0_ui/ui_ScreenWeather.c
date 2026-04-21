@@ -16,9 +16,6 @@ void ui_event_HomeButton5( lv_event_t * e) {
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenHome, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_ScreenHome_screen_init);
 }
-if ( event_code == LV_EVENT_CLICKED) {
-      BackToHomeFromWeather( e );
-}
 }
 
 // build funtions

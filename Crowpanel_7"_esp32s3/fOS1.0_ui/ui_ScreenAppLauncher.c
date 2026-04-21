@@ -5,7 +5,7 @@
 
 #include "ui.h"
 
-lv_obj_t *ui_ScreenAppLauncher = NULL;lv_obj_t *ui_TabView2 = NULL;lv_obj_t *ui_Page1 = NULL;lv_obj_t *ui_Page2 = NULL;lv_obj_t *ui_Page3 = NULL;lv_obj_t *ui_HomeButton2 = NULL;lv_obj_t *ui_LabelMenu3 = NULL;
+lv_obj_t *ui_ScreenAppLauncher = NULL;lv_obj_t *ui_TabView2 = NULL;lv_obj_t *ui_Page1 = NULL;lv_obj_t *ui_Page2 = NULL;lv_obj_t *ui_HomeButton2 = NULL;lv_obj_t *ui_LabelMenu3 = NULL;
 // event funtions
 void ui_event_HomeButton2( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -36,8 +36,6 @@ lv_obj_set_style_radius(lv_tabview_get_tab_btns(ui_TabView2), 90,  LV_PART_ITEMS
 ui_Page1 = lv_tabview_add_tab(ui_TabView2, "1");
 
 ui_Page2 = lv_tabview_add_tab(ui_TabView2, "2");
-
-ui_Page3 = lv_tabview_add_tab(ui_TabView2, "3");
 
 ui_HomeButton2 = lv_btn_create(ui_ScreenAppLauncher);
 lv_obj_set_width( ui_HomeButton2, 100);
@@ -76,7 +74,6 @@ ui_ScreenAppLauncher= NULL;
 ui_TabView2= NULL;
 ui_Page1= NULL;
 ui_Page2= NULL;
-ui_Page3= NULL;
 ui_HomeButton2= NULL;
 ui_LabelMenu3= NULL;
 

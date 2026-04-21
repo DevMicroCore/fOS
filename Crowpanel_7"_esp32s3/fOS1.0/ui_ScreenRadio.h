@@ -17,8 +17,6 @@ extern lv_obj_t *ui_ScreenRadio;
 extern void ui_event_HomeButton4( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton4;
 extern lv_obj_t *ui_LabelMenu5;
-extern void ui_event_SliderVolumeRadio( lv_event_t * e);
-extern lv_obj_t *ui_SliderVolumeRadio;
 extern void ui_event_ButtonPlayRadio( lv_event_t * e);
 extern lv_obj_t *ui_ButtonPlayRadio;
 extern lv_obj_t *ui_LabelPlayRadio;
@@ -28,7 +26,6 @@ extern lv_obj_t *ui_RollerOptionRadio;
 extern lv_obj_t *ui_WebRadioSelector;
 extern lv_obj_t *ui_RollerOptionWebRadio;
 // CUSTOM VARIABLES
-extern lv_obj_t *uic_SliderVolumeRadio;
 extern lv_obj_t *uic_ButtonPlayRadio;
 extern lv_obj_t *uic_TabViewMusicSelector;
 extern lv_obj_t *uic_FilePlayerSelector;
