@@ -53,6 +53,7 @@ LV_IMG_DECLARE( ui_img_1607212695);   // assets/radio-11.png
 LV_IMG_DECLARE( ui_img_1045517857);   // assets/cloudy-day-2.png
 LV_IMG_DECLARE( ui_img_294430296);   // assets/clock-2.png
 LV_IMG_DECLARE( ui_img_1548352994);   // assets/calculator-2.png
+LV_IMG_DECLARE( ui_img_fos_256x256_png);   // assets/fOS_256x256.png
 
 // UI INIT
 void ui_init(void);

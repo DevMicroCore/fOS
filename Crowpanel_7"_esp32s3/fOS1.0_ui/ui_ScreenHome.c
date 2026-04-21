@@ -5,6 +5,7 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_BootOverlay;
 lv_obj_t *uic_AppCalculator;
 lv_obj_t *uic_AppClock;
 lv_obj_t *uic_AppWeather;
@@ -14,7 +15,7 @@ lv_obj_t *uic_AppWeb;
 lv_obj_t *uic_AppFileManager;
 lv_obj_t *uic_AppSettings;
 lv_obj_t *uic_ScreenHome;
-lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppFileManager = NULL;lv_obj_t *ui_AppWeb = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppRadio = NULL;lv_obj_t *ui_AppWeather = NULL;lv_obj_t *ui_AppClock = NULL;lv_obj_t *ui_AppCalculator = NULL;
+lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppFileManager = NULL;lv_obj_t *ui_AppWeb = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppRadio = NULL;lv_obj_t *ui_AppWeather = NULL;lv_obj_t *ui_AppClock = NULL;lv_obj_t *ui_AppCalculator = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_Image1 = NULL;
 // event funtions
 void ui_event_AppSettings( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -184,6 +185,23 @@ lv_obj_set_style_bg_color(ui_AppCalculator, lv_color_hex(0xFAFAFA), LV_PART_MAIN
 lv_obj_set_style_bg_opa(ui_AppCalculator, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_bg_img_src( ui_AppCalculator, &ui_img_1548352994, LV_PART_MAIN | LV_STATE_DEFAULT );
 
+ui_BootOverlay = lv_obj_create(ui_ScreenHome);
+lv_obj_remove_style_all(ui_BootOverlay);
+lv_obj_set_width( ui_BootOverlay, 800);
+lv_obj_set_height( ui_BootOverlay, 480);
+lv_obj_set_align( ui_BootOverlay, LV_ALIGN_CENTER );
+lv_obj_clear_flag( ui_BootOverlay, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_bg_color(ui_BootOverlay, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_BootOverlay, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_Image1 = lv_img_create(ui_BootOverlay);
+lv_img_set_src(ui_Image1, &ui_img_fos_256x256_png);
+lv_obj_set_width( ui_Image1, LV_SIZE_CONTENT);  /// 256
+lv_obj_set_height( ui_Image1, LV_SIZE_CONTENT);   /// 256
+lv_obj_set_align( ui_Image1, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_Image1, LV_OBJ_FLAG_ADV_HITTEST );   /// Flags
+lv_obj_clear_flag( ui_Image1, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+
 lv_obj_add_event_cb(ui_AppSettings, ui_event_AppSettings, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_AppFileManager, ui_event_AppFileManager, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_AppWeb, ui_event_AppWeb, LV_EVENT_ALL, NULL);
@@ -201,6 +219,7 @@ uic_AppRadio = ui_AppRadio;
 uic_AppWeather = ui_AppWeather;
 uic_AppClock = ui_AppClock;
 uic_AppCalculator = ui_AppCalculator;
+uic_BootOverlay = ui_BootOverlay;
 
 }
 
@@ -227,5 +246,8 @@ uic_AppClock= NULL;
 ui_AppClock= NULL;
 uic_AppCalculator= NULL;
 ui_AppCalculator= NULL;
+uic_BootOverlay= NULL;
+ui_BootOverlay= NULL;
+ui_Image1= NULL;
 
 }
