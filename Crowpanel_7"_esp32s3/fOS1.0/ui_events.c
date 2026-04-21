@@ -6,6 +6,8 @@
 #include "ui.h"
 
 void SaveTimeZone_Data(lv_event_t * e);
+void StopwatchPlay_Data(lv_event_t * e);
+void StopwatchReset_Data(lv_event_t * e);
 
 void updateSDUI(lv_event_t * e)
 {
@@ -92,12 +94,12 @@ void PlayRadio(lv_event_t * e)
 
 void StopwatchPlay(lv_event_t * e)
 {
-	// Your code here
+	StopwatchPlay_Data( e );
 }
 
 void StopwatchReset(lv_event_t * e)
 {
-	// Your code here
+	StopwatchReset_Data( e );
 }
 
 void keypad_event_handler(lv_event_t * e)

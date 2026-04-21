@@ -96,6 +96,10 @@ static const int kDefaultTimeZoneIndex = 0;
 static int currentTimeZoneIndex = kDefaultTimeZoneIndex;
 static unsigned long lastNtpSyncAttempt = 0;
 static unsigned long lastClockUiUpdate = 0;
+static bool stopwatchRunning = false;
+static uint64_t stopwatchElapsedMs = 0;
+static unsigned long stopwatchStartedAtMs = 0;
+static unsigned long lastStopwatchUiUpdate = 0;
 
 static const char* kWeekdaysEn[] = {
   "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
@@ -316,6 +320,72 @@ extern "C" void SaveTimeZone_Data(lv_event_t * e)
   }
 
   updateClockUI();
+}
+
+uint64_t getStopwatchElapsedMs()
+{
+  if (!stopwatchRunning) {
+    return stopwatchElapsedMs;
+  }
+  return stopwatchElapsedMs + (millis() - stopwatchStartedAtMs);
+}
+
+void updateStopwatchUI(bool force)
+{
+  unsigned long now = millis();
+  if (!force && !stopwatchRunning) return;
+  if (!force && (now - lastStopwatchUiUpdate < 100)) return;
+  lastStopwatchUiUpdate = now;
+
+  uint64_t elapsedMs = getStopwatchElapsedMs();
+  uint64_t totalSeconds = elapsedMs / 1000ULL;
+
+  uint32_t hours = totalSeconds / 3600ULL;
+  uint32_t minutes = (totalSeconds % 3600ULL) / 60ULL;
+  uint32_t seconds = totalSeconds % 60ULL;
+
+  char stopwatchText[20];
+  snprintf(
+    stopwatchText,
+    sizeof(stopwatchText),
+    "%02lu:%02lu:%02lu",
+    (unsigned long)hours,
+    (unsigned long)minutes,
+    (unsigned long)seconds
+  );
+
+  if (uic_LabelStopwatchDisplay) {
+    lv_label_set_text(uic_LabelStopwatchDisplay, stopwatchText);
+  }
+  if (uic_LabelStopwatchPlay) {
+    lv_label_set_text(uic_LabelStopwatchPlay, stopwatchRunning ? "||" : ">");
+  }
+}
+
+extern "C" void StopwatchPlay_Data(lv_event_t * e)
+{
+  (void)e;
+
+  if (stopwatchRunning) {
+    stopwatchElapsedMs += millis() - stopwatchStartedAtMs;
+    stopwatchRunning = false;
+  } else {
+    stopwatchStartedAtMs = millis();
+    stopwatchRunning = true;
+  }
+
+  updateStopwatchUI(true);
+}
+
+extern "C" void StopwatchReset_Data(lv_event_t * e)
+{
+  (void)e;
+
+  stopwatchRunning = false;
+  stopwatchElapsedMs = 0;
+  stopwatchStartedAtMs = millis();
+
+  updateStopwatchUI(true);
 }
 
 /* ================= Boot Progress ================= */
@@ -1239,6 +1309,7 @@ void setup()
   lv_scr_load(uic_ScreenHome);
   setupTimeZoneRoller();
   updateClockUI();
+  updateStopwatchUI(true);
 
   /* ================= BOOT OVERLAY EIN ================= */
   lv_obj_move_foreground(uic_BootOverlay);
@@ -1320,6 +1391,8 @@ void loop()
     requestNtpSync(false);
     updateClockUI();
   }
+
+  updateStopwatchUI(false);
 
   // Audio
   audio.loop();
