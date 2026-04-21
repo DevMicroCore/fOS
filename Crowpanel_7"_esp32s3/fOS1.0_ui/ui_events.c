@@ -25,6 +25,11 @@ void updateSystemInfo(lv_event_t * e)
 	// Your code here
 }
 
+void ReloadWiFiConnection(lv_event_t * e)
+{
+	// Your code here
+}
+
 void SaveWifiConnection(lv_event_t * e)
 {
 	// Your code here

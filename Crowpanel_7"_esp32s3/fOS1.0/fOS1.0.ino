@@ -17,6 +17,12 @@ extern "C" void deleteSelectedFile(void);
 /* ================= DISPLAY ================= */
 LGFX gfx;
 
+/* ================= AUDIO ================= */
+Audio audio;
+
+bool radioPlaying = false;
+String currentRadioFile = "";
+
 /* ================= LVGL ================= */
 static uint32_t last_tick = 0;
 static lv_disp_draw_buf_t draw_buf;
@@ -539,6 +545,69 @@ extern "C" void fillFileRoller_Radio_Data(void)
   lv_roller_set_selected(uic_RollerOptionRadio, 0, LV_ANIM_OFF);
 }
 
+String getSelectedRadioFile()
+{
+  char buf[128];
+  lv_roller_get_selected_str(
+    uic_RollerOptionRadio,
+    buf,
+    sizeof(buf)
+  );
+
+  String file = String(buf);
+  file.trim();
+
+  if (
+    file.length() == 0 ||
+    file == "Keine Musik" ||
+    file == "SD Fehler"
+  ) {
+    return "";
+  }
+
+  return file;
+}
+
+extern "C" void PlayRadio_data(void)
+{
+  if (!sd_ok) return;
+
+  // 🔁 Wenn bereits Musik läuft → STOP
+  if (radioPlaying) {
+    audio.stopSong();
+    radioPlaying = false;
+    currentRadioFile = "";
+
+    Serial.println("Radio stopped");
+    return;
+  }
+
+  // ▶️ Neue Datei abspielen
+  String filename = getSelectedRadioFile();
+  if (filename == "") return;
+
+  String path = String(MUSIC_DIR) + "/" + filename;
+
+  if (!SD.exists(path)) {
+    Serial.println("Musikdatei nicht gefunden: " + path);
+    return;
+  }
+
+  Serial.println("Play: " + path);
+
+  audio.stopSong();                 // Sicherheit
+  audio.connecttoFS(SD, path.c_str());
+
+  currentRadioFile = filename;
+  radioPlaying = true;
+}
+
+void audio_eof_mp3(const char *info)
+{
+  Serial.println("End of file");
+  radioPlaying = false;
+  currentRadioFile = "";
+}
 
 
 
@@ -580,8 +649,6 @@ void setup()
   lv_timer_handler();
   delay(20);
 
-
-
   /* ================= BOOT PROGRESS ================= */
 bootProgress(5,  "Start system");
 bootProgress(15, "Initialize display");
@@ -590,7 +657,18 @@ bootProgress(25, "Initialize SD card");
 initSD();
 
 bootProgress(30, "Scan files");
-fillFileRoller_WithLiveProgress(30, 70);
+fillFileRoller_WithLiveProgress(30, 60);
+
+/* ================= AUDIO INIT ================= */
+bootProgress(70, "Initialize Audio");
+audio.setPinout(
+  42,   // I2S_BCLK
+  18,   // I2S_LRC
+  17    // I2S_DOUT
+);
+
+audio.setVolume(21); // 0..21 (CrowPanel Lautsprecher brauchen meist 10–14)
+
 
 bootProgress(80, "Update memory info");
 updateSDUIData();
@@ -608,13 +686,16 @@ lv_obj_add_flag(uic_BootOverlay, LV_OBJ_FLAG_HIDDEN);
 /* ================= LOOP ================= */
 void loop()
 {
+  uint32_t now = millis();
+  if (now - last_tick >= 5) {
+    lv_tick_inc(now - last_tick);
+    last_tick = now;
+    lv_timer_handler();
+  }
 
+  // 🔊 Audio MUSS ständig laufen
+  audio.loop();
 
-    uint32_t now = millis();
-    if (now - last_tick >= 5) {
-        lv_tick_inc(now - last_tick);
-        last_tick = now;
-        lv_timer_handler();
-    }
-     delay(5);
+  delay(5);
 }
+

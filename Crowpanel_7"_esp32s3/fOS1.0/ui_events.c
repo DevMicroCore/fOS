@@ -49,7 +49,7 @@ void load_selected_file(lv_event_t * e)
 
 void PlayRadio(lv_event_t * e)
 {
-	//PlayRadio_data();
+	PlayRadio_data();
 }
 
 void StopwatchPlay(lv_event_t * e)

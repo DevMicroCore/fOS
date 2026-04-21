@@ -5,7 +5,8 @@
 
 #include "ui.h"
 
-lv_obj_t *ui_ScreenWeather = NULL;lv_obj_t *ui_HomeButton5 = NULL;lv_obj_t *ui_LabelMenu6 = NULL;
+lv_obj_t *uic_RollerWeatherData;
+lv_obj_t *ui_ScreenWeather = NULL;lv_obj_t *ui_HomeButton5 = NULL;lv_obj_t *ui_LabelMenu6 = NULL;lv_obj_t *ui_RollerWeatherData = NULL;lv_obj_t *ui_Label2 = NULL;lv_obj_t *ui_Label3 = NULL;
 // event funtions
 void ui_event_HomeButton5( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -46,7 +47,37 @@ lv_obj_set_style_text_opa(ui_LabelMenu6, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelMenu6, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelMenu6, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_RollerWeatherData = lv_roller_create(ui_ScreenWeather);
+lv_roller_set_options( ui_RollerWeatherData, "No Data", LV_ROLLER_MODE_NORMAL );
+lv_obj_set_width( ui_RollerWeatherData, 758);
+lv_obj_set_height( ui_RollerWeatherData, 303);
+lv_obj_set_x( ui_RollerWeatherData, 0 );
+lv_obj_set_y( ui_RollerWeatherData, 70 );
+lv_obj_set_align( ui_RollerWeatherData, LV_ALIGN_CENTER );
+lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_SELECTED| LV_STATE_DEFAULT);
+
+ui_Label2 = lv_label_create(ui_ScreenWeather);
+lv_obj_set_width( ui_Label2, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_Label2, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_Label2, 0 );
+lv_obj_set_y( ui_Label2, -183 );
+lv_obj_set_align( ui_Label2, LV_ALIGN_CENTER );
+lv_label_set_text(ui_Label2,"--°C   --%");
+lv_obj_set_style_text_font(ui_Label2, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_Label3 = lv_label_create(ui_ScreenWeather);
+lv_obj_set_width( ui_Label3, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_Label3, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_Label3, 0 );
+lv_obj_set_y( ui_Label3, -124 );
+lv_obj_set_align( ui_Label3, LV_ALIGN_CENTER );
+lv_label_set_text(ui_Label3,"No weather data found");
+lv_obj_set_style_text_font(ui_Label3, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
+
 lv_obj_add_event_cb(ui_HomeButton5, ui_event_HomeButton5, LV_EVENT_ALL, NULL);
+uic_RollerWeatherData = ui_RollerWeatherData;
 
 }
 
@@ -58,5 +89,9 @@ void ui_ScreenWeather_screen_destroy(void)
 ui_ScreenWeather= NULL;
 ui_HomeButton5= NULL;
 ui_LabelMenu6= NULL;
+uic_RollerWeatherData= NULL;
+ui_RollerWeatherData= NULL;
+ui_Label2= NULL;
+ui_Label3= NULL;
 
 }
