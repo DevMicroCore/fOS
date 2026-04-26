@@ -12,6 +12,8 @@
 #include <time.h>
 #include <ctype.h>
 #include <math.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 void audio_eof_mp3(const char *info);
 void setup();
@@ -117,8 +119,9 @@ static const char* kMonthsEn[] = {
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
-static const int kWeatherMaxForecastDays = 7;
-static const int kWeatherDisplayDays = 5;
+static const int kWeatherDisplayDays = 7;
+static const int kWeatherApiForecastDays = kWeatherDisplayDays + 1; // +1 wegen "ab morgen"
+static const int kWeatherMaxForecastDays = 10;
 
 int getTimeZoneCount()
 {
@@ -596,7 +599,9 @@ void readSDInfo()
    WI-FI
    ========================================================= */
 unsigned long lastReconnectAttempt = 0;
-bool wifiConnecting = false;
+volatile bool wifiConnecting = false;
+TaskHandle_t wifiReconnectTaskHandle = nullptr;
+static const unsigned long kWifiReconnectIntervalMs = 30000;
 
 extern "C" void SaveWifiConnection_Data(lv_event_t * e)
 {
@@ -649,7 +654,7 @@ int loadWifiProfiles(WifiProfile profiles[])
   return count;
 }
 
-bool connectKnownWifi()
+bool connectKnownWifi(bool updateUiState = true)
 {
   WifiProfile profiles[MAX_WIFI_PROFILES];
   int profileCount = loadWifiProfiles(profiles);
@@ -713,14 +718,30 @@ bool connectKnownWifi()
     Serial.println("\nWLAN verbunden!");
     Serial.println(WiFi.localIP());
 
-    updateWifiIcon();   // ← HIER NEU
+    if (updateUiState) updateWifiIcon();
     return true;
   }
 
   Serial.println("\nVerbindung fehlgeschlagen");
-  updateWifiIcon();
+  if (updateUiState) updateWifiIcon();
   return false;
 
+}
+
+void wifiReconnectTaskRunner(void* parameter)
+{
+  (void)parameter;
+
+  WiFi.disconnect(true);
+  delay(100);
+
+  if (connectKnownWifi(false)) {
+    requestNtpSync(true);
+  }
+
+  wifiConnecting = false;
+  wifiReconnectTaskHandle = nullptr;
+  vTaskDelete(nullptr);
 }
 
 void reconnectWifi()
@@ -729,16 +750,22 @@ void reconnectWifi()
 
   wifiConnecting = true;
 
-  Serial.println("Starte WLAN Reconnect...");
+  Serial.println("Starte WLAN Reconnect (async)...");
 
-  WiFi.disconnect(true);
-  delay(100);
+  BaseType_t created = xTaskCreate(
+    wifiReconnectTaskRunner,
+    "wifi_reconnect",
+    8192,
+    nullptr,
+    1,
+    &wifiReconnectTaskHandle
+  );
 
-  if (connectKnownWifi()) {
-    requestNtpSync(true);
+  if (created != pdPASS) {
+    Serial.println("WLAN Task konnte nicht gestartet werden");
+    wifiConnecting = false;
+    wifiReconnectTaskHandle = nullptr;
   }
-
-  wifiConnecting = false;
 }
 
 extern "C" void ReloadWiFiConnection_Data(lv_event_t * e)
@@ -1154,7 +1181,9 @@ extern "C" void StartWeatherApp_Data(lv_event_t * e)
   weatherQuery += String(lon, 4);
   weatherQuery += "&current=temperature_2m,relative_humidity_2m,weather_code";
   weatherQuery += "&daily=weather_code,temperature_2m_max,temperature_2m_min";
-  weatherQuery += "&forecast_days=7&timezone=auto";
+  weatherQuery += "&forecast_days=";
+  weatherQuery += String(kWeatherApiForecastDays);
+  weatherQuery += "&timezone=auto";
 
   String weatherUrl = "https://" + weatherQuery;
 
@@ -1842,8 +1871,7 @@ fillFileRoller_WithLiveProgress(20, 50);
 
 bootProgress(60, "Initialize WiFi");
 WiFi.mode(WIFI_STA);
-connectKnownWifi();
-requestNtpSync(true);
+reconnectWifi();
 
 /* ================= AUDIO INIT ================= */
 bootProgress(70, "Initialize Audio");
@@ -1879,8 +1907,8 @@ void loop()
     lv_timer_handler();
   }
 
-  // alle 10 Sekunden Wi-Fi prüfen
-  if (millis() - lastReconnectAttempt > 10000) {
+  // alle 30 Sekunden Wi-Fi prüfen (non-blocking Reconnect)
+  if (millis() - lastReconnectAttempt > kWifiReconnectIntervalMs) {
 
     lastReconnectAttempt = millis();
 

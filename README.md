@@ -1,17 +1,12 @@
-# fOS 1.3.0
+# fOS 1.3.1
 
-fOS 1.3.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 1.3.1 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 It combines local apps (file manager, text editor, radio player, calculator, clock, settings) with Wi-Fi-based features (weather, NTP time sync) in one LVGL user interface.
 
-## What's New in 1.3.0
+## What's New in 1.3.1
 
-- Added weather app with automatic location lookup (IP-based) and 5-day forecast.
-- Added web radio support via SD station list (`name|url`).
-- Added local audio file player for `.mp3`, `.wav`, and `.ogg` files.
-- Added timezone manager with persistent save to SD card.
-- Added clock improvements (live time, date line, calendar sync) and stopwatch.
-- Added Wi-Fi profile storage and reconnect logic (best known SSID by signal strength).
-- Added boot progress overlay with live file-scan progress.
+- Weather forecast extended from 5 days to 7 days.
+- Fixed an issue where the device could freeze when no Wi-Fi network was found.
 
 ## Prerequisites
 
