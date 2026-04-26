@@ -7,7 +7,15 @@
 #include <SPI.h>
 #include "Audio.h"
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <time.h>
+#include <ctype.h>
+#include <math.h>
+
+void audio_eof_mp3(const char *info);
+void setup();
+void loop();
 
 #define WIFI_DIR  "/system/wifi"
 #define WIFI_FILE "/system/wifi/wlans.txt"
@@ -108,6 +116,9 @@ static const char* kMonthsEn[] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
+
+static const int kWeatherMaxForecastDays = 7;
+static const int kWeatherDisplayDays = 5;
 
 int getTimeZoneCount()
 {
@@ -746,6 +757,506 @@ void updateWifiIcon()
   } else {
     // Icon ausblenden
     lv_obj_add_flag(uic_WiFiImage, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+/* =========================================================
+   WEATHER (Current location via IP + Open-Meteo)
+   ========================================================= */
+bool weatherHttpGet(const String& url, String& response, int* statusOut = nullptr)
+{
+  response = "";
+  HTTPClient http;
+  int httpCode = -1;
+  if (statusOut) *statusOut = httpCode;
+
+  if (url.startsWith("https://")) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    if (!http.begin(client, url)) return false;
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setUserAgent("fOS1.0 Weather/1.0");
+    http.setConnectTimeout(8000);
+    http.setTimeout(12000);
+    httpCode = http.GET();
+  } else {
+    if (!http.begin(url)) return false;
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setUserAgent("fOS1.0 Weather/1.0");
+    http.setConnectTimeout(8000);
+    http.setTimeout(12000);
+    httpCode = http.GET();
+  }
+
+  if (statusOut) *statusOut = httpCode;
+  Serial.printf("Weather GET code: %d\n", httpCode);
+
+  if (httpCode == HTTP_CODE_OK) {
+    response = http.getString();
+  }
+  http.end();
+
+  return httpCode == HTTP_CODE_OK && response.length() > 0;
+}
+
+int findJsonArrayEnd(const String& json, int arrayStart)
+{
+  int depth = 0;
+  for (int i = arrayStart; i < (int)json.length(); i++) {
+    char c = json[i];
+    if (c == '[') depth++;
+    else if (c == ']') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+int findJsonObjectEnd(const String& json, int objectStart)
+{
+  int depth = 0;
+  for (int i = objectStart; i < (int)json.length(); i++) {
+    char c = json[i];
+    if (c == '{') depth++;
+    else if (c == '}') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+bool extractJsonObject(const String& json, const char* key, String& out)
+{
+  out = "";
+  String needle = "\"";
+  needle += key;
+  needle += "\":";
+
+  int pos = json.indexOf(needle);
+  if (pos < 0) return false;
+
+  pos = json.indexOf('{', pos);
+  if (pos < 0) return false;
+
+  int objEnd = findJsonObjectEnd(json, pos);
+  if (objEnd < 0) return false;
+
+  out = json.substring(pos, objEnd + 1);
+  return out.length() > 0;
+}
+
+bool extractJsonStringValue(const String& json, const char* key, String& out)
+{
+  out = "";
+
+  String needle = "\"";
+  needle += key;
+  needle += "\":";
+
+  int pos = json.indexOf(needle);
+  if (pos < 0) return false;
+
+  pos += needle.length();
+  while (pos < (int)json.length() && isspace((unsigned char)json[pos])) pos++;
+  if (pos >= (int)json.length() || json[pos] != '"') return false;
+  pos++;
+
+  int end = pos;
+  while (end < (int)json.length()) {
+    if (json[end] == '"' && json[end - 1] != '\\') break;
+    end++;
+  }
+  if (end >= (int)json.length()) return false;
+
+  out = json.substring(pos, end);
+  return out.length() > 0;
+}
+
+bool extractJsonFloatValue(const String& json, const char* key, float& out)
+{
+  String needle = "\"";
+  needle += key;
+  needle += "\":";
+
+  int pos = json.indexOf(needle);
+  if (pos < 0) return false;
+
+  pos += needle.length();
+  while (pos < (int)json.length() && isspace((unsigned char)json[pos])) pos++;
+  if (pos >= (int)json.length()) return false;
+
+  int start = pos;
+  while (pos < (int)json.length()) {
+    char c = json[pos];
+    if ((c >= '0' && c <= '9') ||
+        c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
+      pos++;
+      continue;
+    }
+    break;
+  }
+
+  if (start == pos) return false;
+
+  out = json.substring(start, pos).toFloat();
+  return true;
+}
+
+int extractJsonFloatArray(const String& json, const char* key, float out[], int maxCount)
+{
+  String needle = "\"";
+  needle += key;
+  needle += "\":";
+
+  int pos = json.indexOf(needle);
+  if (pos < 0) return 0;
+
+  pos = json.indexOf('[', pos);
+  if (pos < 0) return 0;
+
+  int arrayEnd = findJsonArrayEnd(json, pos);
+  if (arrayEnd < 0) return 0;
+
+  int count = 0;
+  int i = pos + 1;
+
+  while (i < arrayEnd && count < maxCount) {
+    while (i < arrayEnd && (isspace((unsigned char)json[i]) || json[i] == ',')) i++;
+    if (i >= arrayEnd) break;
+
+    int start = i;
+    while (i < arrayEnd) {
+      char c = json[i];
+      if ((c >= '0' && c <= '9') ||
+          c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
+        i++;
+        continue;
+      }
+      break;
+    }
+
+    if (start == i) {
+      while (i < arrayEnd && json[i] != ',') i++;
+      continue;
+    }
+
+    out[count++] = json.substring(start, i).toFloat();
+  }
+
+  return count;
+}
+
+int extractJsonStringArray(const String& json, const char* key, String out[], int maxCount)
+{
+  String needle = "\"";
+  needle += key;
+  needle += "\":";
+
+  int pos = json.indexOf(needle);
+  if (pos < 0) return 0;
+
+  pos = json.indexOf('[', pos);
+  if (pos < 0) return 0;
+
+  int arrayEnd = findJsonArrayEnd(json, pos);
+  if (arrayEnd < 0) return 0;
+
+  int count = 0;
+  int i = pos + 1;
+
+  while (i < arrayEnd && count < maxCount) {
+    while (i < arrayEnd && (isspace((unsigned char)json[i]) || json[i] == ',')) i++;
+    if (i >= arrayEnd) break;
+
+    if (json[i] != '"') {
+      while (i < arrayEnd && json[i] != ',') i++;
+      continue;
+    }
+
+    i++;
+    int start = i;
+    while (i < arrayEnd) {
+      if (json[i] == '"' && json[i - 1] != '\\') break;
+      i++;
+    }
+    if (i >= arrayEnd) break;
+
+    out[count++] = json.substring(start, i);
+    i++;
+  }
+
+  return count;
+}
+
+const char* weatherCodeToText(int code)
+{
+  switch (code) {
+    case 0: return "Clear sky";
+    case 1: return "Mainly clear";
+    case 2: return "Partly cloudy";
+    case 3: return "Overcast";
+    case 45: return "Fog";
+    case 48: return "Rime fog";
+    case 51: return "Light drizzle";
+    case 53: return "Drizzle";
+    case 55: return "Dense drizzle";
+    case 56: return "Freezing drizzle";
+    case 57: return "Freezing drizzle";
+    case 61: return "Light rain";
+    case 63: return "Rain";
+    case 65: return "Heavy rain";
+    case 66: return "Freezing rain";
+    case 67: return "Freezing rain";
+    case 71: return "Light snow";
+    case 73: return "Snow";
+    case 75: return "Heavy snow";
+    case 77: return "Snow grains";
+    case 80: return "Rain showers";
+    case 81: return "Rain showers";
+    case 82: return "Heavy showers";
+    case 85: return "Snow showers";
+    case 86: return "Heavy snow showers";
+    case 95: return "Thunderstorm";
+    case 96: return "Storm with hail";
+    case 99: return "Storm with hail";
+    default: return "Unknown";
+  }
+}
+
+bool getCurrentLocation(float& lat, float& lon, String& city)
+{
+  lat = 0.0f;
+  lon = 0.0f;
+  city = "";
+
+  String geoJson;
+  if (!weatherHttpGet(
+      "http://ip-api.com/json/?fields=status,message,lat,lon,city",
+      geoJson)) {
+    return false;
+  }
+
+  String status;
+  if (!extractJsonStringValue(geoJson, "status", status)) return false;
+  if (status != "success") return false;
+
+  float latValue = 0.0f;
+  float lonValue = 0.0f;
+  if (!extractJsonFloatValue(geoJson, "lat", latValue)) return false;
+  if (!extractJsonFloatValue(geoJson, "lon", lonValue)) return false;
+
+  extractJsonStringValue(geoJson, "city", city);
+
+  lat = latValue;
+  lon = lonValue;
+  return true;
+}
+
+void setWeatherUiLoadingState()
+{
+  if (uic_LabelWeatherTemperature) {
+    lv_label_set_text(uic_LabelWeatherTemperature, "--°C   --%");
+  }
+  if (uic_LabelWeatherInformation) {
+    lv_label_set_text(uic_LabelWeatherInformation, "Loading weather...");
+  }
+  if (uic_RollerWeatherData) {
+    lv_roller_set_options(
+      uic_RollerWeatherData,
+      "Loading forecast...",
+      LV_ROLLER_MODE_NORMAL
+    );
+  }
+}
+
+void setWeatherUiErrorState(const char* text)
+{
+  if (uic_LabelWeatherTemperature) {
+    lv_label_set_text(uic_LabelWeatherTemperature, "--°C   --%");
+  }
+  if (uic_LabelWeatherInformation) {
+    lv_label_set_text(uic_LabelWeatherInformation, text);
+  }
+  if (uic_RollerWeatherData) {
+    lv_roller_set_options(uic_RollerWeatherData, "No forecast data", LV_ROLLER_MODE_NORMAL);
+  }
+}
+
+void buildWeatherForecastRoller(
+  const String dailyDates[],
+  const float dailyCodes[],
+  const float dailyMins[],
+  const float dailyMaxs[],
+  int dayCount,
+  String& rollerText
+)
+{
+  rollerText = "";
+  int added = 0;
+
+  for (int i = 1; i < dayCount && added < kWeatherDisplayDays; i++) {
+    if (dailyDates[i].length() < 10) continue;
+
+    String shortDate = dailyDates[i].substring(8, 10);
+    shortDate += ".";
+    shortDate += dailyDates[i].substring(5, 7);
+    shortDate += ".";
+
+    int minT = (int)roundf(dailyMins[i]);
+    int maxT = (int)roundf(dailyMaxs[i]);
+    const char* condition = weatherCodeToText((int)dailyCodes[i]);
+
+    char line[96];
+    snprintf(
+      line,
+      sizeof(line),
+      "%s  %d/%d°C  %s",
+      shortDate.c_str(),
+      minT,
+      maxT,
+      condition
+    );
+
+    if (rollerText.length() > 0) rollerText += "\n";
+    rollerText += line;
+    added++;
+  }
+
+  if (rollerText.length() == 0) {
+    rollerText = "No forecast data";
+  }
+}
+
+extern "C" void StartWeatherApp_Data(lv_event_t * e)
+{
+  (void)e;
+  setWeatherUiLoadingState();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    setWeatherUiErrorState("WiFi not connected");
+    return;
+  }
+
+  float lat = 0.0f;
+  float lon = 0.0f;
+  String city;
+
+  if (!getCurrentLocation(lat, lon, city)) {
+    setWeatherUiErrorState("Location not available");
+    return;
+  }
+
+  String weatherQuery = "api.open-meteo.com/v1/forecast?latitude=";
+  weatherQuery += String(lat, 4);
+  weatherQuery += "&longitude=";
+  weatherQuery += String(lon, 4);
+  weatherQuery += "&current=temperature_2m,relative_humidity_2m,weather_code";
+  weatherQuery += "&daily=weather_code,temperature_2m_max,temperature_2m_min";
+  weatherQuery += "&forecast_days=7&timezone=auto";
+
+  String weatherUrl = "https://" + weatherQuery;
+
+  String weatherJson;
+  int weatherCodePrimary = -1;
+  if (!weatherHttpGet(weatherUrl, weatherJson, &weatherCodePrimary)) {
+    int weatherCodeFallback = -1;
+    String weatherUrlFallback = "http://" + weatherQuery;
+    if (!weatherHttpGet(weatherUrlFallback, weatherJson, &weatherCodeFallback)) {
+      char err[64];
+      snprintf(
+        err,
+        sizeof(err),
+        "Weather unavailable (%d/%d)",
+        weatherCodePrimary,
+        weatherCodeFallback
+      );
+      setWeatherUiErrorState(err);
+      return;
+    }
+  }
+
+  String currentJson;
+  String dailyJson;
+  if (!extractJsonObject(weatherJson, "current", currentJson) ||
+      !extractJsonObject(weatherJson, "daily", dailyJson)) {
+    setWeatherUiErrorState("Weather data invalid");
+    return;
+  }
+
+  float currentTemp = 0.0f;
+  float currentHumidity = 0.0f;
+  float currentCode = -1.0f;
+
+  if (!extractJsonFloatValue(currentJson, "temperature_2m", currentTemp) ||
+      !extractJsonFloatValue(currentJson, "relative_humidity_2m", currentHumidity) ||
+      !extractJsonFloatValue(currentJson, "weather_code", currentCode)) {
+    setWeatherUiErrorState("Weather data invalid");
+    return;
+  }
+
+  String dailyDates[kWeatherMaxForecastDays];
+  float dailyCodes[kWeatherMaxForecastDays];
+  float dailyMaxs[kWeatherMaxForecastDays];
+  float dailyMins[kWeatherMaxForecastDays];
+
+  int dateCount = extractJsonStringArray(
+    dailyJson, "time", dailyDates, kWeatherMaxForecastDays
+  );
+  int codeCount = extractJsonFloatArray(
+    dailyJson, "weather_code", dailyCodes, kWeatherMaxForecastDays
+  );
+  int maxCount = extractJsonFloatArray(
+    dailyJson, "temperature_2m_max", dailyMaxs, kWeatherMaxForecastDays
+  );
+  int minCount = extractJsonFloatArray(
+    dailyJson, "temperature_2m_min", dailyMins, kWeatherMaxForecastDays
+  );
+
+  int dayCount = dateCount;
+  if (codeCount < dayCount) dayCount = codeCount;
+  if (maxCount < dayCount) dayCount = maxCount;
+  if (minCount < dayCount) dayCount = minCount;
+
+  if (uic_LabelWeatherTemperature) {
+    char tempLabel[32];
+    snprintf(
+      tempLabel,
+      sizeof(tempLabel),
+      "%d°C   %d%%",
+      (int)roundf(currentTemp),
+      (int)roundf(currentHumidity)
+    );
+    lv_label_set_text(uic_LabelWeatherTemperature, tempLabel);
+  }
+
+  if (uic_LabelWeatherInformation) {
+    const char* baseCondition = weatherCodeToText((int)currentCode);
+    if (city.length() > 0) {
+      String infoText = String(baseCondition) + " (" + city + ")";
+      lv_label_set_text(uic_LabelWeatherInformation, infoText.c_str());
+    } else {
+      lv_label_set_text(uic_LabelWeatherInformation, baseCondition);
+    }
+  }
+
+  if (uic_RollerWeatherData) {
+    String rollerText;
+    buildWeatherForecastRoller(
+      dailyDates,
+      dailyCodes,
+      dailyMins,
+      dailyMaxs,
+      dayCount,
+      rollerText
+    );
+    lv_roller_set_options(
+      uic_RollerWeatherData,
+      rollerText.c_str(),
+      LV_ROLLER_MODE_NORMAL
+    );
+    lv_roller_set_selected(uic_RollerWeatherData, 0, LV_ANIM_OFF);
   }
 }
 

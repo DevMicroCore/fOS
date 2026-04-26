@@ -1,71 +1,71 @@
-# fOS 1.2.0
+# fOS 1.3.0
 
-fOS 1.0 is a touchscreen firmware project for ESP32-S3 CrowPanel devices.
-It provides a graphical interface (LVGL) with apps for home/system info, text file management, audio playback (local files + web radio), clock/timezone, and settings.
+fOS 1.3.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+It combines local apps (file manager, text editor, radio player, calculator, clock, settings) with Wi-Fi-based features (weather, NTP time sync) in one LVGL user interface.
+
+## What's New in 1.3.0
+
+- Added weather app with automatic location lookup (IP-based) and 5-day forecast.
+- Added web radio support via SD station list (`name|url`).
+- Added local audio file player for `.mp3`, `.wav`, and `.ogg` files.
+- Added timezone manager with persistent save to SD card.
+- Added clock improvements (live time, date line, calendar sync) and stopwatch.
+- Added Wi-Fi profile storage and reconnect logic (best known SSID by signal strength).
+- Added boot progress overlay with live file-scan progress.
 
 ## Prerequisites
 
 ### Hardware
-- ESP32-S3 CrowPanel (configured in this project for `CrowPanel_70` by default)
+- ESP32-S3 CrowPanel (default project config is `CrowPanel_70`)
 - microSD card
 - USB cable for flashing
 
 ### Software
-- Arduino IDE 2.x (recommended)
-- ESP32 board package for Arduino (Espressif)
-- Required Arduino libraries:
+- Arduino IDE 2.x
+- ESP32 board package: `esp32 by Espressif Systems`
+- Arduino libraries:
   - `lvgl`
   - `LovyanGFX`
-  - `Audio` (library providing `Audio.h`, e.g. ESP32 audio/I2S)
+  - `ESP32-audioI2S` (provides `Audio.h`)
 
-### Board/Project Notes
-- This project targets ESP32-S3 panels (`LGFX_CrowPanel.h`).
-- If you use a different CrowPanel size, switch the define in `LGFX_CrowPanel.h`:
+### Notes
+- The active panel type is set in `LGFX_CrowPanel.h`.
+- Supported panel defines in this project:
   - `CrowPanel_70`
   - `CrowPanel_50`
   - `CrowPanel_43`
-- SD chip select is currently set to `SD_CS = 10` in `fOS1.0.ino`. Change it if your hardware wiring differs.
+- SD chip-select is set to `SD_CS = 10` in `fOS1.0.ino`. Adjust if your board requires a different pin.
 
-## Installation Guide
+## Installation
 
 1. Install Arduino IDE 2.x.
-2. In Arduino IDE, install the **ESP32 by Espressif Systems** board package.
-3. Install the required libraries (`lvgl`, `LovyanGFX`, `Audio`).
-4. Open this project folder and load `fOS1.0.ino`.
-5. Select the correct board (ESP32-S3 compatible target) and COM port.
-6. Verify that `LGFX_CrowPanel.h` matches your panel size.
-7. Flash/upload the firmware.
-8. Insert a correctly formatted microSD card (see next section) and reboot.
+2. Install `esp32 by Espressif Systems` in Board Manager.
+3. Install required libraries: `lvgl`, `LovyanGFX`, `ESP32-audioI2S`.
+4. Open `fOS1.0.ino` in Arduino IDE.
+5. Select your ESP32-S3 target board and serial port.
+6. Verify panel define in `LGFX_CrowPanel.h`.
+7. Build and upload firmware.
+8. Prepare SD card as described below and insert it.
+9. Reboot the device.
 
-## SD Card Format (Important)
+## SD Card Setup
 
-Before first use, format the microSD card as:
-- **FAT32** (recommended, MBR partition table)
+### Required format
+- Filesystem: `FAT32`
+- Partition scheme: MBR (recommended)
 
-Notes:
-- Avoid exFAT/NTFS for this project.
-- A clean FAT32 card is best for first boot.
+Use a clean FAT32 card for first boot. Avoid exFAT and NTFS.
 
-## Where to Put Files on the SD Card
+### SD folder and file layout
 
-On startup, the firmware creates required folders automatically if missing.
+The firmware creates missing folders automatically on startup.
 
-### Text files
-- Folder: `/text`
-- Used by the Text/File Manager app
-- Text files are stored/read as `.txt`
-
-### Local music files
-- Folder: `/music/files`
-- Supported file extensions for listing/playback:
-  - `.mp3`
-  - `.wav`
-  - `.ogg`
-
-### Web radio station list
-- File: `/music/webradio/webradio.txt`
-- Format: one station per line
-- Line format:
+- `/text`
+  - Text files used by file manager and text editor
+- `/music/files`
+  - Local audio files (`.mp3`, `.wav`, `.ogg`)
+- `/music/webradio/webradio.txt`
+  - Web radio station list, one entry per line in this format:
 
 ```text
 Station Name|https://stream-url.example
@@ -78,26 +78,42 @@ Lofi Radio|https://example.com/lofi-stream
 News Live|https://example.com/news-stream
 ```
 
-### Optional system files (managed by firmware/UI)
-- Wi-Fi profiles: `/system/wifi/wlans.txt`
-  - Format: `SSID|PASSWORD` (one per line)
-- Timezone setting: `/system/timezone/timezone.txt`
-  - Saved automatically by the firmware
+Optional system-managed files (created/used by firmware):
+
+- `/system/wifi/wlans.txt`
+  - Wi-Fi profiles as `SSID|PASSWORD` (one per line)
+- `/system/timezone/timezone.txt`
+  - Saved timezone rule
+
+## Included Apps
+
+- Home
+- App Launcher
+- File Manager (SD file list, delete)
+- Text Editor (open, create, overwrite-save)
+- Radio (local file player + web radio)
+- Weather (current weather + forecast)
+- Clock (real-time clock, calendar, stopwatch)
+- Calculator
+- Settings (Wi-Fi, system info, timezone)
 
 ## First Boot Behavior
 
-At boot, fOS initializes SD, UI, Wi-Fi, audio, and app data.
-If the SD card is detected, missing folders are created automatically.
+On boot, fOS initializes display, SD card, UI, Wi-Fi, audio, and cached data.
+If SD is available, missing directories are created automatically.
 
 ## Troubleshooting
 
-- **"SD card not detected"**:
-  - Check card format (FAT32)
-  - Check SD wiring/slot
-  - Verify `SD_CS` pin in `fOS1.0.ino`
-- **No music files shown**:
-  - Put files in `/music/files`
+- SD not detected:
+  - Reformat SD to FAT32
+  - Check card seating and hardware wiring
+  - Verify `SD_CS` value in `fOS1.0.ino`
+- No local music files listed:
+  - Place files in `/music/files`
   - Use supported extensions (`.mp3`, `.wav`, `.ogg`)
-- **No web radio stations shown**:
+- No web radio stations listed:
   - Ensure `/music/webradio/webradio.txt` exists
-  - Check `name|url` format per line
+  - Validate `name|url` format
+- Weather not loading:
+  - Check Wi-Fi connectivity
+  - Ensure internet access for geolocation and weather API requests

@@ -8,6 +8,7 @@
 void SaveTimeZone_Data(lv_event_t * e);
 void StopwatchPlay_Data(lv_event_t * e);
 void StopwatchReset_Data(lv_event_t * e);
+void StartWeatherApp_Data(lv_event_t * e);
 
 void updateSDUI(lv_event_t * e)
 {
@@ -32,7 +33,7 @@ void fillFileRoller_Radio(lv_event_t * e)
 
 void StartWeatherApp(lv_event_t * e)
 {
-	// Your code here
+	StartWeatherApp_Data( e );
 }
 
 void updateSystemInfo(lv_event_t * e)
