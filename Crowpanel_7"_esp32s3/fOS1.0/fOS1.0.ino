@@ -12,6 +12,8 @@
 #include <time.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -122,6 +124,149 @@ static const char* kMonthsEn[] = {
 static const int kWeatherDisplayDays = 7;
 static const int kWeatherApiForecastDays = kWeatherDisplayDays + 1; // +1 wegen "ab morgen"
 static const int kWeatherMaxForecastDays = 10;
+
+#define CALC_STACK_SIZE 128
+#define CALC_CHECKMARK_UTF8 "\xE2\x9C\x93"
+#define CALC_BACKSPACE_UTF8 "\xE2\x8C\xAB"
+static bool g_calc_division_by_zero = false;
+
+static void ensure_calc_cursor_visible()
+{
+  if (uic_TextAreaCalculator == NULL) {
+    return;
+  }
+  lv_obj_add_state(uic_TextAreaCalculator, LV_STATE_FOCUSED);
+}
+
+static bool is_operator_char(char c)
+{
+  return c == '+' || c == '-' || c == '*' || c == '/' || c == 'x' || c == 'X';
+}
+
+static int operator_precedence(char op)
+{
+  if (op == '*' || op == '/' || op == 'x' || op == 'X') {
+    return 2;
+  }
+  if (op == '+' || op == '-') {
+    return 1;
+  }
+  return 0;
+}
+
+static bool apply_operator(double *values, int *value_top, char op)
+{
+  double right;
+  double left;
+  double result;
+
+  if (*value_top < 2) {
+    return false;
+  }
+
+  right = values[--(*value_top)];
+  left = values[--(*value_top)];
+
+  switch (op) {
+    case '+':
+      result = left + right;
+      break;
+    case '-':
+      result = left - right;
+      break;
+    case '*':
+    case 'x':
+    case 'X':
+      result = left * right;
+      break;
+    case '/':
+      if (right == 0.0) {
+        g_calc_division_by_zero = true;
+        return false;
+      }
+      result = left / right;
+      break;
+    default:
+      return false;
+  }
+
+  values[(*value_top)++] = result;
+  return true;
+}
+
+double evaluate_expression(const char * expr)
+{
+  double values[CALC_STACK_SIZE];
+  char operators[CALC_STACK_SIZE];
+  int value_top = 0;
+  int operator_top = 0;
+  const char *p = expr;
+  bool expect_number = true;
+  g_calc_division_by_zero = false;
+
+  if (expr == NULL) {
+    return 0.0;
+  }
+
+  while (*p != '\0') {
+    if (isspace((unsigned char)*p)) {
+      p++;
+      continue;
+    }
+
+    if (expect_number) {
+      char *endptr;
+      double number = strtod(p, &endptr);
+
+      if (endptr == p) {
+        return 0.0;
+      }
+      if (value_top >= CALC_STACK_SIZE) {
+        return 0.0;
+      }
+
+      values[value_top++] = number;
+      p = endptr;
+      expect_number = false;
+      continue;
+    }
+
+    if (!is_operator_char(*p)) {
+      return 0.0;
+    }
+
+    while (operator_top > 0 &&
+           operator_precedence(operators[operator_top - 1]) >= operator_precedence(*p)) {
+      if (!apply_operator(values, &value_top, operators[--operator_top])) {
+        return 0.0;
+      }
+    }
+
+    if (operator_top >= CALC_STACK_SIZE) {
+      return 0.0;
+    }
+
+    operators[operator_top++] = *p;
+    p++;
+    expect_number = true;
+  }
+
+  if (expect_number) {
+    return 0.0;
+  }
+
+  while (operator_top > 0) {
+    if (!apply_operator(values, &value_top, operators[--operator_top])) {
+      return 0.0;
+    }
+  }
+
+  if (value_top != 1) {
+    return 0.0;
+  }
+
+  return values[0];
+}
 
 int getTimeZoneCount()
 {
@@ -400,6 +545,87 @@ extern "C" void StopwatchReset_Data(lv_event_t * e)
   stopwatchStartedAtMs = millis();
 
   updateStopwatchUI(true);
+}
+
+extern "C" void keypad_event_handler_Data(lv_event_t * e)
+{
+  lv_obj_t * keyboard = lv_event_get_target(e);
+  uint16_t button_id = lv_keyboard_get_selected_btn(keyboard);
+  const char *button_text;
+
+  if (button_id == LV_BTNMATRIX_BTN_NONE) {
+    return;
+  }
+
+  button_text = lv_keyboard_get_btn_text(keyboard, button_id);
+
+  if (button_text == NULL || uic_TextAreaCalculator == NULL) {
+    return;
+  }
+
+  ensure_calc_cursor_visible();
+
+  if (strcmp(button_text, LV_SYMBOL_OK) == 0 ||
+      strcmp(button_text, CALC_CHECKMARK_UTF8) == 0 ||
+      strcmp(button_text, "=") == 0 ||
+      strcmp(button_text, "\n") == 0) {
+    char result_text[32];
+    const char *expression = lv_textarea_get_text(uic_TextAreaCalculator);
+    double result = evaluate_expression(expression);
+
+    if (g_calc_division_by_zero) {
+      lv_textarea_set_text(uic_TextAreaCalculator, "Math Error");
+    } else {
+      snprintf(result_text, sizeof(result_text), "%.10g", result);
+      lv_textarea_set_text(uic_TextAreaCalculator, result_text);
+    }
+    lv_textarea_set_cursor_pos(uic_TextAreaCalculator, LV_TEXTAREA_CURSOR_LAST);
+    ensure_calc_cursor_visible();
+    return;
+  }
+
+  if (strcmp(button_text, LV_SYMBOL_BACKSPACE) == 0 ||
+      strcmp(button_text, CALC_BACKSPACE_UTF8) == 0) {
+    lv_textarea_del_char(uic_TextAreaCalculator);
+    return;
+  }
+
+  if (strcmp(button_text, LV_SYMBOL_LEFT) == 0 || strcmp(button_text, "<") == 0) {
+    lv_textarea_cursor_left(uic_TextAreaCalculator);
+    ensure_calc_cursor_visible();
+    return;
+  }
+
+  if (strcmp(button_text, LV_SYMBOL_RIGHT) == 0 || strcmp(button_text, ">") == 0) {
+    lv_textarea_cursor_right(uic_TextAreaCalculator);
+    ensure_calc_cursor_visible();
+    return;
+  }
+
+  lv_textarea_add_text(uic_TextAreaCalculator, button_text);
+  ensure_calc_cursor_visible();
+}
+
+extern "C" void operator_event_handler_Data(lv_event_t * e)
+{
+  lv_obj_t *target = lv_event_get_target(e);
+
+  if (uic_TextAreaCalculator == NULL) {
+    return;
+  }
+
+  ensure_calc_cursor_visible();
+
+  if (target == uic_ButtonCalculatorAdd) {
+    lv_textarea_add_text(uic_TextAreaCalculator, "+");
+  } else if (target == uic_ButtonCalculatorSubtract) {
+    lv_textarea_add_text(uic_TextAreaCalculator, "-");
+  } else if (target == uic_ButtonCalculatorMultiply) {
+    lv_textarea_add_text(uic_TextAreaCalculator, "x");
+  } else if (target == uic_ButtonCalculatorDivide) {
+    lv_textarea_add_text(uic_TextAreaCalculator, "/");
+  }
+  ensure_calc_cursor_visible();
 }
 
 /* ================= Boot Progress ================= */

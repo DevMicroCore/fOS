@@ -1,12 +1,15 @@
-# fOS 1.3.1
+# fOS 1.4.0
 
-fOS 1.3.1 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 1.4.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 It combines local apps (file manager, text editor, radio player, calculator, clock, settings) with Wi-Fi-based features (weather, NTP time sync) in one LVGL user interface.
 
-## What's New in 1.3.1
+## What's New in 1.4.0
 
-- Weather forecast extended from 5 days to 7 days.
-- Fixed an issue where the device could freeze when no Wi-Fi network was found.
+- Calculator engine rewritten and moved to `fOS1.0.ino` (`double`-based expression parser with operator precedence).
+- Decimal expressions are fully supported (for example `12.5+3.2`, `0.75*8`, `100.0/4`).
+- Division by zero now shows `Math Error` in calculator output.
+- Calculator textarea now auto-focuses and shows a cursor without extra tapping.
+- `ui_events.c` now only forwards calculator events to data handlers.
 
 ## Prerequisites
 
