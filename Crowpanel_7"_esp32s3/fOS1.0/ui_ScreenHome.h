@@ -33,7 +33,7 @@ extern lv_obj_t *ui_AppCalculator;
 extern lv_obj_t *ui_WiFiImage;
 extern lv_obj_t *ui_labelClockTopLine;
 extern lv_obj_t *ui_BootOverlay;
-extern lv_obj_t *ui_Image1;
+extern lv_obj_t *ui_fOS;
 extern lv_obj_t *ui_BootProgressBar;
 extern lv_obj_t *ui_BootProgressLabel;
 // CUSTOM VARIABLES

@@ -42,6 +42,7 @@ ui_ScreenRadio_screen_init();
 ui_ScreenWeather_screen_init();
 ui_ScreenClock_screen_init();
 ui_ScreenCalculator_screen_init();
+ui_AppContent_screen_init();
 ui____initial_actions0 = lv_obj_create(NULL);
 lv_disp_load_scr( ui_ScreenHome);
 }
@@ -56,4 +57,5 @@ ui_ScreenRadio_screen_destroy();
 ui_ScreenWeather_screen_destroy();
 ui_ScreenClock_screen_destroy();
 ui_ScreenCalculator_screen_destroy();
+ui_AppContent_screen_destroy();
 }

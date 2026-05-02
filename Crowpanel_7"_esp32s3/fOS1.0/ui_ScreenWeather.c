@@ -5,10 +5,10 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_RollerWeatherData;
 lv_obj_t *uic_LabelWeatherInformation;
 lv_obj_t *uic_LabelWeatherTemperature;
-lv_obj_t *uic_RollerWeatherData;
-lv_obj_t *ui_ScreenWeather = NULL;lv_obj_t *ui_HomeButton5 = NULL;lv_obj_t *ui_LabelMenu6 = NULL;lv_obj_t *ui_RollerWeatherData = NULL;lv_obj_t *ui_LabelWeatherTemperature = NULL;lv_obj_t *ui_LabelWeatherInformation = NULL;
+lv_obj_t *ui_ScreenWeather = NULL;lv_obj_t *ui_HomeButton5 = NULL;lv_obj_t *ui_LabelMenu6 = NULL;lv_obj_t *ui_LabelWeatherTemperature = NULL;lv_obj_t *ui_LabelWeatherInformation = NULL;lv_obj_t *ui_RollerWeatherData = NULL;
 // event funtions
 void ui_event_HomeButton5( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -37,28 +37,15 @@ lv_obj_set_style_radius(ui_HomeButton5, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_bg_color(ui_HomeButton5, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_bg_opa(ui_HomeButton5, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
-ui_LabelMenu6 = lv_label_create(ui_ScreenWeather);
+ui_LabelMenu6 = lv_label_create(ui_HomeButton5);
 lv_obj_set_width( ui_LabelMenu6, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_LabelMenu6, LV_SIZE_CONTENT);   /// 0
-lv_obj_set_x( ui_LabelMenu6, -340 );
-lv_obj_set_y( ui_LabelMenu6, -210 );
 lv_obj_set_align( ui_LabelMenu6, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelMenu6,"Menu");
 lv_obj_set_style_text_color(ui_LabelMenu6, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_text_opa(ui_LabelMenu6, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelMenu6, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelMenu6, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-ui_RollerWeatherData = lv_roller_create(ui_ScreenWeather);
-lv_roller_set_options( ui_RollerWeatherData, "No Data", LV_ROLLER_MODE_NORMAL );
-lv_obj_set_width( ui_RollerWeatherData, 758);
-lv_obj_set_height( ui_RollerWeatherData, 303);
-lv_obj_set_x( ui_RollerWeatherData, 0 );
-lv_obj_set_y( ui_RollerWeatherData, 70 );
-lv_obj_set_align( ui_RollerWeatherData, LV_ALIGN_CENTER );
-lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
-
-lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_SELECTED| LV_STATE_DEFAULT);
 
 ui_LabelWeatherTemperature = lv_label_create(ui_ScreenWeather);
 lv_obj_set_width( ui_LabelWeatherTemperature, LV_SIZE_CONTENT);  /// 1
@@ -78,10 +65,21 @@ lv_obj_set_align( ui_LabelWeatherInformation, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelWeatherInformation,"No weather data found");
 lv_obj_set_style_text_font(ui_LabelWeatherInformation, &lv_font_montserrat_40, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_RollerWeatherData = lv_roller_create(ui_ScreenWeather);
+lv_roller_set_options( ui_RollerWeatherData, "No Data", LV_ROLLER_MODE_NORMAL );
+lv_obj_set_width( ui_RollerWeatherData, 758);
+lv_obj_set_height( ui_RollerWeatherData, 303);
+lv_obj_set_x( ui_RollerWeatherData, 0 );
+lv_obj_set_y( ui_RollerWeatherData, 70 );
+lv_obj_set_align( ui_RollerWeatherData, LV_ALIGN_CENTER );
+lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+lv_obj_set_style_text_font(ui_RollerWeatherData, &lv_font_montserrat_20, LV_PART_SELECTED| LV_STATE_DEFAULT);
+
 lv_obj_add_event_cb(ui_HomeButton5, ui_event_HomeButton5, LV_EVENT_ALL, NULL);
-uic_RollerWeatherData = ui_RollerWeatherData;
 uic_LabelWeatherTemperature = ui_LabelWeatherTemperature;
 uic_LabelWeatherInformation = ui_LabelWeatherInformation;
+uic_RollerWeatherData = ui_RollerWeatherData;
 
 }
 
@@ -93,11 +91,11 @@ void ui_ScreenWeather_screen_destroy(void)
 ui_ScreenWeather= NULL;
 ui_HomeButton5= NULL;
 ui_LabelMenu6= NULL;
-uic_RollerWeatherData= NULL;
-ui_RollerWeatherData= NULL;
 uic_LabelWeatherTemperature= NULL;
 ui_LabelWeatherTemperature= NULL;
 uic_LabelWeatherInformation= NULL;
 ui_LabelWeatherInformation= NULL;
+uic_RollerWeatherData= NULL;
+ui_RollerWeatherData= NULL;
 
 }

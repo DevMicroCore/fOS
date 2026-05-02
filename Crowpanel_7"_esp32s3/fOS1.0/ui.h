@@ -37,6 +37,7 @@ extern "C" {
 #include "ui_ScreenWeather.h"
 #include "ui_ScreenClock.h"
 #include "ui_ScreenCalculator.h"
+#include "ui_AppContent.h"
 
 ///////////////////// VARIABLES ////////////////////
 

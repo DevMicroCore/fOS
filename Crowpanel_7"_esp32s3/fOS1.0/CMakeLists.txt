@@ -10,6 +10,7 @@ SET(SOURCES ui_comp_button1.c
     ui_ScreenWeather.c
     ui_ScreenClock.c
     ui_ScreenCalculator.c
+    ui_AppContent.c
     ui.c
     ui_comp_hook.c
     ui_helpers.c

@@ -1,0 +1,7 @@
+Willkommen zu deiner Beispiel-App.
+
+Diese App wird aus /apps/hello_fos geladen.
+Du kannst den Text in content.txt jederzeit anpassen.
+
+Optional kannst du in app.cfg den Namen aendern:
+name=Mein App Name

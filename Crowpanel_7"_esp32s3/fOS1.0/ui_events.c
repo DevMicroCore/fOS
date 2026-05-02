@@ -11,6 +11,12 @@ void StopwatchReset_Data(lv_event_t * e);
 void StartWeatherApp_Data(lv_event_t * e);
 void keypad_event_handler_Data(lv_event_t * e);
 void operator_event_handler_Data(lv_event_t * e);
+void StartAppLauncher_Data(lv_event_t * e);
+
+void updateSystemInfo(lv_event_t * e)
+{
+	updateSystemInfoData();
+}
 
 void updateSDUI(lv_event_t * e)
 {
@@ -19,7 +25,7 @@ void updateSDUI(lv_event_t * e)
 
 void StartAppLauncher(lv_event_t * e)
 {
-	// Your code here
+	StartAppLauncher_Data( e );
 }
 
 void fillFileRoller_TextViewer(lv_event_t * e)
@@ -36,11 +42,6 @@ void fillFileRoller_Radio(lv_event_t * e)
 void StartWeatherApp(lv_event_t * e)
 {
 	StartWeatherApp_Data( e );
-}
-
-void updateSystemInfo(lv_event_t * e)
-{
-	updateSystemInfoData();
 }
 
 void ReloadWiFiConnection(lv_event_t * e)
@@ -95,14 +96,14 @@ void PlayRadio(lv_event_t * e)
 	PlayRadio_data();
 }
 
-void StopwatchPlay(lv_event_t * e)
-{
-	StopwatchPlay_Data( e );
-}
-
 void StopwatchReset(lv_event_t * e)
 {
 	StopwatchReset_Data( e );
+}
+
+void StopwatchPlay(lv_event_t * e)
+{
+	StopwatchPlay_Data( e );
 }
 
 void keypad_event_handler(lv_event_t * e)

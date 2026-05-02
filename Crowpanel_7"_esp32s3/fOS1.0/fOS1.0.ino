@@ -29,9 +29,11 @@ void loop();
 #define MUSIC_FILES_DIR   "/music/files"
 #define WEBRADIO_DIR      "/music/webradio"
 #define WEBRADIO_FILE     "/music/webradio/webradio.txt"
+#define APPS_DIR "/apps"
 
 #define MUSIC_DIR MUSIC_FILES_DIR   // wichtig: Rest vom Code bleibt kompatibel
 #define MAX_WEBRADIOS 30
+#define MAX_LAUNCHER_APPS 4
 
 
 #define MAX_WIFI_PROFILES 5
@@ -61,6 +63,20 @@ struct WebRadioStation {
 
 WebRadioStation webRadios[MAX_WEBRADIOS];
 int webRadioCount = 0;
+
+struct LauncherAppEntry {
+  String folderName;
+  String displayName;
+  String contentFile;
+  String appType;
+  String buttonText;
+  String buttonMessage;
+};
+
+static LauncherAppEntry gLauncherApps[MAX_LAUNCHER_APPS];
+static int gLauncherAppCount = 0;
+static int gLauncherAppIndices[MAX_LAUNCHER_APPS];
+static String gDemoButtonMessage = "Button gedrueckt!";
 
 /* ================= LVGL ================= */
 static uint32_t last_tick = 0;
@@ -129,6 +145,18 @@ static const int kWeatherMaxForecastDays = 10;
 #define CALC_CHECKMARK_UTF8 "\xE2\x9C\x93"
 #define CALC_BACKSPACE_UTF8 "\xE2\x8C\xAB"
 static bool g_calc_division_by_zero = false;
+
+static bool ensureAppsDirectory();
+static String pathBasename(const String& path);
+static void clearLauncherPage(lv_obj_t * page);
+static void clearAppContentArea();
+static lv_obj_t * getLauncherSlotByIndex(int index);
+static void parseAppConfigFile(const String& folderPath, LauncherAppEntry * app);
+static void loadAppsFromSdCard();
+static void drawLauncherApps();
+static void showAppContentForIndex(int appIndex);
+static void launcherAppTileEvent(lv_event_t * e);
+static void demoButtonClicked(lv_event_t * e);
 
 static void ensure_calc_cursor_visible()
 {
@@ -755,6 +783,287 @@ void my_touchpad_read(lv_indev_drv_t * indev, lv_indev_data_t * data)
   }
 }
 
+static bool ensureAppsDirectory()
+{
+  if (!sd_ok) return false;
+  if (SD.exists(APPS_DIR)) return true;
+
+  if (SD.mkdir(APPS_DIR)) {
+    Serial.println("Ordner /apps erstellt");
+    return true;
+  }
+
+  Serial.println("Ordner /apps konnte nicht erstellt werden");
+  return false;
+}
+
+static String pathBasename(const String& path)
+{
+  int slash = path.lastIndexOf('/');
+  if (slash >= 0 && slash + 1 < path.length()) {
+    return path.substring(slash + 1);
+  }
+  return path;
+}
+
+static void clearLauncherPage(lv_obj_t * page)
+{
+  if (page == NULL) return;
+
+  lv_obj_t * child = lv_obj_get_child(page, 0);
+  while (child != NULL) {
+    lv_obj_del(child);
+    child = lv_obj_get_child(page, 0);
+  }
+}
+
+static void clearAppContentArea()
+{
+  if (uic_AppContentArea == NULL) return;
+
+  lv_obj_t * child = lv_obj_get_child(uic_AppContentArea, 0);
+  while (child != NULL) {
+    lv_obj_del(child);
+    child = lv_obj_get_child(uic_AppContentArea, 0);
+  }
+}
+
+static lv_obj_t * getLauncherSlotByIndex(int index)
+{
+  switch (index) {
+    case 0: return ui_AppL1;
+    case 1: return ui_AppL2;
+    case 2: return ui_AppL3;
+    case 3: return ui_AppL4;
+    default: return NULL;
+  }
+}
+
+static void parseAppConfigFile(const String& folderPath, LauncherAppEntry * app)
+{
+  if (app == NULL) return;
+
+  String cfgPath = folderPath + "/app.cfg";
+  if (!SD.exists(cfgPath)) return;
+
+  File cfg = SD.open(cfgPath, FILE_READ);
+  if (!cfg) return;
+
+  while (cfg.available()) {
+    String line = cfg.readStringUntil('\n');
+    line.trim();
+
+    if (line.length() == 0 || line.startsWith("#")) continue;
+
+    int sep = line.indexOf('=');
+    if (sep <= 0) continue;
+
+    String key = line.substring(0, sep);
+    String value = line.substring(sep + 1);
+    key.trim();
+    key.toLowerCase();
+    value.trim();
+
+    if (key == "name" && value.length() > 0) {
+      app->displayName = value;
+    } else if (key == "content" && value.length() > 0) {
+      app->contentFile = value;
+    } else if (key == "type" && value.length() > 0) {
+      value.toLowerCase();
+      app->appType = value;
+    } else if (key == "button_text" && value.length() > 0) {
+      app->buttonText = value;
+    } else if (key == "button_message" && value.length() > 0) {
+      app->buttonMessage = value;
+    }
+  }
+
+  cfg.close();
+}
+
+static void loadAppsFromSdCard()
+{
+  gLauncherAppCount = 0;
+
+  if (!sd_ok) return;
+  if (!ensureAppsDirectory()) return;
+
+  File root = SD.open(APPS_DIR);
+  if (!root || !root.isDirectory()) {
+    if (root) root.close();
+    return;
+  }
+
+  File entry = root.openNextFile();
+  while (entry && gLauncherAppCount < MAX_LAUNCHER_APPS) {
+    if (entry.isDirectory()) {
+      String folderName = pathBasename(String(entry.name()));
+      folderName.trim();
+
+      if (folderName.length() > 0) {
+        LauncherAppEntry &app = gLauncherApps[gLauncherAppCount];
+        app.folderName = folderName;
+        app.displayName = folderName;
+        app.contentFile = "content.txt";
+        app.appType = "text";
+        app.buttonText = "Klick mich";
+        app.buttonMessage = "Button gedrueckt!";
+
+        parseAppConfigFile(String(APPS_DIR) + "/" + folderName, &app);
+        gLauncherAppCount++;
+      }
+    }
+    entry.close();
+    entry = root.openNextFile();
+  }
+
+  root.close();
+}
+
+static void showAppContentForIndex(int appIndex)
+{
+  if (appIndex < 0 || appIndex >= gLauncherAppCount) return;
+  LauncherAppEntry &app = gLauncherApps[appIndex];
+
+  _ui_screen_change(&ui_AppContent, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_AppContent_screen_init);
+
+  if (uic_AppName != NULL) {
+    lv_label_set_text(uic_AppName, app.displayName.c_str());
+  }
+
+  if (uic_AppContentArea == NULL) return;
+
+  clearAppContentArea();
+
+  lv_obj_set_style_pad_all(uic_AppContentArea, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  if (app.appType == "button") {
+    lv_obj_add_flag(uic_AppContentArea, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(uic_AppContentArea, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t * infoLabel = lv_label_create(uic_AppContentArea);
+    lv_obj_set_width(infoLabel, lv_pct(100));
+    lv_label_set_long_mode(infoLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_align(infoLabel, LV_ALIGN_TOP_MID, 0, 10);
+    lv_label_set_text(infoLabel, "Button Demo App");
+    lv_obj_set_style_text_align(infoLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(infoLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t * demoButton = lv_btn_create(uic_AppContentArea);
+    lv_obj_set_size(demoButton, 260, 90);
+    lv_obj_align(demoButton, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_radius(demoButton, 18, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t * buttonLabel = lv_label_create(demoButton);
+    lv_label_set_text(buttonLabel, app.buttonText.c_str());
+    lv_obj_center(buttonLabel);
+    lv_obj_set_style_text_font(buttonLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t * statusLabel = lv_label_create(uic_AppContentArea);
+    lv_obj_set_width(statusLabel, lv_pct(100));
+    lv_label_set_long_mode(statusLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_align(statusLabel, LV_ALIGN_CENTER, 0, 80);
+    lv_label_set_text(statusLabel, "Noch nicht gedrueckt.");
+    lv_obj_set_style_text_align(statusLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(statusLabel, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    gDemoButtonMessage = app.buttonMessage;
+    lv_obj_add_event_cb(demoButton, demoButtonClicked, LV_EVENT_CLICKED, statusLabel);
+    return;
+  }
+
+  lv_obj_add_flag(uic_AppContentArea, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scroll_dir(uic_AppContentArea, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_AUTO);
+
+  lv_obj_t * contentLabel = lv_label_create(uic_AppContentArea);
+  lv_obj_set_width(contentLabel, lv_pct(100));
+  lv_label_set_long_mode(contentLabel, LV_LABEL_LONG_WRAP);
+  lv_obj_align(contentLabel, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_set_style_text_font(contentLabel, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  String contentPath = String(APPS_DIR) + "/" + app.folderName + "/" + app.contentFile;
+
+  String contentText;
+  if (SD.exists(contentPath)) {
+    File contentFile = SD.open(contentPath, FILE_READ);
+    if (contentFile) {
+      while (contentFile.available()) {
+        contentText += (char)contentFile.read();
+        if (contentText.length() > 16000) {
+          contentText += "\n\n[Inhalt gekuerzt]";
+          break;
+        }
+      }
+      contentFile.close();
+    }
+  }
+
+  if (contentText.length() == 0) {
+    contentText = "Keine Inhalte gefunden.\n\nLege eine Datei an:\n";
+    contentText += contentPath;
+  }
+
+  lv_label_set_text(contentLabel, contentText.c_str());
+  lv_obj_update_layout(uic_AppContentArea);
+}
+
+static void launcherAppTileEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+  int * appIndex = (int *)lv_event_get_user_data(e);
+  if (appIndex == NULL) return;
+
+  showAppContentForIndex(*appIndex);
+}
+
+static void demoButtonClicked(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+  lv_obj_t * statusLabel = (lv_obj_t *)lv_event_get_user_data(e);
+  if (statusLabel == NULL) return;
+
+  lv_label_set_text(statusLabel, gDemoButtonMessage.c_str());
+}
+
+static void drawLauncherApps()
+{
+  if (ui_AppL1 == NULL || ui_AppL2 == NULL || ui_AppL3 == NULL || ui_AppL4 == NULL) return;
+
+  for (int i = 0; i < MAX_LAUNCHER_APPS; i++) {
+    lv_obj_t * slot = getLauncherSlotByIndex(i);
+    if (slot == NULL) continue;
+
+    clearLauncherPage(slot);
+
+    if (i >= gLauncherAppCount) {
+      lv_obj_t * emptyLabel = lv_label_create(slot);
+      lv_label_set_text(emptyLabel, "Leer");
+      lv_obj_center(emptyLabel);
+      continue;
+    }
+
+    lv_obj_t * appBtn = lv_btn_create(slot);
+    lv_obj_set_size(appBtn, lv_pct(100), lv_pct(100));
+    lv_obj_center(appBtn);
+    lv_obj_clear_flag(appBtn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(appBtn, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t * appLabel = lv_label_create(appBtn);
+    lv_label_set_text(appLabel, gLauncherApps[i].displayName.c_str());
+    lv_obj_set_width(appLabel, lv_pct(90));
+    lv_label_set_long_mode(appLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(appLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_center(appLabel);
+
+    gLauncherAppIndices[i] = i;
+    lv_obj_add_event_cb(appBtn, launcherAppTileEvent, LV_EVENT_CLICKED, &gLauncherAppIndices[i]);
+  }
+}
+
 /* ================= SD INIT ================= */
 void initSD()
 {
@@ -781,6 +1090,8 @@ void initSD()
       SD.mkdir(WEBRADIO_DIR);
       Serial.println("Ordner /music/webradio erstellt");
     }
+
+    ensureAppsDirectory();
 
 
     if (!SD.exists("/system")) {
@@ -1585,6 +1896,13 @@ extern "C" void updateSDUIData(void)
 
   lv_label_set_text(uic_LabelSDInfo, buf);
   lv_bar_set_value(uic_BarSD, usedPercent, LV_ANIM_ON);
+}
+
+extern "C" void StartAppLauncher_Data(lv_event_t * e)
+{
+  (void)e;
+  loadAppsFromSdCard();
+  drawLauncherApps();
 }
 
 /* =========================================================

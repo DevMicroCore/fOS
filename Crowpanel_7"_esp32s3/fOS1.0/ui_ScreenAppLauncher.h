@@ -14,13 +14,18 @@ extern "C" {
 extern void ui_ScreenAppLauncher_screen_init(void);
 extern void ui_ScreenAppLauncher_screen_destroy(void);
 extern lv_obj_t *ui_ScreenAppLauncher;
-extern lv_obj_t *ui_TabView2;
-extern lv_obj_t *ui_Page1;
-extern lv_obj_t *ui_Page2;
 extern void ui_event_HomeButton2( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton2;
 extern lv_obj_t *ui_LabelMenu3;
+extern lv_obj_t *ui_AppL1;
+extern lv_obj_t *ui_AppL2;
+extern lv_obj_t *ui_AppL3;
+extern lv_obj_t *ui_AppL4;
 // CUSTOM VARIABLES
+extern lv_obj_t *uic_AppL1;
+extern lv_obj_t *uic_AppL2;
+extern lv_obj_t *uic_AppL3;
+extern lv_obj_t *uic_AppL4;
 
 #ifdef __cplusplus
 } /*extern "C"*/

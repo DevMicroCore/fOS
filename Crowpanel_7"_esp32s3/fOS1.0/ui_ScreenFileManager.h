@@ -17,19 +17,19 @@ extern lv_obj_t *ui_ScreenFileManager;
 extern void ui_event_HomeButton1( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton1;
 extern lv_obj_t *ui_LabelMenu2;
-extern lv_obj_t *ui_FileRollerFileManager;
-extern lv_obj_t *ui_BarSD;
-extern lv_obj_t *ui_LabelSDInfo;
 extern void ui_event_ButtonDeleteFile( lv_event_t * e);
 extern lv_obj_t *ui_ButtonDeleteFile;
 extern void ui_event_LabelDeleteFile( lv_event_t * e);
 extern lv_obj_t *ui_LabelDeleteFile;
+extern lv_obj_t *ui_FileRollerFileManager;
+extern lv_obj_t *ui_BarSD;
+extern lv_obj_t *ui_LabelSDInfo;
 // CUSTOM VARIABLES
+extern lv_obj_t *uic_ButtonDeleteFile;
+extern lv_obj_t *uic_LabelDeleteFile;
 extern lv_obj_t *uic_FileRollerFileManager;
 extern lv_obj_t *uic_BarSD;
 extern lv_obj_t *uic_LabelSDInfo;
-extern lv_obj_t *uic_ButtonDeleteFile;
-extern lv_obj_t *uic_LabelDeleteFile;
 
 #ifdef __cplusplus
 } /*extern "C"*/

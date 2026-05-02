@@ -1,15 +1,22 @@
-# fOS 1.4.0
+# fOS 1.5.0
 
-fOS 1.4.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 1.5.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 It combines local apps (file manager, text editor, radio player, calculator, clock, settings) with Wi-Fi-based features (weather, NTP time sync) in one LVGL user interface.
 
-## What's New in 1.4.0
+## What's New in 1.5.0
 
-- Calculator engine rewritten and moved to `fOS1.0.ino` (`double`-based expression parser with operator precedence).
-- Decimal expressions are fully supported (for example `12.5+3.2`, `0.75*8`, `100.0/4`).
-- Division by zero now shows `Math Error` in calculator output.
-- Calculator textarea now auto-focuses and shows a cursor without extra tapping.
-- `ui_events.c` now only forwards calculator events to data handlers.
+- SD App Launcher now loads up to 4 apps dynamically from `/apps` when `StartAppLauncher()` is opened.
+- New `AppContent` flow: launcher pages show only app names; app content opens in a dedicated content screen.
+- App types for SD apps:
+  - `type=text` for text/e-book style content from files (scrollable)
+  - `type=button` for interactive button demo apps
+- New example SD app package in `example app/`:
+  - `create_example_app.sh`
+  - sample apps: `hello_fos`, `button_demo`, `ebook_demo`
+- Stability improvements:
+  - fixed SD iteration handle leaks by explicitly closing files in directory loops
+  - reduced heap fragmentation in AppContent rendering
+  - Wi-Fi reconnect now uses a persistent worker task instead of repeated task create/delete
 
 ## Prerequisites
 
@@ -76,6 +83,28 @@ Lofi Radio|https://example.com/lofi-stream
 News Live|https://example.com/news-stream
 ```
 
+- `/apps`
+  - SD launcher apps (max 4 loaded)
+  - each app is a folder with at least `app.cfg`
+  - for text apps, add content file (for example `content.txt` or `book.txt`)
+
+`app.cfg` keys:
+
+```text
+name=Display Name
+type=text
+content=content.txt
+```
+
+or button app:
+
+```text
+name=Button Demo
+type=button
+button_text=Press me
+button_message=Button works
+```
+
 Optional system-managed files (created/used by firmware):
 
 - `/system/wifi/wlans.txt`
@@ -87,6 +116,7 @@ Optional system-managed files (created/used by firmware):
 
 - Home
 - App Launcher
+- App Content (SD app content screen)
 - File Manager (SD file list, delete)
 - Text Editor (open, create, overwrite-save)
 - Radio (local file player + web radio)
@@ -106,6 +136,10 @@ If SD is available, missing directories are created automatically.
   - Reformat SD to FAT32
   - Check card seating and hardware wiring
   - Verify `SD_CS` value in `fOS1.0.ino`
+- SD apps not visible in launcher:
+  - Ensure app folders are inside `/apps`
+  - Ensure each app has a valid `app.cfg`
+  - Maximum 4 apps are loaded
 - No local music files listed:
   - Place files in `/music/files`
   - Use supported extensions (`.mp3`, `.wav`, `.ogg`)

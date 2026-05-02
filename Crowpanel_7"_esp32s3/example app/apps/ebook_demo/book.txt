@@ -1,0 +1,33 @@
+Kapitel 1 - Der Anfang
+
+Es war ein ruhiger Morgen, als das kleine Display zum ersten Mal erwachte.
+Die Pixel leuchteten, Zeile fuer Zeile, und aus einem simplen Launcher wurde
+langsam eine kleine Welt voller Ideen.
+
+Kapitel 2 - Die Reise
+
+Mit jeder neuen App wurde das System persoenlicher.
+Ein Text hier, ein Button dort, und ploetzlich war es nicht mehr nur Firmware,
+sondern ein Werkzeug, das genau zu dir passte.
+
+Kapitel 3 - Das Tempo
+
+Du scrollst, liest weiter, und der Text fliesst wie in einem E-Book.
+Absatz fuer Absatz, ohne harte Spruenge, ohne Ladepausen, nur Inhalt.
+
+Kapitel 4 - Die Werkstatt
+
+In /apps entstehen neue Konzepte ganz einfach:
+Ordner anlegen, app.cfg schreiben, Inhalt speichern, Launcher oeffnen, fertig.
+So wird aus einer Idee in Minuten eine sichtbare App.
+
+Kapitel 5 - Ausblick
+
+Was heute als Demo beginnt, kann morgen ein Lexikon, Tagebuch,
+Handbuch oder kleines Lernbuch werden.
+Der wichtigste Teil ist schon da: die Struktur.
+
+Nachwort
+
+Wenn du hier angekommen bist, funktioniert Scrollen bereits.
+Fuege einfach mehr Kapitel hinzu und mache daraus dein eigenes kleines Buch.

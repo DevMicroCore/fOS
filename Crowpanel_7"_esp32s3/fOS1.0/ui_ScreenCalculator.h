@@ -17,29 +17,28 @@ extern lv_obj_t *ui_ScreenCalculator;
 extern void ui_event_HomeButton7( lv_event_t * e);
 extern lv_obj_t *ui_HomeButton7;
 extern lv_obj_t *ui_LabelMenu8;
+extern lv_obj_t *ui_TextAreaCalculator;
 extern void ui_event_KeyboardCalculator( lv_event_t * e);
 extern lv_obj_t *ui_KeyboardCalculator;
-extern lv_obj_t *ui_TextAreaCalculator;
-extern lv_obj_t *ui_Container1;
 extern void ui_event_ButtonCalculatorDivide( lv_event_t * e);
 extern lv_obj_t *ui_ButtonCalculatorDivide;
 extern lv_obj_t *ui_LabelDivide;
-extern void ui_event_ButtonCalculatorAdd( lv_event_t * e);
-extern lv_obj_t *ui_ButtonCalculatorAdd;
-extern lv_obj_t *ui_LabelAdd;
 extern void ui_event_ButtonCalculatorMultiply( lv_event_t * e);
 extern lv_obj_t *ui_ButtonCalculatorMultiply;
 extern lv_obj_t *ui_LabelMultiply;
 extern void ui_event_ButtonCalculatorSubtract( lv_event_t * e);
 extern lv_obj_t *ui_ButtonCalculatorSubtract;
 extern lv_obj_t *ui_LabelSubtract;
+extern void ui_event_ButtonCalculatorAdd( lv_event_t * e);
+extern lv_obj_t *ui_ButtonCalculatorAdd;
+extern lv_obj_t *ui_LabelAdd;
 // CUSTOM VARIABLES
-extern lv_obj_t *uic_KeyboardCalculator;
 extern lv_obj_t *uic_TextAreaCalculator;
+extern lv_obj_t *uic_KeyboardCalculator;
 extern lv_obj_t *uic_ButtonCalculatorDivide;
-extern lv_obj_t *uic_ButtonCalculatorAdd;
 extern lv_obj_t *uic_ButtonCalculatorMultiply;
 extern lv_obj_t *uic_ButtonCalculatorSubtract;
+extern lv_obj_t *uic_ButtonCalculatorAdd;
 
 #ifdef __cplusplus
 } /*extern "C"*/
