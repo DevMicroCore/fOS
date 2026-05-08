@@ -26,8 +26,3 @@ Kapitel 5 - Ausblick
 Was heute als Demo beginnt, kann morgen ein Lexikon, Tagebuch,
 Handbuch oder kleines Lernbuch werden.
 Der wichtigste Teil ist schon da: die Struktur.
-
-Nachwort
-
-Wenn du hier angekommen bist, funktioniert Scrollen bereits.
-Fuege einfach mehr Kapitel hinzu und mache daraus dein eigenes kleines Buch.

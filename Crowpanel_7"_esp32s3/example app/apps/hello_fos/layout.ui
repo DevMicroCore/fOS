@@ -1,0 +1,6 @@
+# Hello fOS als UI-App
+type=panel;x=20;y=20;w=760;h=430;bg=0xEAF6FF
+type=label;x=44;y=42;w=700;h=42;text=Willkommen zu deiner Beispiel-App.;fg=0x0F172A
+type=label;x=44;y=104;w=700;h=130;text=Diese App wird aus /apps/hello_fos geladen.\\nAendere app.cfg oder layout.ui und oeffne den Launcher neu.;fg=0x334155
+type=checkbox;x=44;y=260;text=Demo-Checkbox;value=true
+type=switch;x=44;y=314;value=true

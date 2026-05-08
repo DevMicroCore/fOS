@@ -1,22 +1,24 @@
-# fOS 1.5.0
+# fOS 2.0.0
 
-fOS 1.5.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-It combines local apps (file manager, text editor, radio player, calculator, clock, settings) with Wi-Fi-based features (weather, NTP time sync) in one LVGL user interface.
+fOS 2.0.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+This release introduces a fully SD-driven app workflow with dynamic launcher tiles, unloadable app content, and new built-in app types (calculator and radio).
 
-## What's New in 1.5.0
+## What's New in 2.0.0
 
-- SD App Launcher now loads up to 4 apps dynamically from `/apps` when `StartAppLauncher()` is opened.
-- New `AppContent` flow: launcher pages show only app names; app content opens in a dedicated content screen.
-- App types for SD apps:
-  - `type=text` for text/e-book style content from files (scrollable)
-  - `type=button` for interactive button demo apps
-- New example SD app package in `example app/`:
-  - `create_example_app.sh`
-  - sample apps: `hello_fos`, `button_demo`, `ebook_demo`
-- Stability improvements:
-  - fixed SD iteration handle leaks by explicitly closing files in directory loops
-  - reduced heap fragmentation in AppContent rendering
-  - Wi-Fi reconnect now uses a persistent worker task instead of repeated task create/delete
+- New SD App Launcher architecture (up to 6 app tiles on `AppL1` to `AppL6`).
+- Apps are loaded from `/apps` and opened in a dedicated `AppContent` runtime area.
+- App content can be unloaded via `UnloadApp()` to free runtime memory.
+- New app type: `calculator`
+  - Addition, subtraction, multiplication, division
+  - Decimal comma support (`,`)
+  - Division by zero shows `Math Error`
+- New app type: `radio`
+  - Local audio list from `/music/files/`
+  - Webradio list from `/music/webradio/webradio.txt` (`Sender|URL`)
+  - Start/Stop toggle button
+- Storage Manager now supports directory navigation from filesystem root `/`:
+  - Open folders via `StorageManagerSelect()`
+  - `..` entry for navigating to parent folder
 
 ## Prerequisites
 
@@ -34,19 +36,19 @@ It combines local apps (file manager, text editor, radio player, calculator, clo
   - `ESP32-audioI2S` (provides `Audio.h`)
 
 ### Notes
-- The active panel type is set in `LGFX_CrowPanel.h`.
+- Active panel type is set in `LGFX_CrowPanel.h`.
 - Supported panel defines in this project:
   - `CrowPanel_70`
   - `CrowPanel_50`
   - `CrowPanel_43`
-- SD chip-select is set to `SD_CS = 10` in `fOS1.0.ino`. Adjust if your board requires a different pin.
+- SD chip-select is set to `SD_CS = 10` in `fOS2.0.ino`.
 
 ## Installation
 
 1. Install Arduino IDE 2.x.
 2. Install `esp32 by Espressif Systems` in Board Manager.
 3. Install required libraries: `lvgl`, `LovyanGFX`, `ESP32-audioI2S`.
-4. Open `fOS1.0.ino` in Arduino IDE.
+4. Open `fOS2.0.ino` in Arduino IDE.
 5. Select your ESP32-S3 target board and serial port.
 6. Verify panel define in `LGFX_CrowPanel.h`.
 7. Build and upload firmware.
@@ -61,91 +63,115 @@ It combines local apps (file manager, text editor, radio player, calculator, clo
 
 Use a clean FAT32 card for first boot. Avoid exFAT and NTFS.
 
-### SD folder and file layout
+### Folder and file layout
 
-The firmware creates missing folders automatically on startup.
+The firmware creates missing system folders automatically on startup.
 
+- `/apps`
+  - SD apps (max 6 loaded)
 - `/text`
-  - Text files used by file manager and text editor
+  - text files for file manager and text editor
 - `/music/files`
-  - Local audio files (`.mp3`, `.wav`, `.ogg`)
+  - local audio files (`.mp3`, `.wav`, `.ogg`, `.aac`, `.m4a`)
 - `/music/webradio/webradio.txt`
-  - Web radio station list, one entry per line in this format:
+  - one station per line in this format:
 
 ```text
-Station Name|https://stream-url.example
+Sender Name|https://stream-url.example
 ```
 
 Example:
 
 ```text
-Lofi Radio|https://example.com/lofi-stream
-News Live|https://example.com/news-stream
+SomaFM Groove Salad|http://ice1.somafm.com/groovesalad-128-mp3
+ByteFM|https://stream.byte.fm/stream/bytefm_www
 ```
 
-- `/apps`
-  - SD launcher apps (max 4 loaded)
-  - each app is a folder with at least `app.cfg`
-  - for text apps, add content file (for example `content.txt` or `book.txt`)
-
-`app.cfg` keys:
-
-```text
-name=Display Name
-type=text
-content=content.txt
-```
-
-or button app:
-
-```text
-name=Button Demo
-type=button
-button_text=Press me
-button_message=Button works
-```
-
-Optional system-managed files (created/used by firmware):
+Optional system-managed files:
 
 - `/system/wifi/wlans.txt`
   - Wi-Fi profiles as `SSID|PASSWORD` (one per line)
 - `/system/timezone/timezone.txt`
-  - Saved timezone rule
+  - saved timezone rule
 
-## Included Apps
+## SD App Format
+
+Each app is a folder under `/apps/<app_name>/` with at least `app.cfg`.
+
+### app.cfg keys
+
+```text
+name=Display Name
+icon=Optional short tile text/symbol
+type=ui|text|button|calculator|radio
+scrollable=true|false
+```
+
+Additional keys by type:
+
+- `type=ui`
+  - `layout=layout.ui`
+- `type=text`
+  - `content=content.txt`
+- `type=button`
+  - `button_text=...`
+  - `button_message=...`
+
+### layout.ui (for `type=ui`)
+
+One element per line, semicolon-separated fields.
+
+```text
+type=label;x=40;y=40;w=720;h=40;text=Hello
+type=button;x=40;y=100;w=240;h=70;text=Start;bg=0x2095F6;fg=0xFFFFFF
+type=textarea;x=40;y=190;w=420;h=140;text=Line1\nLine2
+type=switch;x=500;y=120;value=true
+type=checkbox;x=500;y=180;text=Option;value=false
+type=panel;x=20;y=20;w=760;h=430;bg=0xF2F2F2
+```
+
+Supported `type=` values in layout lines:
+- `label`
+- `button`
+- `textarea`
+- `switch`
+- `checkbox`
+- `panel`
+
+## Included Screens / Features
 
 - Home
-- App Launcher
-- App Content (SD app content screen)
-- File Manager (SD file list, delete)
-- Text Editor (open, create, overwrite-save)
-- Radio (local file player + web radio)
-- Weather (current weather + forecast)
-- Clock (real-time clock, calendar, stopwatch)
-- Calculator
-- Settings (Wi-Fi, system info, timezone)
+- Settings (Wi-Fi, timezone, system info)
+- Storage Manager (folder navigation + delete file)
+- Text Editor (open/create/overwrite-save)
+- App Launcher (`AppL1` to `AppL6`)
+- App Content runtime area
 
-## First Boot Behavior
+## Example Bundle
 
-On boot, fOS initializes display, SD card, UI, Wi-Fi, audio, and cached data.
-If SD is available, missing directories are created automatically.
+See `example app/` for ready-to-copy examples:
+- `hello_fos`
+- `button_demo`
+- `ebook_demo`
+- `ui_demo`
+- `calculator_demo`
+- `radio_demo`
+
+Webradio example list:
+- `example app/music/webradio/webradio.txt`
 
 ## Troubleshooting
 
 - SD not detected:
   - Reformat SD to FAT32
-  - Check card seating and hardware wiring
-  - Verify `SD_CS` value in `fOS1.0.ino`
-- SD apps not visible in launcher:
-  - Ensure app folders are inside `/apps`
-  - Ensure each app has a valid `app.cfg`
-  - Maximum 4 apps are loaded
-- No local music files listed:
-  - Place files in `/music/files`
-  - Use supported extensions (`.mp3`, `.wav`, `.ogg`)
-- No web radio stations listed:
+  - Check card seating and wiring
+  - Verify `SD_CS` in `fOS2.0.ino`
+- SD apps not visible:
+  - Ensure app folders are under `/apps`
+  - Ensure each app has valid `app.cfg`
+  - Max 6 apps are shown
+- No local files in radio app:
+  - Place audio files in `/music/files`
+- No web stations in radio app:
   - Ensure `/music/webradio/webradio.txt` exists
-  - Validate `name|url` format
-- Weather not loading:
-  - Check Wi-Fi connectivity
-  - Ensure internet access for geolocation and weather API requests
+  - Validate `Sender|URL` format
