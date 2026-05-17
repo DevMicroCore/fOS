@@ -165,7 +165,7 @@ lv_obj_set_height( ui_LabelSoftwareInformationData, 175);
 lv_obj_set_x( ui_LabelSoftwareInformationData, 235 );
 lv_obj_set_y( ui_LabelSoftwareInformationData, 135 );
 lv_obj_set_align( ui_LabelSoftwareInformationData, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelSoftwareInformationData,"fOS version:\n2.0.0\nDeveloper: \nF. L. Meinhardt");
+lv_label_set_text(ui_LabelSoftwareInformationData,"fOS version:\n2.1.0\nDeveloper: \nF. L. Meinhardt");
 lv_obj_set_style_text_font(ui_LabelSoftwareInformationData, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_ButtonSettingsStorage = lv_btn_create(ui_ScreenSettings);

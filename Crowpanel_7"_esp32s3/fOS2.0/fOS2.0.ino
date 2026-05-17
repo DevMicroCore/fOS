@@ -7,6 +7,8 @@
 #include <SPI.h>
 #include "Audio.h"
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <time.h>
 #include <ctype.h>
 #include <math.h>
@@ -36,6 +38,7 @@ void audio_eof_mp3(const char *info);
 
 
 extern "C" void deleteSelectedFile(void);
+extern "C" void fillFileRoller_TextViewer_Data(void);
 
 /* ================= DISPLAY ================= */
 LGFX gfx;
@@ -70,6 +73,36 @@ static lv_obj_t * gRadioToggleButton = NULL;
 static lv_obj_t * gRadioToggleLabel = NULL;
 static String gRadioCurrentFile = "";
 static String gRadioCurrentWebUrl = "";
+static lv_obj_t * gSdTextArea = NULL;
+static lv_obj_t * gSdKeyboard = NULL;
+static lv_obj_t * gSdPopupSave = NULL;
+static lv_obj_t * gSdPopupList = NULL;
+static lv_obj_t * gSdFileNameInput = NULL;
+static lv_obj_t * gSdFileRoller = NULL;
+static lv_obj_t * gClockTabView = NULL;
+static lv_obj_t * gClockCurrentPanel = NULL;
+static lv_obj_t * gClockStopwatchPanel = NULL;
+static lv_obj_t * gClockCurrentTimeLabel = NULL;
+static lv_obj_t * gClockCalendar = NULL;
+static lv_obj_t * gClockStopwatchTimeLabel = NULL;
+static lv_obj_t * gClockStopwatchToggleButton = NULL;
+static lv_obj_t * gClockStopwatchToggleLabel = NULL;
+static uint8_t gClockActiveTab = 0;
+static bool gClockAppVisible = false;
+static bool gClockStopwatchRunning = false;
+static uint64_t gClockStopwatchElapsedMs = 0;
+static unsigned long gClockStopwatchLastMs = 0;
+static int gClockCalendarYear = 0;
+static int gClockCalendarMonth = 0;
+static time_t gClockLastTimeLabelTs = 0;
+static bool gClockCalendarSyncedWithRealTime = false;
+static lv_obj_t * uic_LabelWeatherTemperature = NULL;
+static lv_obj_t * uic_LabelWeatherInformation = NULL;
+static lv_obj_t * uic_RollerWeatherData = NULL;
+static bool gWeatherAppVisible = false;
+static unsigned long gWeatherLastFetchMs = 0;
+static bool gWeatherFetchRunning = false;
+static const unsigned long kWeatherRefreshIntervalMs = 15UL * 60UL * 1000UL;
 
 enum RadioSourceType {
   RADIO_SOURCE_NONE,
@@ -186,6 +219,50 @@ static void startOrStopSelectedRadio();
 static void radioToggleButtonEvent(lv_event_t * e);
 static void radioTabChangedEvent(lv_event_t * e);
 static void renderRadioApp();
+static void resetSdAppState();
+static void fillTextRollerFor(lv_obj_t * roller);
+static void loadSelectedTextFileFor(lv_obj_t * roller, lv_obj_t * textArea);
+static void saveTextFileFor(lv_obj_t * textArea, lv_obj_t * fileNameInput, lv_obj_t * roller);
+static void openNewTextFileFor(lv_obj_t * textArea);
+static void sdAppOpenNewFileEvent(lv_event_t * e);
+static void sdAppShowSavePopupEvent(lv_event_t * e);
+static void sdAppShowOpenPopupEvent(lv_event_t * e);
+static void sdAppTextareaClickedEvent(lv_event_t * e);
+static void sdAppFileNameClickedEvent(lv_event_t * e);
+static void sdAppSaveCancelEvent(lv_event_t * e);
+static void sdAppSaveConfirmEvent(lv_event_t * e);
+static void sdAppOpenCancelEvent(lv_event_t * e);
+static void sdAppOpenConfirmEvent(lv_event_t * e);
+static void renderSdTextApp();
+static void resetClockDashboardState();
+static bool isLeapYearValue(int year);
+static int getDaysInMonthValue(int year, int month);
+static int getFirstWeekdayOfMonth(int year, int month);
+static void formatHmsFromSeconds(uint32_t totalSeconds, char * out, size_t outLen);
+static void refreshClockDashboardTabs();
+static void updateClockDashboardCurrentTimeLabel();
+static void refreshClockDashboardCalendar();
+static void changeClockDashboardMonth(int delta);
+static void showClockDashboardTab(uint8_t tabIndex);
+static void clockDashboardTabCurrentEvent(lv_event_t * e);
+static void clockDashboardTabStopwatchEvent(lv_event_t * e);
+static void clockDashboardMonthPrevEvent(lv_event_t * e);
+static void clockDashboardMonthNextEvent(lv_event_t * e);
+static void clockDashboardStopwatchToggleEvent(lv_event_t * e);
+static void clockDashboardStopwatchResetEvent(lv_event_t * e);
+static void updateClockDashboardStopwatchLabel();
+static void updateClockDashboardStopwatchToggleLabel();
+static void updateClockDashboardTick();
+static void renderClockDashboardApp();
+static void resetWeatherAppState();
+static bool extractJsonStringField(const String& json, const char * key, String * out);
+static bool extractJsonNumberField(const String& json, const char * key, String * out);
+static bool extractJsonArrayRaw(const String& json, const char * key, String * out);
+static String weatherCodeToText(int code);
+static bool fetchWeatherData(String * temperatureHumidity, String * information, String * rollerOptions);
+static void applyWeatherUiData(const String& temperatureHumidity, const String& information, const String& rollerOptions);
+static void refreshWeatherDataIfNeeded(bool force);
+static void renderWeatherApp();
 static String getStorageManagerParentPath(const String& path);
 static String joinStorageManagerPath(const String& base, const String& name);
 
@@ -1093,15 +1170,9 @@ static void renderCalculatorApp()
 {
   resetCalculatorState();
 
-  lv_obj_t * panel = lv_obj_create(uic_AppContentArea);
-  lv_obj_set_size(panel, 760, 430);
-  lv_obj_set_pos(panel, 20, 30);
-  lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_radius(panel, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
-
   gCalcDisplay = lv_textarea_create(uic_AppContentArea);
   lv_obj_set_size(gCalcDisplay, 680, 64);
-  lv_obj_set_pos(gCalcDisplay, 60, 56);
+  lv_obj_set_pos(gCalcDisplay, 60, 70);
   lv_textarea_set_one_line(gCalcDisplay, true);
   lv_obj_clear_flag(gCalcDisplay, LV_OBJ_FLAG_CLICK_FOCUSABLE);
   lv_obj_add_state(gCalcDisplay, LV_STATE_DISABLED);
@@ -1292,7 +1363,7 @@ static void stopRadioPlayback()
 static void updateRadioToggleButtonLabel()
 {
   if (gRadioToggleLabel == NULL) return;
-  lv_label_set_text(gRadioToggleLabel, gRadioPlaying ? "Stop" : "Start");
+  lv_label_set_text(gRadioToggleLabel, gRadioPlaying ? "||" : ">");
 }
 
 static void startOrStopSelectedRadio()
@@ -1355,39 +1426,73 @@ static void renderRadioApp()
 {
   resetRadioState();
 
-  lv_obj_t * panel = lv_obj_create(uic_AppContentArea);
-  lv_obj_set_size(panel, 760, 430);
-  lv_obj_set_pos(panel, 20, 30);
-  lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_radius(panel, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(uic_AppContentArea, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_AppContentArea, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-  gRadioTabView = lv_tabview_create(panel, LV_DIR_TOP, 44);
-  lv_obj_set_size(gRadioTabView, 720, 300);
-  lv_obj_set_pos(gRadioTabView, 20, 16);
-  lv_obj_add_event_cb(gRadioTabView, radioTabChangedEvent, LV_EVENT_VALUE_CHANGED, NULL);
-
-  lv_obj_t * tabFiles = lv_tabview_add_tab(gRadioTabView, "Dateien");
-  lv_obj_t * tabWeb = lv_tabview_add_tab(gRadioTabView, "Webradio");
-
-  gRadioFileRoller = lv_roller_create(tabFiles);
-  lv_obj_set_size(gRadioFileRoller, 680, 230);
-  lv_obj_center(gRadioFileRoller);
-  lv_obj_set_style_text_font(gRadioFileRoller, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-  gRadioWebRoller = lv_roller_create(tabWeb);
-  lv_obj_set_size(gRadioWebRoller, 680, 230);
-  lv_obj_center(gRadioWebRoller);
-  lv_obj_set_style_text_font(gRadioWebRoller, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-  gRadioToggleButton = lv_btn_create(panel);
-  lv_obj_set_size(gRadioToggleButton, 240, 64);
-  lv_obj_set_pos(gRadioToggleButton, 260, 348);
-  lv_obj_set_style_radius(gRadioToggleButton, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+  gRadioToggleButton = lv_btn_create(uic_AppContentArea);
+  lv_obj_set_size(gRadioToggleButton, 162, 50);
+  lv_obj_set_pos(gRadioToggleButton, 320, 54);
+  lv_obj_set_style_radius(gRadioToggleButton, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioToggleButton, lv_color_hex(0x2D95F5), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gRadioToggleButton, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gRadioToggleButton, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_add_event_cb(gRadioToggleButton, radioToggleButtonEvent, LV_EVENT_CLICKED, NULL);
 
   gRadioToggleLabel = lv_label_create(gRadioToggleButton);
   lv_obj_set_style_text_font(gRadioToggleLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gRadioToggleLabel, lv_color_hex(0x0A1A2B), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_center(gRadioToggleLabel);
+
+  gRadioTabView = lv_tabview_create(uic_AppContentArea, LV_DIR_TOP, 50);
+  lv_obj_set_size(gRadioTabView, 800, 328);
+  lv_obj_set_pos(gRadioTabView, 0, 152);
+  lv_obj_add_event_cb(gRadioTabView, radioTabChangedEvent, LV_EVENT_VALUE_CHANGED, NULL);
+
+  lv_obj_t * tabFiles = lv_tabview_add_tab(gRadioTabView, "File Player");
+  lv_obj_t * tabWeb = lv_tabview_add_tab(gRadioTabView, "Web Radio");
+
+  lv_obj_set_style_bg_color(gRadioTabView, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gRadioTabView, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * tabBtns = lv_tabview_get_tab_btns(gRadioTabView);
+  lv_obj_set_style_bg_color(tabBtns, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(tabBtns, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(tabBtns, &lv_font_montserrat_24, LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(tabBtns, lv_color_hex(0xF1F3F7), LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(tabBtns, lv_color_hex(0x2A2A39), LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(tabBtns, lv_color_hex(0x23495F), LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_text_color(tabBtns, lv_color_hex(0x2D95F5), LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_side(tabBtns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_width(tabBtns, 4, LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_color(tabBtns, lv_color_hex(0x2D95F5), LV_PART_ITEMS | LV_STATE_CHECKED);
+
+  gRadioFileRoller = lv_roller_create(tabFiles);
+  lv_obj_set_size(gRadioFileRoller, 754, 235);
+  lv_obj_set_pos(gRadioFileRoller, 12, 10);
+  lv_obj_set_style_radius(gRadioFileRoller, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioFileRoller, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gRadioFileRoller, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gRadioFileRoller, lv_color_hex(0xE9EEF6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioFileRoller, lv_color_hex(0x2D95F5), LV_PART_SELECTED | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gRadioFileRoller, lv_color_hex(0xF5F8FC), LV_PART_SELECTED | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gRadioFileRoller, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gRadioFileRoller, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_scrollbar_mode(gRadioFileRoller, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_center(gRadioFileRoller);
+
+  gRadioWebRoller = lv_roller_create(tabWeb);
+  lv_obj_set_size(gRadioWebRoller, 754, 235);
+  lv_obj_set_pos(gRadioWebRoller, 12, 10);
+  lv_obj_set_style_radius(gRadioWebRoller, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioWebRoller, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gRadioWebRoller, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gRadioWebRoller, lv_color_hex(0xE9EEF6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioWebRoller, lv_color_hex(0x2D95F5), LV_PART_SELECTED | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gRadioWebRoller, lv_color_hex(0xF5F8FC), LV_PART_SELECTED | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gRadioWebRoller, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gRadioWebRoller, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_scrollbar_mode(gRadioWebRoller, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_center(gRadioWebRoller);
 
   fillRadioFileRoller();
   fillWebRadioRoller();
@@ -1403,6 +1508,1171 @@ void audio_eof_mp3(const char *info)
   gRadioCurrentFile = "";
   gRadioCurrentWebUrl = "";
   updateRadioToggleButtonLabel();
+}
+
+static void resetSdAppState()
+{
+  gSdTextArea = NULL;
+  gSdKeyboard = NULL;
+  gSdPopupSave = NULL;
+  gSdPopupList = NULL;
+  gSdFileNameInput = NULL;
+  gSdFileRoller = NULL;
+}
+
+static void fillTextRollerFor(lv_obj_t * roller)
+{
+  if (roller == NULL) return;
+
+  if (!sd_ok) {
+    lv_roller_set_options(roller, "SD Karte nicht verfuegbar", LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_selected(roller, 0, LV_ANIM_OFF);
+    return;
+  }
+
+  File root = SD.open(TEXT_DIR);
+  if (!root) {
+    lv_roller_set_options(roller, "Keine Dateien", LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_selected(roller, 0, LV_ANIM_OFF);
+    return;
+  }
+
+  String rollerText = "";
+  File file = root.openNextFile();
+  while (file) {
+    if (!file.isDirectory()) {
+      rollerText += file.name();
+      rollerText += "\n";
+    }
+    file = root.openNextFile();
+  }
+  root.close();
+
+  if (rollerText.length() == 0) {
+    rollerText = "Keine Dateien";
+  } else if (rollerText.endsWith("\n")) {
+    rollerText.remove(rollerText.length() - 1);
+  }
+
+  lv_roller_set_options(roller, rollerText.c_str(), LV_ROLLER_MODE_NORMAL);
+  lv_roller_set_selected(roller, 0, LV_ANIM_OFF);
+}
+
+static void loadSelectedTextFileFor(lv_obj_t * roller, lv_obj_t * textArea)
+{
+  if (roller == NULL || textArea == NULL) return;
+
+  if (!sd_ok) {
+    lv_textarea_set_text(textArea, "SD Karte nicht verfuegbar");
+    return;
+  }
+
+  char buf[128];
+  lv_roller_get_selected_str(roller, buf, sizeof(buf));
+
+  String filename = String(buf);
+  if (filename.length() == 0 ||
+      filename == "Keine Dateien" ||
+      filename == "SD Karte nicht verfuegbar") {
+    lv_textarea_set_text(textArea, "Keine Datei ausgewaehlt");
+    return;
+  }
+
+  String path = String(TEXT_DIR) + "/" + filename;
+  if (!SD.exists(path)) {
+    lv_textarea_set_text(textArea, "Datei nicht gefunden");
+    return;
+  }
+
+  File file = SD.open(path, FILE_READ);
+  if (!file) {
+    lv_textarea_set_text(textArea, "Datei konnte nicht geoeffnet werden");
+    return;
+  }
+
+  String content;
+  content.reserve(1024);
+
+  while (file.available()) {
+    content += (char)file.read();
+    if (content.length() > 4000) {
+      content += "\n\n[Datei gekuerzt]";
+      break;
+    }
+  }
+  file.close();
+
+  lv_textarea_set_text(textArea, content.c_str());
+}
+
+static void saveTextFileFor(lv_obj_t * textArea, lv_obj_t * fileNameInput, lv_obj_t * roller)
+{
+  if (textArea == NULL || fileNameInput == NULL) return;
+  if (!sd_ok) {
+    Serial.println("SD Karte nicht verfuegbar");
+    return;
+  }
+
+  const char * text = lv_textarea_get_text(textArea);
+  String filename = lv_textarea_get_text(fileNameInput);
+  filename.trim();
+  if (filename.length() == 0) {
+    Serial.println("Dateiname leer");
+    return;
+  }
+
+  String path = String(TEXT_DIR) + "/" + filename + ".txt";
+  if (SD.exists(path.c_str())) {
+    SD.remove(path.c_str());
+  }
+
+  File file = SD.open(path.c_str(), FILE_WRITE);
+  if (!file) {
+    Serial.println("Datei konnte nicht erstellt werden");
+    return;
+  }
+
+  file.print(text);
+  file.close();
+
+  fillFileRoller();
+  updateSDUIData();
+  fillTextRollerFor(roller);
+}
+
+static void openNewTextFileFor(lv_obj_t * textArea)
+{
+  if (textArea == NULL) return;
+  lv_textarea_set_text(textArea, "");
+}
+
+static void sdAppOpenNewFileEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  openNewTextFileFor(gSdTextArea);
+}
+
+static void sdAppShowSavePopupEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (gSdPopupSave == NULL) return;
+
+  lv_obj_clear_flag(gSdPopupSave, LV_OBJ_FLAG_HIDDEN);
+  if (gSdKeyboard && gSdFileNameInput) {
+    lv_keyboard_set_textarea(gSdKeyboard, gSdFileNameInput);
+  }
+}
+
+static void sdAppShowOpenPopupEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (gSdPopupList == NULL) return;
+
+  fillTextRollerFor(gSdFileRoller);
+  lv_obj_clear_flag(gSdPopupList, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void sdAppTextareaClickedEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (gSdKeyboard && gSdTextArea) {
+    lv_keyboard_set_textarea(gSdKeyboard, gSdTextArea);
+  }
+}
+
+static void sdAppFileNameClickedEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (gSdKeyboard && gSdFileNameInput) {
+    lv_keyboard_set_textarea(gSdKeyboard, gSdFileNameInput);
+  }
+}
+
+static void sdAppSaveCancelEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (gSdPopupSave) {
+    lv_obj_add_flag(gSdPopupSave, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void sdAppSaveConfirmEvent(lv_event_t * e)
+{
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_CLICKED) {
+    saveTextFileFor(gSdTextArea, gSdFileNameInput, gSdFileRoller);
+    return;
+  }
+  if (code == LV_EVENT_RELEASED && gSdPopupSave) {
+    lv_obj_add_flag(gSdPopupSave, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void sdAppOpenCancelEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (gSdPopupList) {
+    lv_obj_add_flag(gSdPopupList, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void sdAppOpenConfirmEvent(lv_event_t * e)
+{
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_CLICKED) {
+    loadSelectedTextFileFor(gSdFileRoller, gSdTextArea);
+    return;
+  }
+  if (code == LV_EVENT_RELEASED && gSdPopupList) {
+    lv_obj_add_flag(gSdPopupList, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void renderSdTextApp()
+{
+  resetSdAppState();
+
+  lv_obj_set_style_bg_color(uic_AppContentArea, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_AppContentArea, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_pad_all(uic_AppContentArea, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(uic_AppContentArea, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_OFF);
+
+  lv_obj_t * btnOpenNew = lv_btn_create(uic_AppContentArea);
+  lv_obj_set_size(btnOpenNew, 200, 50);
+  lv_obj_align(btnOpenNew, LV_ALIGN_CENTER, -134, -210);
+  lv_obj_set_style_radius(btnOpenNew, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnOpenNew, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnOpenNew, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnOpenNew, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblOpenNew = lv_label_create(btnOpenNew);
+  lv_label_set_text(lblOpenNew, "Open New File");
+  lv_obj_set_style_text_font(lblOpenNew, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblOpenNew, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblOpenNew);
+
+  lv_obj_t * btnSaveAs = lv_btn_create(uic_AppContentArea);
+  lv_obj_set_size(btnSaveAs, 200, 50);
+  lv_obj_align(btnSaveAs, LV_ALIGN_CENTER, 76, -210);
+  lv_obj_set_style_radius(btnSaveAs, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnSaveAs, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnSaveAs, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnSaveAs, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblSaveAs = lv_label_create(btnSaveAs);
+  lv_label_set_text(lblSaveAs, "Save as . . .");
+  lv_obj_set_style_text_font(lblSaveAs, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblSaveAs, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblSaveAs);
+
+  lv_obj_t * btnOpenFile = lv_btn_create(uic_AppContentArea);
+  lv_obj_set_size(btnOpenFile, 200, 50);
+  lv_obj_align(btnOpenFile, LV_ALIGN_CENTER, 286, -210);
+  lv_obj_set_style_radius(btnOpenFile, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnOpenFile, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnOpenFile, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnOpenFile, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblOpenFile = lv_label_create(btnOpenFile);
+  lv_label_set_text(lblOpenFile, "Open file");
+  lv_obj_set_style_text_font(lblOpenFile, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblOpenFile, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblOpenFile);
+
+  gSdKeyboard = lv_keyboard_create(uic_AppContentArea);
+  lv_obj_set_size(gSdKeyboard, 793, 197);
+  lv_obj_align(gSdKeyboard, LV_ALIGN_CENTER, 0, 135);
+  lv_obj_set_style_text_font(gSdKeyboard, &lv_font_montserrat_20, LV_PART_ITEMS | LV_STATE_DEFAULT);
+
+  gSdTextArea = lv_textarea_create(uic_AppContentArea);
+  lv_obj_set_size(gSdTextArea, 774, 203);
+  lv_obj_align(gSdTextArea, LV_ALIGN_CENTER, 0, -69);
+  lv_textarea_set_placeholder_text(gSdTextArea, "You can enter your text here ...");
+  lv_obj_set_style_text_font(gSdTextArea, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdTextArea, &lv_font_montserrat_20, LV_PART_SELECTED | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdTextArea, &lv_font_montserrat_20, LV_PART_CURSOR | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdTextArea, &lv_font_montserrat_20, LV_PART_TEXTAREA_PLACEHOLDER | LV_STATE_DEFAULT);
+
+  gSdPopupSave = lv_obj_create(uic_AppContentArea);
+  lv_obj_remove_style_all(gSdPopupSave);
+  lv_obj_set_size(gSdPopupSave, 600, 140);
+  lv_obj_align(gSdPopupSave, LV_ALIGN_TOP_MID, 0, 88);
+  lv_obj_add_flag(gSdPopupSave, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(gSdPopupSave, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_radius(gSdPopupSave, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gSdPopupSave, lv_color_hex(0xFAFAFA), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gSdPopupSave, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * btnSaveCancel = lv_btn_create(gSdPopupSave);
+  lv_obj_set_size(btnSaveCancel, 160, 50);
+  lv_obj_align(btnSaveCancel, LV_ALIGN_CENTER, -34, 33);
+  lv_obj_set_style_radius(btnSaveCancel, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnSaveCancel, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnSaveCancel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnSaveCancel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblSaveCancel = lv_label_create(btnSaveCancel);
+  lv_label_set_text(lblSaveCancel, "Cancel");
+  lv_obj_set_style_text_font(lblSaveCancel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblSaveCancel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblSaveCancel);
+
+  lv_obj_t * btnSaveConfirm = lv_btn_create(gSdPopupSave);
+  lv_obj_set_size(btnSaveConfirm, 160, 50);
+  lv_obj_align(btnSaveConfirm, LV_ALIGN_CENTER, -206, 33);
+  lv_obj_set_style_radius(btnSaveConfirm, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnSaveConfirm, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnSaveConfirm, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnSaveConfirm, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblSaveConfirm = lv_label_create(btnSaveConfirm);
+  lv_label_set_text(lblSaveConfirm, "Save");
+  lv_obj_set_style_text_font(lblSaveConfirm, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblSaveConfirm, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblSaveConfirm);
+
+  gSdFileNameInput = lv_textarea_create(gSdPopupSave);
+  lv_obj_set_size(gSdFileNameInput, 577, 52);
+  lv_obj_align(gSdFileNameInput, LV_ALIGN_CENTER, 0, -32);
+  lv_textarea_set_placeholder_text(gSdFileNameInput, "File name . . .");
+  lv_obj_set_style_text_font(gSdFileNameInput, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdFileNameInput, &lv_font_montserrat_20, LV_PART_SELECTED | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdFileNameInput, &lv_font_montserrat_20, LV_PART_CURSOR | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdFileNameInput, &lv_font_montserrat_20, LV_PART_TEXTAREA_PLACEHOLDER | LV_STATE_DEFAULT);
+
+  gSdPopupList = lv_obj_create(uic_AppContentArea);
+  lv_obj_remove_style_all(gSdPopupList);
+  lv_obj_set_size(gSdPopupList, 600, 350);
+  lv_obj_align(gSdPopupList, LV_ALIGN_TOP_MID, 0, 23);
+  lv_obj_add_flag(gSdPopupList, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(gSdPopupList, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_radius(gSdPopupList, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gSdPopupList, lv_color_hex(0xFAFAFA), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gSdPopupList, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * btnOpenCancel = lv_btn_create(gSdPopupList);
+  lv_obj_set_size(btnOpenCancel, 160, 50);
+  lv_obj_align(btnOpenCancel, LV_ALIGN_CENTER, -34, 140);
+  lv_obj_set_style_radius(btnOpenCancel, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnOpenCancel, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnOpenCancel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnOpenCancel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblOpenCancel = lv_label_create(btnOpenCancel);
+  lv_label_set_text(lblOpenCancel, "Cancel");
+  lv_obj_set_style_text_font(lblOpenCancel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblOpenCancel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblOpenCancel);
+
+  lv_obj_t * btnOpenConfirm = lv_btn_create(gSdPopupList);
+  lv_obj_set_size(btnOpenConfirm, 160, 50);
+  lv_obj_align(btnOpenConfirm, LV_ALIGN_CENTER, -206, 140);
+  lv_obj_set_style_radius(btnOpenConfirm, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btnOpenConfirm, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(btnOpenConfirm, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(btnOpenConfirm, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * lblOpenConfirm = lv_label_create(btnOpenConfirm);
+  lv_label_set_text(lblOpenConfirm, "Open");
+  lv_obj_set_style_text_font(lblOpenConfirm, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lblOpenConfirm, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(lblOpenConfirm);
+
+  gSdFileRoller = lv_roller_create(gSdPopupList);
+  lv_roller_set_options(gSdFileRoller, "Keine Dateien", LV_ROLLER_MODE_NORMAL);
+  lv_obj_set_size(gSdFileRoller, 576, 266);
+  lv_obj_align(gSdFileRoller, LV_ALIGN_CENTER, 0, -30);
+  lv_obj_set_style_text_align(gSdFileRoller, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gSdFileRoller, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_keyboard_set_textarea(gSdKeyboard, gSdTextArea);
+
+  lv_obj_add_event_cb(btnOpenNew, sdAppOpenNewFileEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(btnSaveAs, sdAppShowSavePopupEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(btnOpenFile, sdAppShowOpenPopupEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(gSdTextArea, sdAppTextareaClickedEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(gSdFileNameInput, sdAppFileNameClickedEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(btnSaveCancel, sdAppSaveCancelEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(btnSaveConfirm, sdAppSaveConfirmEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(btnOpenCancel, sdAppOpenCancelEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(btnOpenConfirm, sdAppOpenConfirmEvent, LV_EVENT_ALL, NULL);
+
+  fillTextRollerFor(gSdFileRoller);
+}
+
+static void resetClockDashboardState()
+{
+  gClockTabView = NULL;
+  gClockCurrentPanel = NULL;
+  gClockStopwatchPanel = NULL;
+  gClockCurrentTimeLabel = NULL;
+  gClockCalendar = NULL;
+  gClockStopwatchTimeLabel = NULL;
+  gClockStopwatchToggleButton = NULL;
+  gClockStopwatchToggleLabel = NULL;
+  gClockActiveTab = 0;
+  gClockAppVisible = false;
+  gClockStopwatchRunning = false;
+  gClockStopwatchElapsedMs = 0;
+  gClockStopwatchLastMs = 0;
+  gClockCalendarYear = 0;
+  gClockCalendarMonth = 0;
+  gClockLastTimeLabelTs = 0;
+  gClockCalendarSyncedWithRealTime = false;
+}
+
+static bool isLeapYearValue(int year)
+{
+  if (year % 400 == 0) return true;
+  if (year % 100 == 0) return false;
+  return (year % 4 == 0);
+}
+
+static int getDaysInMonthValue(int year, int month)
+{
+  static const int kDaysPerMonth[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+  if (month < 1 || month > 12) return 30;
+  if (month == 2 && isLeapYearValue(year)) return 29;
+  return kDaysPerMonth[month - 1];
+}
+
+static int getFirstWeekdayOfMonth(int year, int month)
+{
+  struct tm tmValue;
+  memset(&tmValue, 0, sizeof(tmValue));
+  tmValue.tm_year = year - 1900;
+  tmValue.tm_mon = month - 1;
+  tmValue.tm_mday = 1;
+  tmValue.tm_hour = 12;
+
+  if (mktime(&tmValue) == (time_t)-1) return 0;
+  return tmValue.tm_wday;
+}
+
+static void formatHmsFromSeconds(uint32_t totalSeconds, char * out, size_t outLen)
+{
+  if (out == NULL || outLen == 0) return;
+  uint32_t hours = totalSeconds / 3600;
+  uint32_t minutes = (totalSeconds % 3600) / 60;
+  uint32_t seconds = totalSeconds % 60;
+  if (hours > 99) hours = 99;
+  snprintf(out, outLen, "%02lu:%02lu:%02lu",
+           (unsigned long)hours,
+           (unsigned long)minutes,
+           (unsigned long)seconds);
+}
+
+static void refreshClockDashboardTabs()
+{
+  if (gClockTabView == NULL) return;
+
+  lv_obj_t * tabBtns = lv_tabview_get_tab_btns(gClockTabView);
+  if (tabBtns == NULL) return;
+
+  lv_obj_set_style_bg_color(tabBtns, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(tabBtns, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(tabBtns, &lv_font_montserrat_24, LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(tabBtns, lv_color_hex(0xF1F3F7), LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(tabBtns, lv_color_hex(0x2A2A39), LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(tabBtns, lv_color_hex(0x23495F), LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_text_color(tabBtns, lv_color_hex(0x2D95F5), LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_side(tabBtns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_width(tabBtns, 4, LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_color(tabBtns, lv_color_hex(0x2D95F5), LV_PART_ITEMS | LV_STATE_CHECKED);
+}
+
+static void updateClockDashboardCurrentTimeLabel()
+{
+  if (gClockCurrentTimeLabel == NULL) return;
+
+  if (!isSystemTimeValid()) {
+    lv_label_set_text(gClockCurrentTimeLabel, "00:00:00");
+    gClockLastTimeLabelTs = 0;
+    return;
+  }
+
+  time_t nowTs = time(nullptr);
+  if (nowTs == gClockLastTimeLabelTs) return;
+  gClockLastTimeLabelTs = nowTs;
+
+  struct tm localTm;
+  localtime_r(&nowTs, &localTm);
+
+  char timeBuf[16];
+  snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d",
+           localTm.tm_hour, localTm.tm_min, localTm.tm_sec);
+  lv_label_set_text(gClockCurrentTimeLabel, timeBuf);
+}
+
+static void refreshClockDashboardCalendar()
+{
+  if (gClockCalendar == NULL) return;
+  if (gClockCalendarMonth < 1 || gClockCalendarMonth > 12) return;
+
+  lv_calendar_set_showed_date(gClockCalendar, gClockCalendarYear, gClockCalendarMonth);
+
+  time_t nowTs = time(nullptr);
+  if (nowTs > 1609459200) {
+    struct tm localTm;
+    localtime_r(&nowTs, &localTm);
+    lv_calendar_set_today_date(
+      gClockCalendar,
+      localTm.tm_year + 1900,
+      localTm.tm_mon + 1,
+      localTm.tm_mday
+    );
+  }
+}
+
+static void changeClockDashboardMonth(int delta)
+{
+  if (delta == 0) return;
+  gClockCalendarMonth += delta;
+  while (gClockCalendarMonth < 1) {
+    gClockCalendarMonth += 12;
+    gClockCalendarYear--;
+  }
+  while (gClockCalendarMonth > 12) {
+    gClockCalendarMonth -= 12;
+    gClockCalendarYear++;
+  }
+  refreshClockDashboardCalendar();
+}
+
+static void showClockDashboardTab(uint8_t tabIndex)
+{
+  gClockActiveTab = (tabIndex == 0) ? 0 : 1;
+  if (gClockTabView != NULL) {
+    lv_tabview_set_act(gClockTabView, gClockActiveTab, LV_ANIM_OFF);
+  }
+  refreshClockDashboardTabs();
+}
+
+static void clockDashboardTabCurrentEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showClockDashboardTab(0);
+}
+
+static void clockDashboardTabStopwatchEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showClockDashboardTab(1);
+}
+
+static void clockDashboardMonthPrevEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  changeClockDashboardMonth(-1);
+}
+
+static void clockDashboardMonthNextEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  changeClockDashboardMonth(1);
+}
+
+static void updateClockDashboardStopwatchLabel()
+{
+  if (gClockStopwatchTimeLabel == NULL) return;
+  uint32_t seconds = (uint32_t)(gClockStopwatchElapsedMs / 1000ULL);
+  char timeBuf[16];
+  formatHmsFromSeconds(seconds, timeBuf, sizeof(timeBuf));
+  lv_label_set_text(gClockStopwatchTimeLabel, timeBuf);
+}
+
+static void updateClockDashboardStopwatchToggleLabel()
+{
+  if (gClockStopwatchToggleLabel == NULL) return;
+  lv_label_set_text(gClockStopwatchToggleLabel, gClockStopwatchRunning ? "||" : ">");
+}
+
+static void clockDashboardStopwatchToggleEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+  if (gClockStopwatchRunning) {
+    gClockStopwatchRunning = false;
+  } else {
+    gClockStopwatchRunning = true;
+    gClockStopwatchLastMs = millis();
+  }
+  updateClockDashboardStopwatchToggleLabel();
+}
+
+static void clockDashboardStopwatchResetEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  gClockStopwatchElapsedMs = 0;
+  gClockStopwatchLastMs = millis();
+  updateClockDashboardStopwatchLabel();
+}
+
+static void updateClockDashboardTick()
+{
+  if (!gClockAppVisible) return;
+
+  updateClockDashboardCurrentTimeLabel();
+
+  if (!gClockCalendarSyncedWithRealTime && isSystemTimeValid()) {
+    time_t nowTs = time(nullptr);
+    struct tm localTm;
+    localtime_r(&nowTs, &localTm);
+    gClockCalendarYear = localTm.tm_year + 1900;
+    gClockCalendarMonth = localTm.tm_mon + 1;
+    gClockCalendarSyncedWithRealTime = true;
+    refreshClockDashboardCalendar();
+  }
+
+  if (!gClockStopwatchRunning) return;
+
+  unsigned long nowMs = millis();
+  if (nowMs >= gClockStopwatchLastMs) {
+    gClockStopwatchElapsedMs += (uint64_t)(nowMs - gClockStopwatchLastMs);
+  }
+  gClockStopwatchLastMs = nowMs;
+  updateClockDashboardStopwatchLabel();
+}
+
+static void renderClockDashboardApp()
+{
+  resetClockDashboardState();
+  gClockAppVisible = true;
+
+  lv_obj_set_style_bg_color(uic_AppContentArea, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_AppContentArea, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(uic_AppContentArea, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_OFF);
+  gClockTabView = lv_tabview_create(uic_AppContentArea, LV_DIR_TOP, 65);
+  if (gClockTabView == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(gClockTabView, 800, 480);
+  lv_obj_set_align(gClockTabView, LV_ALIGN_CENTER);
+  lv_obj_clear_flag(gClockTabView, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(gClockTabView, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockTabView, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gClockTabView, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gClockTabView, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  refreshClockDashboardTabs();
+
+  lv_obj_t * tabCurrent = lv_tabview_add_tab(gClockTabView, "Current Time");
+  lv_obj_t * tabStopwatch = lv_tabview_add_tab(gClockTabView, "Stopwatch");
+  gClockCurrentPanel = tabCurrent;
+  gClockStopwatchPanel = tabStopwatch;
+  if (tabCurrent == NULL || tabStopwatch == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+
+  lv_obj_set_style_bg_color(tabCurrent, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(tabCurrent, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(tabCurrent, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(tabStopwatch, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(tabStopwatch, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(tabStopwatch, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  gClockCurrentTimeLabel = lv_label_create(tabCurrent);
+  if (gClockCurrentTimeLabel == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_label_set_text(gClockCurrentTimeLabel, "00:00:00");
+  lv_obj_align(gClockCurrentTimeLabel, LV_ALIGN_CENTER, 0, -130);
+  lv_obj_set_style_text_color(gClockCurrentTimeLabel, lv_color_hex(0xF2F3F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gClockCurrentTimeLabel, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  gClockCalendar = lv_calendar_create(tabCurrent);
+  if (gClockCalendar == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(gClockCalendar, 757, 267);
+  lv_obj_align(gClockCalendar, LV_ALIGN_CENTER, 0, 48);
+  lv_obj_set_style_radius(gClockCalendar, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gClockCalendar, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockCalendar, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gClockCalendar, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gClockCalendar, lv_color_hex(0xE6E9EF), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(gClockCalendar, lv_color_hex(0x8A8F9A), LV_PART_ITEMS | LV_STATE_DISABLED);
+  lv_obj_set_style_text_color(gClockCalendar, lv_color_hex(0xE6E9EF), LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockCalendar, 0, LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gClockCalendar, 1, LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_color(gClockCalendar, lv_color_hex(0x2E3340), LV_PART_ITEMS | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockCalendar, 0, LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_width(gClockCalendar, 3, LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_border_color(gClockCalendar, lv_color_hex(0x2D95F5), LV_PART_ITEMS | LV_STATE_CHECKED);
+  lv_obj_set_style_text_color(gClockCalendar, lv_color_hex(0xE6E9EF), LV_PART_ITEMS | LV_STATE_CHECKED);
+
+  lv_obj_t * calendarHeader = lv_calendar_header_arrow_create(gClockCalendar);
+  if (calendarHeader != NULL) {
+    lv_obj_set_style_bg_opa(calendarHeader, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(calendarHeader, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(calendarHeader, lv_color_hex(0xE7EAF0), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(calendarHeader, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
+
+  gClockStopwatchTimeLabel = lv_label_create(tabStopwatch);
+  if (gClockStopwatchTimeLabel == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_label_set_text(gClockStopwatchTimeLabel, "00:00:00");
+  lv_obj_align(gClockStopwatchTimeLabel, LV_ALIGN_CENTER, 0, -130);
+  lv_obj_set_style_text_color(gClockStopwatchTimeLabel, lv_color_hex(0xF2F3F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gClockStopwatchTimeLabel, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * resetBtn = lv_btn_create(tabStopwatch);
+  if (resetBtn == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(resetBtn, 191, 50);
+  lv_obj_align(resetBtn, LV_ALIGN_CENTER, -102, 0);
+  lv_obj_set_style_radius(resetBtn, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(resetBtn, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(resetBtn, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(resetBtn, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(resetBtn, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * resetLbl = lv_label_create(resetBtn);
+  lv_label_set_text(resetLbl, "Reset");
+  lv_obj_set_style_text_color(resetLbl, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(resetLbl, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(resetLbl);
+
+  gClockStopwatchToggleButton = lv_btn_create(tabStopwatch);
+  if (gClockStopwatchToggleButton == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(gClockStopwatchToggleButton, 191, 50);
+  lv_obj_align(gClockStopwatchToggleButton, LV_ALIGN_CENTER, 102, 0);
+  lv_obj_set_style_radius(gClockStopwatchToggleButton, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gClockStopwatchToggleButton, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockStopwatchToggleButton, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gClockStopwatchToggleButton, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(gClockStopwatchToggleButton, LV_OBJ_FLAG_SCROLLABLE);
+  gClockStopwatchToggleLabel = lv_label_create(gClockStopwatchToggleButton);
+  if (gClockStopwatchToggleLabel == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_label_set_text(gClockStopwatchToggleLabel, ">");
+  lv_obj_set_style_text_color(gClockStopwatchToggleLabel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gClockStopwatchToggleLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(gClockStopwatchToggleLabel);
+
+  lv_obj_add_event_cb(resetBtn, clockDashboardStopwatchResetEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(gClockStopwatchToggleButton, clockDashboardStopwatchToggleEvent, LV_EVENT_ALL, NULL);
+
+  time_t nowTs = time(nullptr);
+  struct tm localTm;
+  if (isSystemTimeValid()) {
+    localtime_r(&nowTs, &localTm);
+    gClockCalendarYear = localTm.tm_year + 1900;
+    gClockCalendarMonth = localTm.tm_mon + 1;
+    gClockCalendarSyncedWithRealTime = true;
+  } else {
+    gClockCalendarYear = 2026;
+    gClockCalendarMonth = 1;
+    gClockCalendarSyncedWithRealTime = false;
+  }
+
+  gClockStopwatchRunning = false;
+  gClockStopwatchElapsedMs = 0;
+  gClockStopwatchLastMs = millis();
+  gClockLastTimeLabelTs = 0;
+
+  updateClockDashboardCurrentTimeLabel();
+  updateClockDashboardStopwatchLabel();
+  updateClockDashboardStopwatchToggleLabel();
+  refreshClockDashboardCalendar();
+
+  if (ui_HomeButton9 != NULL) {
+    lv_obj_move_foreground(ui_HomeButton9);
+  }
+}
+
+static void resetWeatherAppState()
+{
+  uic_LabelWeatherTemperature = NULL;
+  uic_LabelWeatherInformation = NULL;
+  uic_RollerWeatherData = NULL;
+  gWeatherAppVisible = false;
+  gWeatherLastFetchMs = 0;
+  gWeatherFetchRunning = false;
+}
+
+static bool extractJsonStringField(const String& json, const char * key, String * out)
+{
+  if (key == NULL || out == NULL) return false;
+  String token = "\"";
+  token += key;
+  token += "\":";
+  int pos = json.indexOf(token);
+  if (pos < 0) return false;
+  pos += token.length();
+  while (pos < (int)json.length() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
+  if (pos >= (int)json.length()) return false;
+  if (json[pos] != '"') {
+    pos = json.indexOf('"', pos);
+    if (pos < 0) return false;
+  }
+  int end = json.indexOf('"', pos + 1);
+  if (end < 0) return false;
+  *out = json.substring(pos + 1, end);
+  return true;
+}
+
+static bool extractJsonNumberField(const String& json, const char * key, String * out)
+{
+  if (key == NULL || out == NULL) return false;
+  String token = "\"";
+  token += key;
+  token += "\":";
+  int pos = json.indexOf(token);
+  if (pos < 0) return false;
+  pos += token.length();
+  while (pos < (int)json.length() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
+  if (pos >= (int)json.length()) return false;
+  int end = pos;
+  while (end < (int)json.length()) {
+    char c = json[end];
+    if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
+      end++;
+      continue;
+    }
+    break;
+  }
+  if (end <= pos) return false;
+  *out = json.substring(pos, end);
+  out->trim();
+  return out->length() > 0;
+}
+
+static bool extractJsonArrayRaw(const String& json, const char * key, String * out)
+{
+  if (key == NULL || out == NULL) return false;
+  String token = "\"";
+  token += key;
+  token += "\":[";
+  int pos = json.indexOf(token);
+  if (pos < 0) return false;
+  pos += token.length();
+  int end = json.indexOf(']', pos);
+  if (end < 0) return false;
+  *out = json.substring(pos, end);
+  return true;
+}
+
+static String weatherCodeToText(int code)
+{
+  switch (code) {
+    case 0: return "clear";
+    case 1:
+    case 2:
+    case 3: return "cloudy";
+    case 45:
+    case 48: return "fog";
+    case 51:
+    case 53:
+    case 55: return "drizzle";
+    case 56:
+    case 57: return "freezing drizzle";
+    case 61:
+    case 63:
+    case 65: return "rain";
+    case 66:
+    case 67: return "freezing rain";
+    case 71:
+    case 73:
+    case 75:
+    case 77: return "snow";
+    case 80:
+    case 81:
+    case 82: return "rain showers";
+    case 85:
+    case 86: return "snow showers";
+    case 95: return "thunderstorm";
+    case 96:
+    case 99: return "thunderstorm hail";
+    default: return "unknown";
+  }
+}
+
+static bool fetchWeatherData(String * temperatureHumidity, String * information, String * rollerOptions)
+{
+  if (temperatureHumidity == NULL || information == NULL || rollerOptions == NULL) return false;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  String city;
+  String country;
+  String latStr;
+  String lonStr;
+
+  {
+    HTTPClient http;
+    http.setTimeout(12000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setUserAgent("fOS2.0-weather/1.0");
+    bool started = http.begin("http://ip-api.com/json/?fields=status,message,country,city,lat,lon");
+    if (!started) return false;
+
+    int code = http.GET();
+    Serial.printf("[WEATHER] ip-api code=%d\n", code);
+    if (code != HTTP_CODE_OK) {
+      http.end();
+      return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    String status;
+    if (!extractJsonStringField(payload, "status", &status)) return false;
+    status.toLowerCase();
+    if (status != "success") return false;
+    if (!extractJsonNumberField(payload, "lat", &latStr)) return false;
+    if (!extractJsonNumberField(payload, "lon", &lonStr)) return false;
+    if (!extractJsonStringField(payload, "city", &city)) city = "unknown location";
+    if (!extractJsonStringField(payload, "country", &country)) country = "";
+  }
+
+  String weatherJson;
+  {
+    String url = "https://api.open-meteo.com/v1/forecast?latitude=";
+    url += latStr;
+    url += "&longitude=";
+    url += lonStr;
+    url += "&current=temperature_2m,relative_humidity_2m,weather_code";
+    url += "&daily=weather_code,temperature_2m_max,temperature_2m_min";
+    url += "&timezone=auto&forecast_days=7";
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    http.setTimeout(15000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setUserAgent("fOS2.0-weather/1.0");
+    bool started = http.begin(client, url);
+    if (!started) return false;
+
+    int code = http.GET();
+    Serial.printf("[WEATHER] open-meteo code=%d\n", code);
+    if (code != HTTP_CODE_OK) {
+      http.end();
+      return false;
+    }
+
+    weatherJson = http.getString();
+    http.end();
+  }
+
+  int currentPos = weatherJson.indexOf("\"current\":{");
+  int dailyPos = weatherJson.indexOf("\"daily\":{");
+  if (currentPos < 0 || dailyPos < 0) return false;
+
+  auto extractNumberFrom = [&](const char * key, int startPos, String * out) -> bool {
+    if (key == NULL || out == NULL) return false;
+    String token = "\"";
+    token += key;
+    token += "\":";
+    int pos = weatherJson.indexOf(token, startPos);
+    if (pos < 0) return false;
+    pos += token.length();
+    while (pos < (int)weatherJson.length() && (weatherJson[pos] == ' ' || weatherJson[pos] == '\t')) pos++;
+    int end = pos;
+    while (end < (int)weatherJson.length()) {
+      char c = weatherJson[end];
+      if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') end++;
+      else break;
+    }
+    if (end <= pos) return false;
+    *out = weatherJson.substring(pos, end);
+    out->trim();
+    return out->length() > 0;
+  };
+
+  String tempStr;
+  String humidityStr;
+  String weatherCodeStr;
+  if (!extractNumberFrom("temperature_2m", currentPos, &tempStr)) return false;
+  if (!extractNumberFrom("relative_humidity_2m", currentPos, &humidityStr)) return false;
+  if (!extractNumberFrom("weather_code", currentPos, &weatherCodeStr)) return false;
+
+  String arrDatesRaw;
+  String arrMaxRaw;
+  String arrMinRaw;
+  String arrCodeRaw;
+  if (!extractJsonArrayRaw(weatherJson.substring(dailyPos), "time", &arrDatesRaw)) return false;
+  if (!extractJsonArrayRaw(weatherJson.substring(dailyPos), "temperature_2m_max", &arrMaxRaw)) return false;
+  if (!extractJsonArrayRaw(weatherJson.substring(dailyPos), "temperature_2m_min", &arrMinRaw)) return false;
+  if (!extractJsonArrayRaw(weatherJson.substring(dailyPos), "weather_code", &arrCodeRaw)) return false;
+
+  String dates[7];
+  String maxs[7];
+  String mins[7];
+  String codes[7];
+  int dateCount = 0;
+  int maxCount = 0;
+  int minCount = 0;
+  int codeCount = 0;
+
+  int pos = 0;
+  while (dateCount < 7) {
+    int q1 = arrDatesRaw.indexOf('"', pos);
+    if (q1 < 0) break;
+    int q2 = arrDatesRaw.indexOf('"', q1 + 1);
+    if (q2 < 0) break;
+    dates[dateCount++] = arrDatesRaw.substring(q1 + 1, q2);
+    pos = q2 + 1;
+  }
+
+  auto fillNumberArray = [](const String& raw, String outArr[7], int * outCount) {
+    if (outCount == NULL) return;
+    *outCount = 0;
+    int start = 0;
+    while (*outCount < 7 && start < (int)raw.length()) {
+      int comma = raw.indexOf(',', start);
+      if (comma < 0) comma = raw.length();
+      String token = raw.substring(start, comma);
+      token.trim();
+      if (token.length() > 0) {
+        outArr[*outCount] = token;
+        (*outCount)++;
+      }
+      start = comma + 1;
+    }
+  };
+
+  fillNumberArray(arrMaxRaw, maxs, &maxCount);
+  fillNumberArray(arrMinRaw, mins, &minCount);
+  fillNumberArray(arrCodeRaw, codes, &codeCount);
+
+  int usable = dateCount;
+  if (maxCount < usable) usable = maxCount;
+  if (minCount < usable) usable = minCount;
+  if (codeCount < usable) usable = codeCount;
+  if (usable <= 0) return false;
+
+  int tempI = (int)round(tempStr.toFloat());
+  int humI = (int)round(humidityStr.toFloat());
+  *temperatureHumidity = String(tempI) + "C   " + String(humI) + "%";
+
+  int currentCode = weatherCodeStr.toInt();
+  String currentPhenomenon = weatherCodeToText(currentCode);
+  if (country.length() > 0) {
+    *information = currentPhenomenon + " | " + city + ", " + country;
+  } else {
+    *information = currentPhenomenon + " | " + city;
+  }
+
+  rollerOptions->remove(0);
+  for (int i = 0; i < usable; i++) {
+    String weekday = dates[i];
+    if (dates[i].length() >= 10) {
+      int year = dates[i].substring(0, 4).toInt();
+      int month = dates[i].substring(5, 7).toInt();
+      int day = dates[i].substring(8, 10).toInt();
+      struct tm tmValue;
+      memset(&tmValue, 0, sizeof(tmValue));
+      tmValue.tm_year = year - 1900;
+      tmValue.tm_mon = month - 1;
+      tmValue.tm_mday = day;
+      tmValue.tm_hour = 12;
+      if (mktime(&tmValue) != (time_t)-1) {
+        weekday = String(kWeekdaysEn[tmValue.tm_wday]);
+      }
+    }
+
+    String line = weekday + " " + dates[i] + " | " + mins[i] + "-" + maxs[i] + "C | " + weatherCodeToText(codes[i].toInt());
+    *rollerOptions += line;
+    if (i + 1 < usable) *rollerOptions += "\n";
+  }
+
+  return true;
+}
+
+static void applyWeatherUiData(const String& temperatureHumidity, const String& information, const String& rollerOptions)
+{
+  if (uic_LabelWeatherTemperature) {
+    lv_label_set_text(uic_LabelWeatherTemperature, temperatureHumidity.c_str());
+  }
+  if (uic_LabelWeatherInformation) {
+    lv_label_set_text(uic_LabelWeatherInformation, information.c_str());
+  }
+  if (uic_RollerWeatherData) {
+    lv_roller_set_options(uic_RollerWeatherData, rollerOptions.c_str(), LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_selected(uic_RollerWeatherData, 0, LV_ANIM_OFF);
+  }
+}
+
+static void refreshWeatherDataIfNeeded(bool force)
+{
+  if (!gWeatherAppVisible) return;
+  if (gWeatherFetchRunning) return;
+
+  unsigned long nowMs = millis();
+  if (!force && (nowMs - gWeatherLastFetchMs < kWeatherRefreshIntervalMs)) return;
+
+  gWeatherFetchRunning = true;
+
+  String tempHum;
+  String info;
+  String roller;
+  bool ok = fetchWeatherData(&tempHum, &info, &roller);
+  if (ok) {
+    applyWeatherUiData(tempHum, info, roller);
+    gWeatherLastFetchMs = nowMs;
+  } else {
+    if (force) {
+      applyWeatherUiData("--C   --%", "No weather data found", "No Data");
+    }
+    if (kWeatherRefreshIntervalMs > 60000UL) {
+      gWeatherLastFetchMs = nowMs - (kWeatherRefreshIntervalMs - 60000UL);
+    } else {
+      gWeatherLastFetchMs = nowMs;
+    }
+  }
+
+  gWeatherFetchRunning = false;
+}
+
+static void renderWeatherApp()
+{
+  resetWeatherAppState();
+  gWeatherAppVisible = true;
+
+  uic_LabelWeatherTemperature = lv_label_create(uic_AppContentArea);
+  if (uic_LabelWeatherTemperature == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_label_set_text(uic_LabelWeatherTemperature, "--C   --%");
+  lv_obj_align(uic_LabelWeatherTemperature, LV_ALIGN_CENTER, 0, -183);
+  lv_obj_set_style_text_font(uic_LabelWeatherTemperature, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  uic_LabelWeatherInformation = lv_label_create(uic_AppContentArea);
+  if (uic_LabelWeatherInformation == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_label_set_text(uic_LabelWeatherInformation, "No weather data found");
+  lv_obj_align(uic_LabelWeatherInformation, LV_ALIGN_CENTER, 0, -124);
+  lv_obj_set_style_text_font(uic_LabelWeatherInformation, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  uic_RollerWeatherData = lv_roller_create(uic_AppContentArea);
+  if (uic_RollerWeatherData == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_roller_set_options(uic_RollerWeatherData, "No Data", LV_ROLLER_MODE_NORMAL);
+  lv_obj_set_size(uic_RollerWeatherData, 758, 303);
+  lv_obj_align(uic_RollerWeatherData, LV_ALIGN_CENTER, 0, 70);
+  lv_obj_set_style_text_font(uic_RollerWeatherData, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(uic_RollerWeatherData, &lv_font_montserrat_20, LV_PART_SELECTED | LV_STATE_DEFAULT);
+
+  if (ui_HomeButton9 != NULL) {
+    lv_obj_move_foreground(ui_HomeButton9);
+  }
+
+  refreshWeatherDataIfNeeded(true);
 }
 
 static void showAppContentForIndex(int appIndex)
@@ -1461,6 +2731,25 @@ static void showAppContentForIndex(int appIndex)
 
   if (app.appType == "radio") {
     renderRadioApp();
+    return;
+  }
+
+  if (app.appType == "clock") {
+    renderClockDashboardApp();
+    return;
+  }
+
+  if (app.appType == "weather") {
+    renderWeatherApp();
+    return;
+  }
+
+  bool isSdTextEditorApp =
+    (app.appType == "sd") ||
+    (app.appType == "text" && app.folderName == "text");
+
+  if (isSdTextEditorApp) {
+    renderSdTextApp();
     return;
   }
 
@@ -1547,6 +2836,9 @@ extern "C" void UnloadApp_Data(lv_event_t * e)
   clearAppContentArea();
   resetCalculatorState();
   resetRadioState();
+  resetSdAppState();
+  resetClockDashboardState();
+  resetWeatherAppState();
   StartAppLauncher_Data(NULL);
 }
 
@@ -2053,91 +3345,29 @@ extern "C" void ResetStorageManagerToRoot_Data(void)
    ========================================================= */
 extern "C" void fillFileRoller_TextViewer_Data(void)
 {
-  if (!sd_ok) return;
-
-  File root = SD.open(TEXT_DIR);
-  if (!root) return;
-
-  String rollerText = "";
-
-  File file = root.openNextFile();
-  while (file) {
-    if (!file.isDirectory()) {
-      rollerText += file.name();
-      rollerText += "\n";
-    }
-    file = root.openNextFile();
+  lv_obj_t * roller = gSdFileRoller;
+#if defined(UI_SCREENTEXT_H)
+  if (uic_FileRollerText != NULL) {
+    roller = uic_FileRollerText;
   }
-
-  root.close();
-
-  if (rollerText.length() == 0) {
-    rollerText = "Keine Dateien";
-  }
-
-  lv_roller_set_options(
-    uic_FileRollerText,
-    rollerText.c_str(),
-    LV_ROLLER_MODE_NORMAL
-  );
+#endif
+  fillTextRollerFor(roller);
 }
 
 
 extern "C" void load_selected_file_Data(void)
 {
-  if (!sd_ok) {
-    lv_textarea_set_text(uic_TextArea, "SD Karte nicht verfügbar");
-    return;
+  lv_obj_t * roller = gSdFileRoller;
+  lv_obj_t * textArea = gSdTextArea;
+#if defined(UI_SCREENTEXT_H)
+  if (uic_FileRollerText != NULL) {
+    roller = uic_FileRollerText;
   }
-
-  /* ausgewählten Dateinamen aus dem Roller holen */
-  char buf[128];
-  lv_roller_get_selected_str(
-    uic_FileRollerText,
-    buf,
-    sizeof(buf)
-  );
-
-  String filename = String(buf);
-
-  if (filename.length() == 0 || filename == "Keine Dateien") {
-    lv_textarea_set_text(uic_TextArea, "Keine Datei ausgewählt");
-    return;
+  if (uic_TextArea != NULL) {
+    textArea = uic_TextArea;
   }
-
-  String path = String(TEXT_DIR) + "/" + filename;
-
-  /* Existenz prüfen */
-  if (!SD.exists(path)) {
-    lv_textarea_set_text(uic_TextArea, "Datei nicht gefunden");
-    return;
-  }
-
-  /* Datei öffnen */
-  File file = SD.open(path, FILE_READ);
-  if (!file) {
-    lv_textarea_set_text(uic_TextArea, "Datei konnte nicht geöffnet werden");
-    return;
-  }
-
-  /* Dateiinhalt lesen */
-  String content;
-  content.reserve(1024);   // RAM-schonend
-
-  while (file.available()) {
-    content += (char)file.read();
-
-    /* RAM-Schutz für ESP32 */
-    if (content.length() > 4000) {
-      content += "\n\n[Datei gekürzt]";
-      break;
-    }
-  }
-
-  file.close();
-
-  /* Textarea befüllen */
-  lv_textarea_set_text(uic_TextArea, content.c_str());
+#endif
+  loadSelectedTextFileFor(roller, textArea);
 }
 
 
@@ -2147,50 +3377,34 @@ extern "C" void load_selected_file_Data(void)
    ========================================================= */
 extern "C" void save_text_file_data(lv_event_t * e)
 {
-  if (!sd_ok) {
-    Serial.println("SD Karte nicht verfügbar");
-    return;
+  (void)e;
+  lv_obj_t * textArea = gSdTextArea;
+  lv_obj_t * fileNameInput = gSdFileNameInput;
+  lv_obj_t * roller = gSdFileRoller;
+#if defined(UI_SCREENTEXT_H)
+  if (uic_TextArea != NULL) {
+    textArea = uic_TextArea;
   }
-
-  // Text aus der TextArea
-  const char* text = lv_textarea_get_text(uic_TextArea);
-
-  // Dateiname aus dem Input
-  const char* filename = lv_textarea_get_text(uic_FileNameInput);
-
-  if (strlen(filename) == 0) {
-    Serial.println("Dateiname leer");
-    return;
+  if (uic_FileNameInput != NULL) {
+    fileNameInput = uic_FileNameInput;
   }
-
-  String path = String(TEXT_DIR) + "/" + filename + ".txt";
-
-
-  // 🔥 Datei IMMER überschreiben
-  if (SD.exists(path.c_str())) {
-    SD.remove(path.c_str());
+  if (uic_FileRollerText != NULL) {
+    roller = uic_FileRollerText;
   }
-
-  File file = SD.open(path.c_str(), FILE_WRITE);
-  if (!file) {
-    Serial.println("Datei konnte nicht erstellt werden");
-    return;
-  }
-
-  file.print(text);   // kein zusätzlicher Zeilenumbruch
-  file.close();
-
-  Serial.println("Datei gespeichert: " + path);
-
-  // 🔄 UI aktualisieren
-  fillFileRoller();
-  updateSDUIData();
-  fillFileRoller_TextViewer_Data();
+#endif
+  saveTextFileFor(textArea, fileNameInput, roller);
 }
 
 extern "C" void OpenNewFile_Data(lv_event_t * e)
 {
-  lv_textarea_set_text(uic_TextArea, "");
+  (void)e;
+  lv_obj_t * textArea = gSdTextArea;
+#if defined(UI_SCREENTEXT_H)
+  if (uic_TextArea != NULL) {
+    textArea = uic_TextArea;
+  }
+#endif
+  openNewTextFileFor(textArea);
 }
 
 
@@ -2308,6 +3522,9 @@ void loop()
     requestNtpSync(false);
     updateClockUI();
   }
+
+  updateClockDashboardTick();
+  refreshWeatherDataIfNeeded(false);
 
   // Audio
   audio.loop();

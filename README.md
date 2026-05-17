@@ -1,24 +1,31 @@
-# fOS 2.0.0
+# fOS 2.1.0
 
-fOS 2.0.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-This release introduces a fully SD-driven app workflow with dynamic launcher tiles, unloadable app content, and new built-in app types (calculator and radio).
+fOS 2.1.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+This release extends the SD app runtime with new app types (`clock`, `weather`), a decoupled SD text editor in `AppContent`, and UI/feature upgrades for radio, clock, and weather.
 
-## What's New in 2.0.0
+## What's New in 2.1.0
 
-- New SD App Launcher architecture (up to 6 app tiles on `AppL1` to `AppL6`).
-- Apps are loaded from `/apps` and opened in a dedicated `AppContent` runtime area.
-- App content can be unloaded via `UnloadApp()` to free runtime memory.
-- New app type: `calculator`
-  - Addition, subtraction, multiplication, division
-  - Decimal comma support (`,`)
-  - Division by zero shows `Math Error`
-- New app type: `radio`
-  - Local audio list from `/music/files/`
-  - Webradio list from `/music/webradio/webradio.txt` (`Sender|URL`)
-  - Start/Stop toggle button
-- Storage Manager now supports directory navigation from filesystem root `/`:
-  - Open folders via `StorageManagerSelect()`
-  - `..` entry for navigating to parent folder
+- SD app runtime in `AppContent` expanded with new app types:
+  - `clock`
+  - `weather`
+- SD text editor app now runs directly in `AppContent` and no longer depends on legacy `ui_ScreenText` runtime objects.
+- New clock dashboard app (`type=clock`):
+  - `Current Time` and `Stopwatch` tabs
+  - calendar with highlighted current day
+  - current month opens by default (auto-sync after valid time is available)
+  - stopwatch starts only after pressing start (`>`), reset button included
+- New weather app (`type=weather`) rendered in `AppContent`:
+  - IP-based location detection
+  - current temperature + humidity
+  - current weather phenomenon + detected location
+  - 7-day forecast list in weather roller
+- Weather backend now uses:
+  - `ip-api.com` for geolocation
+  - `open-meteo.com` for current weather and 7-day forecast
+- Radio app UI reworked for the new app runtime style:
+  - `File Player` / `Web Radio` tabs
+  - centered play/pause button (`>` / `||`)
+  - dark themed list panels with highlighted selection
 
 ## Prerequisites
 
@@ -41,6 +48,8 @@ This release introduces a fully SD-driven app workflow with dynamic launcher til
   - `CrowPanel_70`
   - `CrowPanel_50`
   - `CrowPanel_43`
+- Arduino IDE board option `Partition Scheme` should be set to `Huge APP`.
+- Arduino IDE board option `PSRAM` should be set to `OPI PSRAM`.
 - SD chip-select is set to `SD_CS = 10` in `fOS2.0.ino`.
 
 ## Installation
@@ -50,10 +59,13 @@ This release introduces a fully SD-driven app workflow with dynamic launcher til
 3. Install required libraries: `lvgl`, `LovyanGFX`, `ESP32-audioI2S`.
 4. Open `fOS2.0.ino` in Arduino IDE.
 5. Select your ESP32-S3 target board and serial port.
-6. Verify panel define in `LGFX_CrowPanel.h`.
-7. Build and upload firmware.
-8. Prepare SD card as described below and insert it.
-9. Reboot the device.
+6. Set board options:
+   - `Partition Scheme: Huge APP`
+   - `PSRAM: OPI PSRAM`
+7. Verify panel define in `LGFX_CrowPanel.h`.
+8. Build and upload firmware.
+9. Prepare SD card as described below and insert it.
+10. Reboot the device.
 
 ## SD Card Setup
 
@@ -103,7 +115,7 @@ Each app is a folder under `/apps/<app_name>/` with at least `app.cfg`.
 ```text
 name=Display Name
 icon=Optional short tile text/symbol
-type=ui|text|button|calculator|radio
+type=ui|text|button|calculator|radio|clock|weather
 scrollable=true|false
 ```
 
@@ -116,6 +128,10 @@ Additional keys by type:
 - `type=button`
   - `button_text=...`
   - `button_message=...`
+- `type=clock`
+  - no extra keys required
+- `type=weather`
+  - no extra keys required
 
 ### layout.ui (for `type=ui`)
 
@@ -146,6 +162,11 @@ Supported `type=` values in layout lines:
 - Text Editor (open/create/overwrite-save)
 - App Launcher (`AppL1` to `AppL6`)
 - App Content runtime area
+- Runtime apps:
+  - Calculator
+  - Radio
+  - Clock
+  - Weather
 
 ## Example Bundle
 
@@ -156,6 +177,9 @@ See `example app/` for ready-to-copy examples:
 - `ui_demo`
 - `calculator_demo`
 - `radio_demo`
+- `clock_demo`
+- `weather_demo`
+- `text` (AppContent text editor app)
 
 Webradio example list:
 - `example app/music/webradio/webradio.txt`
@@ -175,3 +199,7 @@ Webradio example list:
 - No web stations in radio app:
   - Ensure `/music/webradio/webradio.txt` exists
   - Validate `Sender|URL` format
+- No weather data in weather app:
+  - Ensure device has Wi-Fi connection
+  - Check internet access to `ip-api.com` and `api.open-meteo.com`
+  - Re-open weather app after Wi-Fi reconnect
