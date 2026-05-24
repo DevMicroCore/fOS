@@ -16,6 +16,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ota_recovery_manager.h"
 
 void setup();
 void loop();
@@ -25,13 +26,16 @@ void audio_eof_mp3(const char *info);
 #define WIFI_FILE "/system/wifi/wlans.txt"
 #define TIMEZONE_DIR  "/system/timezone"
 #define TIMEZONE_FILE "/system/timezone/timezone.txt"
+#define DISPLAY_DIR "/system/display"
+#define DISPLAY_FILE "/system/display/brightness.txt"
+#define UPDATE_DIR "/system/update"
 #define TEXT_DIR "/text"
 #define MUSIC_FILES_DIR   "/music/files"
 #define WEBRADIO_DIR "/music/webradio"
 #define WEBRADIO_FILE "/music/webradio/webradio.txt"
 #define APPS_DIR "/apps"
 
-#define MAX_LAUNCHER_APPS 6
+#define MAX_LAUNCHER_APPS 7
 
 
 #define MAX_WIFI_PROFILES 5
@@ -167,6 +171,9 @@ static const int kDefaultTimeZoneIndex = 0;
 static int currentTimeZoneIndex = kDefaultTimeZoneIndex;
 static unsigned long lastNtpSyncAttempt = 0;
 static unsigned long lastClockUiUpdate = 0;
+static const int kMinBrightnessPercent = 5;
+static const int kDefaultBrightnessPercent = 100;
+static int gBrightnessPercent = kDefaultBrightnessPercent;
 
 static const char* kWeekdaysEn[] = {
   "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
@@ -265,6 +272,11 @@ static void refreshWeatherDataIfNeeded(bool force);
 static void renderWeatherApp();
 static String getStorageManagerParentPath(const String& path);
 static String joinStorageManagerPath(const String& base, const String& name);
+static int normalizeBrightnessPercent(int value);
+static uint8_t brightnessPercentToLevel(int percent);
+static void applyDisplayBrightnessPercent(int percent, bool updateSlider);
+static bool saveCurrentBrightness();
+static void loadSavedBrightness();
 
 int getTimeZoneCount()
 {
@@ -428,6 +440,78 @@ void updateClockUI()
   }
 }
 
+static int normalizeBrightnessPercent(int value)
+{
+  if (value < kMinBrightnessPercent) {
+    return kMinBrightnessPercent;
+  }
+  if (value > 100) {
+    return 100;
+  }
+  return value;
+}
+
+static uint8_t brightnessPercentToLevel(int percent)
+{
+  const int normalized = normalizeBrightnessPercent(percent);
+  return static_cast<uint8_t>((normalized * 255) / 100);
+}
+
+static void applyDisplayBrightnessPercent(int percent, bool updateSlider)
+{
+  gBrightnessPercent = normalizeBrightnessPercent(percent);
+  const uint8_t level = brightnessPercentToLevel(gBrightnessPercent);
+  gfx.setBrightness(level);
+
+  if (updateSlider && uic_SliderBrightness) {
+    lv_slider_set_value(uic_SliderBrightness, gBrightnessPercent, LV_ANIM_OFF);
+  }
+}
+
+static bool saveCurrentBrightness()
+{
+  if (!sd_ok) return false;
+
+  if (!SD.exists(DISPLAY_DIR)) {
+    SD.mkdir(DISPLAY_DIR);
+  }
+
+  if (SD.exists(DISPLAY_FILE)) {
+    SD.remove(DISPLAY_FILE);
+  }
+
+  File f = SD.open(DISPLAY_FILE, FILE_WRITE);
+  if (!f) return false;
+
+  f.println(gBrightnessPercent);
+  f.close();
+  return true;
+}
+
+static void loadSavedBrightness()
+{
+  int loadedPercent = kDefaultBrightnessPercent;
+
+  if (uic_SliderBrightness) {
+    lv_slider_set_range(uic_SliderBrightness, kMinBrightnessPercent, 100);
+  }
+
+  if (sd_ok && SD.exists(DISPLAY_FILE)) {
+    File f = SD.open(DISPLAY_FILE, FILE_READ);
+    if (f) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      f.close();
+
+      if (line.length() > 0) {
+        loadedPercent = line.toInt();
+      }
+    }
+  }
+
+  applyDisplayBrightnessPercent(loadedPercent, true);
+}
+
 extern "C" void SaveTimeZone_Data(lv_event_t * e)
 {
   (void)e;
@@ -443,6 +527,34 @@ extern "C" void SaveTimeZone_Data(lv_event_t * e)
   }
 
   updateClockUI();
+}
+
+extern "C" void SaveDisplaySettings_Data(lv_event_t * e)
+{
+  (void)e;
+  if (!uic_SliderBrightness) {
+    Serial.println("Display settings not saved: slider unavailable");
+    return;
+  }
+
+  lv_slider_set_range(uic_SliderBrightness, kMinBrightnessPercent, 100);
+  int sliderPercent = lv_slider_get_value(uic_SliderBrightness);
+  sliderPercent = normalizeBrightnessPercent(sliderPercent);
+  applyDisplayBrightnessPercent(sliderPercent, true);
+
+  const uint8_t brightness = brightnessPercentToLevel(sliderPercent);
+
+  if (saveCurrentBrightness()) {
+    Serial.println("Display brightness saved to /system/display/brightness.txt");
+  } else {
+    Serial.println("Display brightness applied but not saved (SD not ready?)");
+  }
+
+  Serial.printf(
+    "Display brightness saved: slider=%d%% -> brightness=%u\n",
+    sliderPercent,
+    static_cast<unsigned>(brightness)
+  );
 }
 
 /* ================= Boot Progress ================= */
@@ -620,6 +732,7 @@ static lv_obj_t * getLauncherSlotByIndex(int index)
     case 3: return ui_AppL4;
     case 4: return ui_AppL5;
     case 5: return ui_AppL6;
+    case 6: return ui_AppL7;
     default: return NULL;
   }
 }
@@ -2785,7 +2898,7 @@ static void demoButtonClicked(lv_event_t * e)
 static void drawLauncherApps()
 {
   if (ui_AppL1 == NULL || ui_AppL2 == NULL || ui_AppL3 == NULL ||
-      ui_AppL4 == NULL || ui_AppL5 == NULL || ui_AppL6 == NULL) return;
+      ui_AppL4 == NULL || ui_AppL5 == NULL || ui_AppL6 == NULL || ui_AppL7 == NULL) return;
 
   for (int i = 0; i < MAX_LAUNCHER_APPS; i++) {
     lv_obj_t * slot = getLauncherSlotByIndex(i);
@@ -2880,6 +2993,16 @@ void initSD()
     if (!SD.exists(TIMEZONE_DIR)) {
       SD.mkdir(TIMEZONE_DIR);
       Serial.println("Ordner /system/timezone erstellt");
+    }
+
+    if (!SD.exists(DISPLAY_DIR)) {
+      SD.mkdir(DISPLAY_DIR);
+      Serial.println("Ordner /system/display erstellt");
+    }
+
+    if (!SD.exists(UPDATE_DIR)) {
+      SD.mkdir(UPDATE_DIR);
+      Serial.println("Ordner /system/update erstellt");
     }
 
   } else {
@@ -3438,6 +3561,7 @@ void setup()
 
   /* ================= UI INIT ================= */
   ui_init();
+  OTARecovery_Init();
   lv_scr_load(uic_ScreenHome);
   setupTimeZoneRoller();
   updateClockUI();
@@ -3455,6 +3579,7 @@ bootProgress(10, "Initialize display");
 bootProgress(15, "Initialize SD card");
 initSD();
 loadSavedTimeZone();
+loadSavedBrightness();
 updateClockUI();
 StartAppLauncher_Data(NULL);
 
@@ -3497,6 +3622,16 @@ void loop()
     lv_tick_inc(now - last_tick);
     last_tick = now;
     lv_timer_handler();
+  }
+
+  OTARecovery_Tick();
+  const bool otaBusy = OTARecovery_IsBusy();
+
+  if (otaBusy) {
+    // While OTA/Recovery preparation is running, avoid additional UI redraw
+    // and network/audio work to keep the RGB panel output stable.
+    delay(5);
+    return;
   }
 
   // alle 30 Sekunden Wi-Fi prüfen (non-blocking Reconnect)

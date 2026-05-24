@@ -11,17 +11,14 @@ extern "C" {
 #endif
 
 void updateSystemInfo(lv_event_t * e);
-void fillFileRoller_TextViewer(lv_event_t * e);
 void ReloadWiFiConnection(lv_event_t * e);
 void SaveWifiConnection(lv_event_t * e);
 void SaveTimeZone(lv_event_t * e);
+void SaveDisplaySettings(lv_event_t * e);
 void BackToHomeFromFileManager(lv_event_t * e);
 void StorageManagerSelect(lv_event_t * e);
 void DeleteFileSelected(lv_event_t * e);
-void BackToHomeFromText(lv_event_t * e);
-void OpenNewFile(lv_event_t * e);
-void save_text_file(lv_event_t * e);
-void load_selected_file(lv_event_t * e);
+void InstallUpdate(lv_event_t * e);
 void UnloadApp(lv_event_t * e);
 
 #ifdef __cplusplus

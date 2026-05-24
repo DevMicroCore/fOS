@@ -10,16 +10,16 @@ lv_obj_t *uic_BootProgressBar;
 lv_obj_t *uic_BootOverlay;
 lv_obj_t *uic_labelClockTopLine;
 lv_obj_t *uic_WiFiImage;
+lv_obj_t *uic_AppL7;
 lv_obj_t *uic_AppL6;
 lv_obj_t *uic_AppL5;
 lv_obj_t *uic_AppL4;
 lv_obj_t *uic_AppL3;
 lv_obj_t *uic_AppL2;
 lv_obj_t *uic_AppL1;
-lv_obj_t *uic_AppText;
 lv_obj_t *uic_AppSettings;
 lv_obj_t *uic_ScreenHome;
-lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppText = NULL;lv_obj_t *ui_AppL1 = NULL;lv_obj_t *ui_AppL2 = NULL;lv_obj_t *ui_AppL3 = NULL;lv_obj_t *ui_AppL4 = NULL;lv_obj_t *ui_AppL5 = NULL;lv_obj_t *ui_AppL6 = NULL;lv_obj_t *ui_WiFiImage = NULL;lv_obj_t *ui_labelClockTopLine = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_fOS = NULL;lv_obj_t *ui_BootProgressBar = NULL;lv_obj_t *ui_BootProgressLabel = NULL;
+lv_obj_t *ui_ScreenHome = NULL;lv_obj_t *ui_AppSettings = NULL;lv_obj_t *ui_AppL1 = NULL;lv_obj_t *ui_AppL2 = NULL;lv_obj_t *ui_AppL3 = NULL;lv_obj_t *ui_AppL4 = NULL;lv_obj_t *ui_AppL5 = NULL;lv_obj_t *ui_AppL6 = NULL;lv_obj_t *ui_AppL7 = NULL;lv_obj_t *ui_WiFiImage = NULL;lv_obj_t *ui_labelClockTopLine = NULL;lv_obj_t *ui_BootOverlay = NULL;lv_obj_t *ui_fOS = NULL;lv_obj_t *ui_BootProgressBar = NULL;lv_obj_t *ui_BootProgressLabel = NULL;
 // event funtions
 void ui_event_AppSettings( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -29,17 +29,6 @@ if ( event_code == LV_EVENT_CLICKED) {
 }
 if ( event_code == LV_EVENT_CLICKED) {
       updateSystemInfo( e );
-}
-}
-
-void ui_event_AppText( lv_event_t * e) {
-    lv_event_code_t event_code = lv_event_get_code(e);
-
-if ( event_code == LV_EVENT_CLICKED) {
-      _ui_screen_change( &ui_ScreenText, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_ScreenText_screen_init);
-}
-if ( event_code == LV_EVENT_CLICKED) {
-      fillFileRoller_TextViewer( e );
 }
 }
 
@@ -59,16 +48,6 @@ lv_obj_set_align( ui_AppSettings, LV_ALIGN_CENTER );
 lv_obj_clear_flag( ui_AppSettings, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 lv_obj_set_style_radius(ui_AppSettings, 30, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_bg_img_src( ui_AppSettings, &ui_img_350490791, LV_PART_MAIN | LV_STATE_DEFAULT );
-
-ui_AppText = lv_obj_create(ui_ScreenHome);
-lv_obj_set_width( ui_AppText, 120);
-lv_obj_set_height( ui_AppText, 120);
-lv_obj_set_x( ui_AppText, -240 );
-lv_obj_set_y( ui_AppText, 70 );
-lv_obj_set_align( ui_AppText, LV_ALIGN_CENTER );
-lv_obj_clear_flag( ui_AppText, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
-lv_obj_set_style_radius(ui_AppText, 21, LV_PART_MAIN| LV_STATE_DEFAULT);
-lv_obj_set_style_bg_img_src( ui_AppText, &ui_img_1781796769, LV_PART_MAIN | LV_STATE_DEFAULT );
 
 ui_AppL1 = lv_obj_create(ui_ScreenHome);
 lv_obj_remove_style_all(ui_AppL1);
@@ -101,7 +80,7 @@ ui_AppL4 = lv_obj_create(ui_ScreenHome);
 lv_obj_remove_style_all(ui_AppL4);
 lv_obj_set_width( ui_AppL4, 120);
 lv_obj_set_height( ui_AppL4, 120);
-lv_obj_set_x( ui_AppL4, -80 );
+lv_obj_set_x( ui_AppL4, -240 );
 lv_obj_set_y( ui_AppL4, 70 );
 lv_obj_set_align( ui_AppL4, LV_ALIGN_CENTER );
 lv_obj_clear_flag( ui_AppL4, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
@@ -110,7 +89,7 @@ ui_AppL5 = lv_obj_create(ui_ScreenHome);
 lv_obj_remove_style_all(ui_AppL5);
 lv_obj_set_width( ui_AppL5, 120);
 lv_obj_set_height( ui_AppL5, 120);
-lv_obj_set_x( ui_AppL5, 80 );
+lv_obj_set_x( ui_AppL5, -80 );
 lv_obj_set_y( ui_AppL5, 70 );
 lv_obj_set_align( ui_AppL5, LV_ALIGN_CENTER );
 lv_obj_clear_flag( ui_AppL5, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
@@ -119,10 +98,19 @@ ui_AppL6 = lv_obj_create(ui_ScreenHome);
 lv_obj_remove_style_all(ui_AppL6);
 lv_obj_set_width( ui_AppL6, 120);
 lv_obj_set_height( ui_AppL6, 120);
-lv_obj_set_x( ui_AppL6, 240 );
+lv_obj_set_x( ui_AppL6, 80 );
 lv_obj_set_y( ui_AppL6, 70 );
 lv_obj_set_align( ui_AppL6, LV_ALIGN_CENTER );
 lv_obj_clear_flag( ui_AppL6, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+
+ui_AppL7 = lv_obj_create(ui_ScreenHome);
+lv_obj_remove_style_all(ui_AppL7);
+lv_obj_set_width( ui_AppL7, 120);
+lv_obj_set_height( ui_AppL7, 120);
+lv_obj_set_x( ui_AppL7, 240 );
+lv_obj_set_y( ui_AppL7, 70 );
+lv_obj_set_align( ui_AppL7, LV_ALIGN_CENTER );
+lv_obj_clear_flag( ui_AppL7, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 
 ui_WiFiImage = lv_img_create(ui_ScreenHome);
 lv_img_set_src(ui_WiFiImage, &ui_img_1837598647);
@@ -177,16 +165,15 @@ lv_label_set_text(ui_BootProgressLabel,"Booting . . .");
 lv_obj_set_style_text_font(ui_BootProgressLabel, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 lv_obj_add_event_cb(ui_AppSettings, ui_event_AppSettings, LV_EVENT_ALL, NULL);
-lv_obj_add_event_cb(ui_AppText, ui_event_AppText, LV_EVENT_ALL, NULL);
 uic_ScreenHome = ui_ScreenHome;
 uic_AppSettings = ui_AppSettings;
-uic_AppText = ui_AppText;
 uic_AppL1 = ui_AppL1;
 uic_AppL2 = ui_AppL2;
 uic_AppL3 = ui_AppL3;
 uic_AppL4 = ui_AppL4;
 uic_AppL5 = ui_AppL5;
 uic_AppL6 = ui_AppL6;
+uic_AppL7 = ui_AppL7;
 uic_WiFiImage = ui_WiFiImage;
 uic_labelClockTopLine = ui_labelClockTopLine;
 uic_BootOverlay = ui_BootOverlay;
@@ -204,8 +191,6 @@ uic_ScreenHome= NULL;
 ui_ScreenHome= NULL;
 uic_AppSettings= NULL;
 ui_AppSettings= NULL;
-uic_AppText= NULL;
-ui_AppText= NULL;
 uic_AppL1= NULL;
 ui_AppL1= NULL;
 uic_AppL2= NULL;
@@ -218,6 +203,8 @@ uic_AppL5= NULL;
 ui_AppL5= NULL;
 uic_AppL6= NULL;
 ui_AppL6= NULL;
+uic_AppL7= NULL;
+ui_AppL7= NULL;
 uic_WiFiImage= NULL;
 ui_WiFiImage= NULL;
 uic_labelClockTopLine= NULL;

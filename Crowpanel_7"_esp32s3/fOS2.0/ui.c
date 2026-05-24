@@ -36,7 +36,7 @@ lv_disp_set_theme(dispp, theme);
 ui_ScreenHome_screen_init();
 ui_ScreenSettings_screen_init();
 ui_ScreenStorageManager_screen_init();
-ui_ScreenText_screen_init();
+ui_Update_screen_init();
 ui_AppContent_screen_init();
 ui____initial_actions0 = lv_obj_create(NULL);
 lv_disp_load_scr( ui_ScreenHome);
@@ -46,6 +46,6 @@ void ui_destroy( void )
 {ui_ScreenHome_screen_destroy();
 ui_ScreenSettings_screen_destroy();
 ui_ScreenStorageManager_screen_destroy();
-ui_ScreenText_screen_destroy();
+ui_Update_screen_destroy();
 ui_AppContent_screen_destroy();
 }

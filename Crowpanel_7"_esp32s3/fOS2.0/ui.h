@@ -31,7 +31,7 @@ extern "C" {
 #include "ui_ScreenHome.h"
 #include "ui_ScreenSettings.h"
 #include "ui_ScreenStorageManager.h"
-#include "ui_ScreenText.h"
+#include "ui_Update.h"
 #include "ui_AppContent.h"
 
 ///////////////////// VARIABLES ////////////////////
@@ -41,7 +41,6 @@ extern lv_obj_t *ui____initial_actions0;
 
 // IMAGES AND IMAGE SETS
 LV_IMG_DECLARE( ui_img_350490791);   // assets/settings-2.png
-LV_IMG_DECLARE( ui_img_1781796769);   // assets/text-size-2.png
 LV_IMG_DECLARE( ui_img_1837598647);   // assets/Wi-Fi.png
 LV_IMG_DECLARE( ui_img_fos_256x256_png);   // assets/fOS_256x256.png
 

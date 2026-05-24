@@ -1,31 +1,37 @@
-# fOS 2.1.0
+# fOS 2.2.0
 
-fOS 2.1.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-This release extends the SD app runtime with new app types (`clock`, `weather`), a decoupled SD text editor in `AppContent`, and UI/feature upgrades for radio, clock, and weather.
+fOS 2.2.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+This release introduces a production OTA + Recovery workflow with dedicated partitions, SD-based update staging, boot fallback logic, and display settings persistence.
 
-## What's New in 2.1.0
+## What's New in 2.2.0
 
-- SD app runtime in `AppContent` expanded with new app types:
-  - `clock`
-  - `weather`
-- SD text editor app now runs directly in `AppContent` and no longer depends on legacy `ui_ScreenText` runtime objects.
-- New clock dashboard app (`type=clock`):
-  - `Current Time` and `Stopwatch` tabs
-  - calendar with highlighted current day
-  - current month opens by default (auto-sync after valid time is available)
-  - stopwatch starts only after pressing start (`>`), reset button included
-- New weather app (`type=weather`) rendered in `AppContent`:
-  - IP-based location detection
-  - current temperature + humidity
-  - current weather phenomenon + detected location
-  - 7-day forecast list in weather roller
-- Weather backend now uses:
-  - `ip-api.com` for geolocation
-  - `open-meteo.com` for current weather and 7-day forecast
-- Radio app UI reworked for the new app runtime style:
-  - `File Player` / `Web Radio` tabs
-  - centered play/pause button (`>` / `||`)
-  - dark themed list panels with highlighted selection
+- New OTA architecture with dedicated partitions:
+  - `app0` for the main fOS firmware
+  - `app1` for a minimal recovery firmware
+  - no SPIFFS, SD card based update staging
+- OTA workflow added to the update screen:
+  - OTA file list is loaded from GitHub in background (UI stays responsive)
+  - selected OTA image is downloaded to `/system/update/update.bin`
+  - latest recovery image is downloaded to `/system/update/recovery.bin`
+  - recovery image is flashed to `app1`
+  - next boot partition is switched to `app1` and device restarts
+- Recovery workflow added:
+  - recovery verifies `/system/update/update.bin`
+  - flashes `update.bin` to `app0`
+  - switches boot partition back to `app0`
+  - restarts automatically
+- Boot safety logic added:
+  - `pending_update` + `boot_attempt_counter` tracking
+  - automatic fallback to recovery after repeated failed boots
+- Display settings added:
+  - brightness save in settings
+  - minimum brightness is limited to `5%`
+  - persistent value stored in `/system/display/brightness.txt`
+  - value is loaded on startup
+- Existing 2.1 runtime features remain included:
+  - SD app runtime in `AppContent`
+  - `clock` and `weather` app types
+  - upgraded radio, clock, and weather runtime UI
 
 ## Prerequisites
 
@@ -48,7 +54,9 @@ This release extends the SD app runtime with new app types (`clock`, `weather`),
   - `CrowPanel_70`
   - `CrowPanel_50`
   - `CrowPanel_43`
-- Arduino IDE board option `Partition Scheme` should be set to `Huge APP`.
+- Partition layout for OTA/Recovery is provided in `partitions.csv`:
+  - `app0`: `0x370000` (main system)
+  - `app1`: `0x080000` (recovery)
 - Arduino IDE board option `PSRAM` should be set to `OPI PSRAM`.
 - SD chip-select is set to `SD_CS = 10` in `fOS2.0.ino`.
 
@@ -60,7 +68,7 @@ This release extends the SD app runtime with new app types (`clock`, `weather`),
 4. Open `fOS2.0.ino` in Arduino IDE.
 5. Select your ESP32-S3 target board and serial port.
 6. Set board options:
-   - `Partition Scheme: Huge APP`
+   - `Partition Scheme: use the custom project partition file (app0/app1 layout)`
    - `PSRAM: OPI PSRAM`
 7. Verify panel define in `LGFX_CrowPanel.h`.
 8. Build and upload firmware.
@@ -105,6 +113,12 @@ Optional system-managed files:
   - Wi-Fi profiles as `SSID|PASSWORD` (one per line)
 - `/system/timezone/timezone.txt`
   - saved timezone rule
+- `/system/display/brightness.txt`
+  - saved display brightness in percent (`5..100`)
+- `/system/update/update.bin`
+  - staged OTA image for `app0`
+- `/system/update/recovery.bin`
+  - staged recovery image for `app1`
 
 ## SD App Format
 
@@ -203,3 +217,6 @@ Webradio example list:
   - Ensure device has Wi-Fi connection
   - Check internet access to `ip-api.com` and `api.open-meteo.com`
   - Re-open weather app after Wi-Fi reconnect
+- OTA update list appears late:
+  - list loading is asynchronous in 2.2.0 and no longer blocks the UI
+  - check serial output for `[OTA]` logs if files do not appear

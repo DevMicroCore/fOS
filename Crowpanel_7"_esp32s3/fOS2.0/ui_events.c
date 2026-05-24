@@ -4,8 +4,10 @@
 // Project name: fOS_2
 
 #include "ui.h"
+#include "ota_recovery_manager.h"
 
 void SaveTimeZone_Data(lv_event_t * e);
+void SaveDisplaySettings_Data(lv_event_t * e);
 void StorageManagerSelect_Data(lv_event_t * e);
 void ResetStorageManagerToRoot_Data(void);
 void UnloadApp_Data(lv_event_t * e);
@@ -13,11 +15,6 @@ void UnloadApp_Data(lv_event_t * e);
 void updateSystemInfo(lv_event_t * e)
 {
 	updateSystemInfoData();
-}
-
-void fillFileRoller_TextViewer(lv_event_t * e)
-{
-	fillFileRoller_TextViewer_Data();
 }
 
 void ReloadWiFiConnection(lv_event_t * e)
@@ -33,6 +30,11 @@ void SaveWifiConnection(lv_event_t * e)
 void SaveTimeZone(lv_event_t * e)
 {
 	SaveTimeZone_Data( e );
+}
+
+void SaveDisplaySettings(lv_event_t * e)
+{
+	SaveDisplaySettings_Data( e );
 }
 
 void BackToHomeFromFileManager(lv_event_t * e)
@@ -56,24 +58,9 @@ void DeleteFileSelected(lv_event_t * e)
     }
 }
 
-void BackToHomeFromText(lv_event_t * e)
+void InstallUpdate(lv_event_t * e)
 {
-	OpenNewFile_Data();
-}
-
-void OpenNewFile(lv_event_t * e)
-{
-	OpenNewFile_Data();
-}
-
-void save_text_file(lv_event_t * e)
-{
-	save_text_file_data();
-}
-
-void load_selected_file(lv_event_t * e)
-{
-	load_selected_file_Data();
+	OTARecovery_InstallUpdateEvent(e);
 }
 
 void UnloadApp(lv_event_t * e)
