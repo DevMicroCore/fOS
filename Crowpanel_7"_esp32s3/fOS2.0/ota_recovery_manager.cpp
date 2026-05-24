@@ -28,6 +28,8 @@ constexpr uint32_t kListRetryMs = 15000UL;
 constexpr uint16_t kHttpConnectTimeoutMs = 15000;
 constexpr uint16_t kHttpReadTimeoutMs = 30000;
 constexpr uint8_t kHttpRetries = 3;
+constexpr uint8_t kSdWriteRetries = 4;
+constexpr uint32_t kSdReserveBytes = 64 * 1024UL;
 constexpr size_t kMinAppBinSize = 32 * 1024;
 constexpr size_t kMaxApiPayload = 32 * 1024;
 
@@ -124,6 +126,12 @@ void postProgress(uint8_t value) {
   }
   gProgressValue = value;
   gProgressDirty = true;
+}
+
+String u64ToString(uint64_t value) {
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(value));
+  return String(buf);
 }
 
 void flushProgressToUi() {
@@ -322,6 +330,27 @@ void removeIfExists(const char *path) {
   }
 }
 
+bool writeAllWithRetries(File& out, const uint8_t *data, size_t len) {
+  size_t offset = 0;
+  uint8_t retryCount = 0;
+
+  while (offset < len) {
+    const size_t written = out.write(data + offset, len - offset);
+    if (written > 0) {
+      offset += written;
+      retryCount = 0;
+      continue;
+    }
+
+    if (retryCount >= kSdWriteRetries) {
+      return false;
+    }
+    ++retryCount;
+    delay(2);
+  }
+  return true;
+}
+
 bool downloadUrlToSdFile(const String& url,
                          const char *finalPath,
                          uint8_t progressStart,
@@ -367,9 +396,26 @@ bool downloadUrlToSdFile(const String& url,
       return false;
     }
 
-    uint8_t buffer[2048];
+    if (contentLen > 0) {
+      uint64_t total = SD.totalBytes();
+      uint64_t used = SD.usedBytes();
+      if (total > 0 && used <= total) {
+        uint64_t freeBytes = total - used;
+        uint64_t needed = static_cast<uint64_t>(contentLen) + kSdReserveBytes;
+        logLine("SD free=" + u64ToString(freeBytes) + " bytes, needed~" + u64ToString(needed) + " bytes");
+        if (freeBytes < needed) {
+          out.close();
+          http.end();
+          setInstallError("Not enough SD free space for download");
+          return false;
+        }
+      }
+    }
+
+    uint8_t buffer[1024];
     size_t written = 0;
     int remaining = contentLen;
+    bool transferFailed = false;
     uint8_t lastProgress = progressStart;
     postProgress(progressStart);
 
@@ -386,16 +432,18 @@ bool downloadUrlToSdFile(const String& url,
         break;
       }
 
-      const size_t writeLen = out.write(buffer, static_cast<size_t>(readLen));
-      if (writeLen != static_cast<size_t>(readLen)) {
+      if (!writeAllWithRetries(out, buffer, static_cast<size_t>(readLen))) {
         out.close();
         http.end();
-        setInstallError(String(phaseText) + ": SD write failed");
+        setInstallError(String(phaseText) + ": SD write failed (try " + String(attempt) + ")");
         removeIfExists(tempPath.c_str());
-        return false;
+        SD.begin(kSdCs);
+        delay(150);
+        transferFailed = true;
+        break;
       }
 
-      written += writeLen;
+      written += static_cast<size_t>(readLen);
       if (remaining > 0) {
         remaining -= readLen;
       }
@@ -415,9 +463,22 @@ bool downloadUrlToSdFile(const String& url,
     out.close();
     http.end();
 
+    if (transferFailed) {
+      continue;
+    }
+
+    if (contentLen > 0 && written != static_cast<size_t>(contentLen)) {
+      setInstallError(String(phaseText) + ": incomplete download (try " + String(attempt) + ")");
+      removeIfExists(tempPath.c_str());
+      SD.begin(kSdCs);
+      delay(150);
+      continue;
+    }
+
     if (!SD.exists(tempPath) || written == 0) {
       setInstallError(String(phaseText) + ": no data (try " + String(attempt) + ")");
       removeIfExists(tempPath.c_str());
+      SD.begin(kSdCs);
       delay(150);
       continue;
     }
