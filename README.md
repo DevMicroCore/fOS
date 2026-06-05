@@ -1,42 +1,48 @@
-# fOS 2.2.0
+# fOS 2.3.0
 
-fOS 2.2.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-This release introduces a production OTA + Recovery workflow with dedicated partitions, SD-based update staging, boot fallback logic, and display settings persistence.
+fOS 2.3.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+This release adds a hardware sleep/display button workflow on `GPIO38`, while keeping the production OTA + Recovery architecture from 2.2.0.
 
-## What's New in 2.2.0
+## What's New in 2.3.0
 
-- New OTA architecture with dedicated partitions:
+- Hardware display/sleep button on `GPIO38`:
+  - short press turns display output and backlight off
+  - short press while display is off turns it back on
+  - firmware reduces normal background work while display is off
+- Long-press sleep override:
+  - holding the button for 3 seconds forces ESP32-S3 Light Sleep
+  - Light Sleep starts after releasing the button to avoid immediate wakeup
+  - update installs and music playback block forced sleep
+- Serial diagnostics added:
+  - boot reset/wakeup cause is printed at startup
+  - button level changes on `GPIO38` are logged
+  - sleep/display state transitions are logged
+- Existing 2.2 runtime features remain included:
+  - production OTA + Recovery workflow with `app0/app1`
+  - SD-staged update files in `/system/update/`
+  - display brightness persistence
+  - SD app runtime with calculator, radio, clock, and weather apps
+
+## 2.2.0 Foundation
+
+- OTA architecture with dedicated partitions:
   - `app0` for the main fOS firmware
   - `app1` for a minimal recovery firmware
   - no SPIFFS, SD card based update staging
-- OTA workflow added to the update screen:
-  - OTA file list is loaded from GitHub in background (UI stays responsive)
-  - selected OTA image is downloaded to `/system/update/update.bin`
-  - latest recovery image is downloaded to `/system/update/recovery.bin`
-  - recovery image is flashed to `app1`
-  - next boot partition is switched to `app1` and device restarts
-- Recovery workflow added:
-  - recovery verifies `/system/update/update.bin`
-  - flashes `update.bin` to `app0`
-  - switches boot partition back to `app0`
-  - restarts automatically
-- Boot safety logic added:
+- Boot safety logic:
   - `pending_update` + `boot_attempt_counter` tracking
   - automatic fallback to recovery after repeated failed boots
-- Display settings added:
+- Display settings:
   - brightness save in settings
   - minimum brightness is limited to `5%`
   - persistent value stored in `/system/display/brightness.txt`
   - value is loaded on startup
-- Existing 2.1 runtime features remain included:
-  - SD app runtime in `AppContent`
-  - `clock` and `weather` app types
-  - upgraded radio, clock, and weather runtime UI
 
 ## Prerequisites
 
 ### Hardware
 - ESP32-S3 CrowPanel (default project config is `CrowPanel_70`)
+- Momentary button on `GPIO38` and `GND` for display/sleep control
 - microSD card
 - USB cable for flashing
 
@@ -59,6 +65,8 @@ This release introduces a production OTA + Recovery workflow with dedicated part
   - `app1`: `0x080000` (recovery)
 - Arduino IDE board option `PSRAM` should be set to `OPI PSRAM`.
 - SD chip-select is set to `SD_CS = 10` in `fOS2.0.ino`.
+- `GPIO38` is used as the display/sleep button input in fOS 2.3.0.
+- `GPIO38` can be electrically sensitive on some ESP32-S3 boards; short press uses a safe display-off idle mode, while 3-second long press explicitly opts into Light Sleep.
 
 ## Installation
 
@@ -181,6 +189,10 @@ Supported `type=` values in layout lines:
   - Radio
   - Clock
   - Weather
+- Hardware power workflow:
+  - short press on `GPIO38`: display/backlight off
+  - short press while off: display/backlight on
+  - 3-second press: force Light Sleep unless OTA or music is active
 
 ## Example Bundle
 
@@ -218,5 +230,13 @@ Webradio example list:
   - Check internet access to `ip-api.com` and `api.open-meteo.com`
   - Re-open weather app after Wi-Fi reconnect
 - OTA update list appears late:
-  - list loading is asynchronous in 2.2.0 and no longer blocks the UI
+  - list loading is asynchronous and no longer blocks the UI
   - check serial output for `[OTA]` logs if files do not appear
+- GPIO38 button does nothing:
+  - wire the button between `GPIO38` and `GND`
+  - open Serial Monitor and check for `Sleep button GPIO38 changed`
+  - if no level changes appear, verify the actual header pin and wiring
+- Device boots after long-press sleep:
+  - this means the board likely reset during Light Sleep wakeup
+  - check `Boot diagnostics: reset=... wake=...` in Serial Monitor
+  - use short press for the stable display-off mode, or move the button to a safer GPIO for real Light Sleep

@@ -9,6 +9,8 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <driver/gpio.h>
+#include <esp_sleep.h>
 #include <time.h>
 #include <ctype.h>
 #include <math.h>
@@ -174,6 +176,19 @@ static unsigned long lastClockUiUpdate = 0;
 static const int kMinBrightnessPercent = 5;
 static const int kDefaultBrightnessPercent = 100;
 static int gBrightnessPercent = kDefaultBrightnessPercent;
+static const gpio_num_t kSleepButtonGpio = GPIO_NUM_38;
+static const bool kUseRealMcuSleep = false; // GPIO38 is unstable as sleep/wake pin on this board.
+static const unsigned long kSleepButtonDebounceMs = 80;
+static const unsigned long kSleepButtonReleaseTimeoutMs = 1500;
+static const unsigned long kSleepButtonLongPressMs = 1500;
+static const unsigned long kSleepButtonLongPressReleaseTimeoutMs = 10000;
+static bool gDisplaySuspended = false;
+static bool gSleepAfterBusy = false;
+static int gSleepButtonLastReading = HIGH;
+static int gSleepButtonStableState = HIGH;
+static int gSleepButtonPressLevel = LOW;
+static int gSleepButtonReleaseLevel = HIGH;
+static unsigned long gSleepButtonLastChangeMs = 0;
 
 static const char* kWeekdaysEn[] = {
   "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
@@ -277,6 +292,14 @@ static uint8_t brightnessPercentToLevel(int percent);
 static void applyDisplayBrightnessPercent(int percent, bool updateSlider);
 static bool saveCurrentBrightness();
 static void loadSavedBrightness();
+static void setupSleepButton();
+static bool hasUninterruptibleProcess();
+static void setDisplayPower(bool enabled);
+static gpio_int_type_t getSleepButtonWakeInterrupt();
+static bool waitForSleepButtonRelease(unsigned long timeoutMs);
+static bool waitForSleepButtonLongPress(unsigned long holdMs);
+static void enterButtonSleep(bool forceMcuSleep);
+static void handleSleepButton();
 
 int getTimeZoneCount()
 {
@@ -512,6 +535,216 @@ static void loadSavedBrightness()
   applyDisplayBrightnessPercent(loadedPercent, true);
 }
 
+static void setupSleepButton()
+{
+  pinMode(kSleepButtonGpio, INPUT_PULLUP);
+  gpio_set_direction(kSleepButtonGpio, GPIO_MODE_INPUT);
+  gpio_set_pull_mode(kSleepButtonGpio, GPIO_PULLUP_ONLY);
+  gpio_pulldown_dis(kSleepButtonGpio);
+  gpio_pullup_en(kSleepButtonGpio);
+
+  delay(10);
+  gSleepButtonLastReading = digitalRead(kSleepButtonGpio);
+  gSleepButtonStableState = gSleepButtonLastReading;
+  gSleepButtonReleaseLevel = gSleepButtonStableState;
+  gSleepButtonPressLevel = gSleepButtonReleaseLevel == HIGH ? LOW : HIGH;
+  gSleepButtonLastChangeMs = millis();
+
+  Serial.printf(
+    "Sleep button GPIO%d ready: idle=%s, first edge learns pressed level\n",
+    static_cast<int>(kSleepButtonGpio),
+    gSleepButtonStableState == HIGH ? "HIGH" : "LOW"
+  );
+}
+
+static bool hasUninterruptibleProcess()
+{
+  return OTARecovery_IsBusy() || gRadioPlaying;
+}
+
+static gpio_int_type_t getSleepButtonWakeInterrupt()
+{
+  return gSleepButtonPressLevel == HIGH ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL;
+}
+
+static void setDisplayPower(bool enabled)
+{
+  if (enabled) {
+    if (!gDisplaySuspended) return;
+
+    gDisplaySuspended = false;
+    gfx.wakeup();
+    applyDisplayBrightnessPercent(gBrightnessPercent, true);
+    lv_obj_invalidate(lv_scr_act());
+    lv_timer_handler();
+    Serial.println("Display eingeschaltet");
+    return;
+  }
+
+  if (gDisplaySuspended) return;
+
+  lv_timer_handler();
+  gfx.sleep();
+  gfx.setBrightness(0);
+  gDisplaySuspended = true;
+  Serial.println("Display ausgeschaltet");
+}
+
+static bool waitForSleepButtonRelease(unsigned long timeoutMs)
+{
+  const unsigned long startMs = millis();
+  while (digitalRead(kSleepButtonGpio) == gSleepButtonPressLevel) {
+    if (millis() - startMs >= timeoutMs) {
+      return false;
+    }
+    delay(10);
+  }
+
+  delay(kSleepButtonDebounceMs);
+  gSleepButtonLastReading = digitalRead(kSleepButtonGpio);
+  gSleepButtonStableState = gSleepButtonLastReading;
+  gSleepButtonReleaseLevel = gSleepButtonStableState;
+  gSleepButtonLastChangeMs = millis();
+  return true;
+}
+
+static bool waitForSleepButtonLongPress(unsigned long holdMs)
+{
+  const unsigned long startMs = millis();
+
+  while (digitalRead(kSleepButtonGpio) == gSleepButtonPressLevel) {
+    if (millis() - startMs >= holdMs) {
+      Serial.println("Sleep button long press erkannt");
+      return true;
+    }
+    delay(10);
+  }
+
+  delay(kSleepButtonDebounceMs);
+  gSleepButtonLastReading = digitalRead(kSleepButtonGpio);
+  gSleepButtonStableState = gSleepButtonLastReading;
+  gSleepButtonReleaseLevel = gSleepButtonStableState;
+  gSleepButtonLastChangeMs = millis();
+  return false;
+}
+
+static void enterButtonSleep(bool forceMcuSleep)
+{
+  if (!gDisplaySuspended) {
+    setDisplayPower(false);
+  }
+
+  const unsigned long releaseTimeout = forceMcuSleep
+    ? kSleepButtonLongPressReleaseTimeoutMs
+    : kSleepButtonReleaseTimeoutMs;
+
+  if (!waitForSleepButtonRelease(releaseTimeout)) {
+    Serial.println("Sleep abgebrochen: Button wurde nicht losgelassen");
+    return;
+  }
+
+  if (!forceMcuSleep && !kUseRealMcuSleep) {
+    Serial.println("MCU-Sleep deaktiviert: GPIO38 bleibt im sicheren Display-Off-Modus");
+    return;
+  }
+
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+
+  const esp_err_t gpioWakeResult = gpio_wakeup_enable(kSleepButtonGpio, getSleepButtonWakeInterrupt());
+  const esp_err_t sleepWakeResult = esp_sleep_enable_gpio_wakeup();
+
+  if (gpioWakeResult == ESP_OK && sleepWakeResult == ESP_OK) {
+    Serial.println("Gehe in Light Sleep per Long Press");
+    Serial.flush();
+    esp_light_sleep_start();
+  } else {
+    Serial.printf(
+      "Light-Sleep-Wakeup fehlgeschlagen: gpio=%d sleep=%d\n",
+      static_cast<int>(gpioWakeResult),
+      static_cast<int>(sleepWakeResult)
+    );
+  }
+
+  gpio_wakeup_disable(kSleepButtonGpio);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  last_tick = millis();
+  setDisplayPower(true);
+  waitForSleepButtonRelease(kSleepButtonReleaseTimeoutMs);
+}
+
+static void handleSleepButton()
+{
+  const int reading = digitalRead(kSleepButtonGpio);
+
+  if (reading != gSleepButtonLastReading) {
+    gSleepButtonLastReading = reading;
+    gSleepButtonLastChangeMs = millis();
+    Serial.printf(
+      "Sleep button GPIO%d changed: %s\n",
+      static_cast<int>(kSleepButtonGpio),
+      reading == HIGH ? "HIGH" : "LOW"
+    );
+  }
+
+  if (millis() - gSleepButtonLastChangeMs < kSleepButtonDebounceMs) {
+    return;
+  }
+
+  if (reading == gSleepButtonStableState) {
+    return;
+  }
+
+  const int previousStableState = gSleepButtonStableState;
+  gSleepButtonStableState = reading;
+
+  if (gDisplaySuspended) {
+    if (gSleepButtonStableState != gSleepButtonPressLevel) {
+      return;
+    }
+
+    if (waitForSleepButtonLongPress(kSleepButtonLongPressMs)) {
+      if (hasUninterruptibleProcess()) {
+        Serial.println("Long-Press Light Sleep blockiert: Update oder Musik laeuft");
+        waitForSleepButtonRelease(kSleepButtonLongPressReleaseTimeoutMs);
+        return;
+      }
+
+      gSleepAfterBusy = false;
+      enterButtonSleep(true);
+      return;
+    }
+
+    gSleepAfterBusy = false;
+    setDisplayPower(true);
+    return;
+  }
+
+  gSleepButtonPressLevel = gSleepButtonStableState;
+  gSleepButtonReleaseLevel = previousStableState;
+  Serial.printf(
+    "Sleep button press learned: pressed=%s released=%s\n",
+    gSleepButtonPressLevel == HIGH ? "HIGH" : "LOW",
+    gSleepButtonReleaseLevel == HIGH ? "HIGH" : "LOW"
+  );
+
+  setDisplayPower(false);
+
+  if (hasUninterruptibleProcess()) {
+    gSleepAfterBusy = true;
+    Serial.println("Sleep wartet: Update oder Musik laeuft");
+    return;
+  }
+
+  if (waitForSleepButtonLongPress(kSleepButtonLongPressMs)) {
+    gSleepAfterBusy = false;
+    enterButtonSleep(true);
+    return;
+  }
+
+  gSleepAfterBusy = false;
+  enterButtonSleep(false);
+}
+
 extern "C" void SaveTimeZone_Data(lv_event_t * e)
 {
   (void)e;
@@ -654,6 +887,11 @@ void fillFileRoller_WithLiveProgress(int bootStart, int bootEnd)
 /* ================= DISPLAY FLUSH ================= */
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
+  if (gDisplaySuspended) {
+    lv_disp_flush_ready(disp);
+    return;
+  }
+
   uint32_t w = area->x2 - area->x1 + 1;
   uint32_t h = area->y2 - area->y1 + 1;
 
@@ -3535,6 +3773,12 @@ extern "C" void OpenNewFile_Data(lv_event_t * e)
 void setup()
 {
   Serial.begin(115200);
+  Serial.printf(
+    "Boot diagnostics: reset=%d wake=%d\n",
+    static_cast<int>(esp_reset_reason()),
+    static_cast<int>(esp_sleep_get_wakeup_cause())
+  );
+  setupSleepButton();
 
   /* ================= DISPLAY ================= */
   gfx.init();
@@ -3621,8 +3865,12 @@ void loop()
   if (now - last_tick >= 5) {
     lv_tick_inc(now - last_tick);
     last_tick = now;
-    lv_timer_handler();
+    if (!gDisplaySuspended) {
+      lv_timer_handler();
+    }
   }
+
+  handleSleepButton();
 
   OTARecovery_Tick();
   const bool otaBusy = OTARecovery_IsBusy();
@@ -3631,6 +3879,17 @@ void loop()
     // While OTA/Recovery preparation is running, avoid additional UI redraw
     // and network/audio work to keep the RGB panel output stable.
     delay(5);
+    return;
+  }
+
+  if (gDisplaySuspended && gSleepAfterBusy && !hasUninterruptibleProcess()) {
+    gSleepAfterBusy = false;
+    enterButtonSleep(false);
+    return;
+  }
+
+  if (gDisplaySuspended && !hasUninterruptibleProcess()) {
+    delay(50);
     return;
   }
 
