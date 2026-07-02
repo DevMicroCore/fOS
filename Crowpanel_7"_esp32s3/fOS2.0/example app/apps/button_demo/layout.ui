@@ -1,0 +1,5 @@
+# Button Demo fuer die neue UI-Engine
+type=panel;x=20;y=20;w=760;h=430;bg=0xF4F6F8
+type=label;x=40;y=38;w=680;h=40;text=Button Demo (layout.ui);fg=0x111111
+type=button;x=40;y=100;w=280;h=90;text=Drueck mich;bg=0x2095F6;fg=0xFFFFFF
+type=label;x=40;y=220;w=700;h=90;text=Du kannst Position, Groesse und Inhalt\\npro Element frei in layout.ui setzen.;fg=0x333333

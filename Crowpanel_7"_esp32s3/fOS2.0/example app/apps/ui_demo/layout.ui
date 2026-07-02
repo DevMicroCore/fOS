@@ -1,0 +1,15 @@
+# type=label|button|textarea|switch|checkbox|panel
+# Felder: x,y,w,h,text,bg,fg,value,one_line
+# Farben als Hex, z.B. bg=0x2E8B57
+
+type=panel;x=20;y=20;w=760;h=430;bg=0xF2F2F2
+
+type=label;x=40;y=40;w=720;h=40;text=Willkommen in der UI Demo;fg=0x111111
+
+type=button;x=40;y=100;w=240;h=70;text=Start;bg=0x2095F6;fg=0xFFFFFF
+
+type=textarea;x=40;y=190;w=420;h=140;text=Hier steht editierbarer Text\\nmit Zeilenumbruch.
+
+type=switch;x=500;y=120;value=true
+
+type=checkbox;x=500;y=180;text=Option aktivieren;value=false

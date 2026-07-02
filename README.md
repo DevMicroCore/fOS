@@ -1,165 +1,245 @@
-# fOS 2.3.0
+# fOS 2.4.0
 
-fOS 2.3.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-This release adds a hardware sleep/display button workflow on `GPIO38`, while keeping the production OTA + Recovery architecture from 2.2.0.
+fOS 2.4.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 
-## What's New in 2.3.0
+This release introduces a safer file management workflow with a delete confirmation dialog and expands the Clock application with an integrated countdown timer while keeping the production OTA + Recovery architecture introduced in earlier releases.
 
-- Hardware display/sleep button on `GPIO38`:
-  - short press turns display output and backlight off
-  - short press while display is off turns it back on
-  - firmware reduces normal background work while display is off
-- Long-press sleep override:
-  - holding the button for 3 seconds forces ESP32-S3 Light Sleep
-  - Light Sleep starts after releasing the button to avoid immediate wakeup
-  - update installs and music playback block forced sleep
-- Serial diagnostics added:
-  - boot reset/wakeup cause is printed at startup
-  - button level changes on `GPIO38` are logged
-  - sleep/display state transitions are logged
-- Existing 2.2 runtime features remain included:
-  - production OTA + Recovery workflow with `app0/app1`
-  - SD-staged update files in `/system/update/`
-  - display brightness persistence
-  - SD app runtime with calculator, radio, clock, and weather apps
+---
 
-## 2.2.0 Foundation
+# What's New in 2.4.0
 
-- OTA architecture with dedicated partitions:
-  - `app0` for the main fOS firmware
-  - `app1` for a minimal recovery firmware
-  - no SPIFFS, SD card based update staging
-- Boot safety logic:
-  - `pending_update` + `boot_attempt_counter` tracking
-  - automatic fallback to recovery after repeated failed boots
-- Display settings:
-  - brightness save in settings
-  - minimum brightness is limited to `5%`
-  - persistent value stored in `/system/display/brightness.txt`
-  - value is loaded on startup
+* File Manager improvements:
 
-## Prerequisites
+  * confirmation dialog before deleting files
+  * prevents accidental file removal
 
-### Hardware
-- ESP32-S3 CrowPanel (default project config is `CrowPanel_70`)
-- Momentary button on `GPIO38` and `GND` for display/sleep control
-- microSD card
-- USB cable for flashing
+* Clock application:
 
-### Software
-- Arduino IDE 2.x
-- ESP32 board package: `esp32 by Espressif Systems`
-- Arduino libraries:
-  - `lvgl`
-  - `LovyanGFX`
-  - `ESP32-audioI2S` (provides `Audio.h`)
+  * integrated countdown timer
+  * start, stop and reset controls
 
-### Notes
-- Active panel type is set in `LGFX_CrowPanel.h`.
-- Supported panel defines in this project:
-  - `CrowPanel_70`
-  - `CrowPanel_50`
-  - `CrowPanel_43`
-- Partition layout for OTA/Recovery is provided in `partitions.csv`:
-  - `app0`: `0x370000` (main system)
-  - `app1`: `0x080000` (recovery)
-- Arduino IDE board option `PSRAM` should be set to `OPI PSRAM`.
-- SD chip-select is set to `SD_CS = 10` in `fOS2.0.ino`.
-- `GPIO38` is used as the display/sleep button input in fOS 2.3.0.
-- `GPIO38` can be electrically sensitive on some ESP32-S3 boards; short press uses a safe display-off idle mode, while 3-second long press explicitly opts into Light Sleep.
+* Hardware display/sleep button on `GPIO38`:
 
-## Installation
+  * short press turns display output and backlight off
+  * short press while display is off turns it back on
+  * firmware reduces normal background work while display is off
+
+* Long-press sleep override:
+
+  * holding the button for 3 seconds forces ESP32-S3 Light Sleep
+  * Light Sleep starts after releasing the button to avoid immediate wakeup
+  * update installs and music playback block forced sleep
+
+* Serial diagnostics:
+
+  * boot reset/wakeup cause is printed at startup
+  * button level changes on `GPIO38` are logged
+  * sleep/display state transitions are logged
+
+* Existing runtime features remain included:
+
+  * production OTA + Recovery workflow with `app0/app1`
+  * SD-staged update files in `/system/update/`
+  * display brightness persistence
+  * SD app runtime with calculator, radio, clock (including timer), and weather apps
+
+---
+
+# 2.2 Foundation
+
+* OTA architecture with dedicated partitions:
+
+  * `app0` for the main fOS firmware
+  * `app1` for a minimal recovery firmware
+  * no SPIFFS, SD card based update staging
+
+* Boot safety logic:
+
+  * `pending_update` + `boot_attempt_counter` tracking
+  * automatic fallback to recovery after repeated failed boots
+
+* Display settings:
+
+  * brightness save in settings
+  * minimum brightness is limited to `5%`
+  * persistent value stored in `/system/display/brightness.txt`
+  * value is loaded on startup
+
+---
+
+# Prerequisites
+
+## Hardware
+
+* ESP32-S3 CrowPanel (default project config is `CrowPanel_70`)
+* Momentary button on `GPIO38` and `GND` for display/sleep control
+* microSD card
+* USB cable for flashing
+
+## Software
+
+* Arduino IDE 2.x
+* ESP32 board package:
+
+  * `esp32 by Espressif Systems`
+
+Required libraries:
+
+* `lvgl`
+* `LovyanGFX`
+* `ESP32-audioI2S` (provides `Audio.h`)
+
+## Notes
+
+* Active panel type is selected in `LGFX_CrowPanel.h`.
+* Supported panel definitions:
+
+  * `CrowPanel_70`
+  * `CrowPanel_50`
+  * `CrowPanel_43`
+* OTA partition layout is defined in `partitions.csv`.
+* Arduino IDE should use:
+
+  * `PSRAM: OPI PSRAM`
+* SD chip-select is configured as:
+
+  * `SD_CS = 10`
+* `GPIO38` is used as the display/sleep button.
+* Short press disables only the display while the system continues running.
+* Long press requests Light Sleep.
+
+---
+
+# Installation
 
 1. Install Arduino IDE 2.x.
-2. Install `esp32 by Espressif Systems` in Board Manager.
-3. Install required libraries: `lvgl`, `LovyanGFX`, `ESP32-audioI2S`.
-4. Open `fOS2.0.ino` in Arduino IDE.
-5. Select your ESP32-S3 target board and serial port.
-6. Set board options:
-   - `Partition Scheme: use the custom project partition file (app0/app1 layout)`
-   - `PSRAM: OPI PSRAM`
-7. Verify panel define in `LGFX_CrowPanel.h`.
-8. Build and upload firmware.
-9. Prepare SD card as described below and insert it.
-10. Reboot the device.
+2. Install `esp32 by Espressif Systems`.
+3. Install the required libraries:
 
-## SD Card Setup
+   * lvgl
+   * LovyanGFX
+   * ESP32-audioI2S
+4. Open `fOS2.0.ino`.
+5. Select your ESP32-S3 board.
+6. Configure:
 
-### Required format
-- Filesystem: `FAT32`
-- Partition scheme: MBR (recommended)
+   * custom partition scheme (`app0/app1`)
+   * `PSRAM = OPI PSRAM`
+7. Verify the correct panel define in `LGFX_CrowPanel.h`.
+8. Compile and upload.
+9. Prepare the SD card.
+10. Insert the SD card.
+11. Reboot the device.
 
-Use a clean FAT32 card for first boot. Avoid exFAT and NTFS.
+---
 
-### Folder and file layout
+# SD Card Setup
 
-The firmware creates missing system folders automatically on startup.
+## Required format
 
-- `/apps`
-  - SD apps (max 6 loaded)
-- `/text`
-  - text files for file manager and text editor
-- `/music/files`
-  - local audio files (`.mp3`, `.wav`, `.ogg`, `.aac`, `.m4a`)
-- `/music/webradio/webradio.txt`
-  - one station per line in this format:
+* FAT32
+* MBR partition table recommended
 
-```text
-Sender Name|https://stream-url.example
+Avoid exFAT and NTFS.
+
+The firmware automatically creates missing system folders during startup.
+
+Required folders:
+
+```
+/apps
+/text
+/music/files
+/music/webradio
+/system
+```
+
+Example web radio file:
+
+`/music/webradio/webradio.txt`
+
+```
+Station Name|https://stream-url.example
 ```
 
 Example:
 
-```text
+```
 SomaFM Groove Salad|http://ice1.somafm.com/groovesalad-128-mp3
 ByteFM|https://stream.byte.fm/stream/bytefm_www
 ```
 
-Optional system-managed files:
+Optional system files:
 
-- `/system/wifi/wlans.txt`
-  - Wi-Fi profiles as `SSID|PASSWORD` (one per line)
-- `/system/timezone/timezone.txt`
-  - saved timezone rule
-- `/system/display/brightness.txt`
-  - saved display brightness in percent (`5..100`)
-- `/system/update/update.bin`
-  - staged OTA image for `app0`
-- `/system/update/recovery.bin`
-  - staged recovery image for `app1`
+```
+/system/wifi/wlans.txt
+/system/timezone/timezone.txt
+/system/display/brightness.txt
+/system/update/update.bin
+/system/update/recovery.bin
+```
 
-## SD App Format
+---
 
-Each app is a folder under `/apps/<app_name>/` with at least `app.cfg`.
+# SD App Format
 
-### app.cfg keys
+Each application is stored inside:
 
-```text
+```
+/apps/<app_name>/
+```
+
+and must contain at least:
+
+```
+app.cfg
+```
+
+## app.cfg
+
+```
 name=Display Name
-icon=Optional short tile text/symbol
+icon=Optional Tile Icon
 type=ui|text|button|calculator|radio|clock|weather
 scrollable=true|false
 ```
 
-Additional keys by type:
+Additional keys:
 
-- `type=ui`
-  - `layout=layout.ui`
-- `type=text`
-  - `content=content.txt`
-- `type=button`
-  - `button_text=...`
-  - `button_message=...`
-- `type=clock`
-  - no extra keys required
-- `type=weather`
-  - no extra keys required
+### UI
 
-### layout.ui (for `type=ui`)
+```
+layout=layout.ui
+```
 
-One element per line, semicolon-separated fields.
+### Text
 
-```text
+```
+content=content.txt
+```
+
+### Button
+
+```
+button_text=...
+button_message=...
+```
+
+### Clock
+
+No additional settings required.
+
+### Weather
+
+No additional settings required.
+
+---
+
+# layout.ui
+
+Example:
+
+```
 type=label;x=40;y=40;w=720;h=40;text=Hello
 type=button;x=40;y=100;w=240;h=70;text=Start;bg=0x2095F6;fg=0xFFFFFF
 type=textarea;x=40;y=190;w=420;h=140;text=Line1\nLine2
@@ -168,75 +248,159 @@ type=checkbox;x=500;y=180;text=Option;value=false
 type=panel;x=20;y=20;w=760;h=430;bg=0xF2F2F2
 ```
 
-Supported `type=` values in layout lines:
-- `label`
-- `button`
-- `textarea`
-- `switch`
-- `checkbox`
-- `panel`
+Supported elements:
 
-## Included Screens / Features
+* label
+* button
+* textarea
+* switch
+* checkbox
+* panel
 
-- Home
-- Settings (Wi-Fi, timezone, system info)
-- Storage Manager (folder navigation + delete file)
-- Text Editor (open/create/overwrite-save)
-- App Launcher (`AppL1` to `AppL6`)
-- App Content runtime area
-- Runtime apps:
-  - Calculator
-  - Radio
-  - Clock
-  - Weather
-- Hardware power workflow:
-  - short press on `GPIO38`: display/backlight off
-  - short press while off: display/backlight on
-  - 3-second press: force Light Sleep unless OTA or music is active
+---
 
-## Example Bundle
+# Included Screens / Features
 
-See `example app/` for ready-to-copy examples:
-- `hello_fos`
-- `button_demo`
-- `ebook_demo`
-- `ui_demo`
-- `calculator_demo`
-- `radio_demo`
-- `clock_demo`
-- `weather_demo`
-- `text` (AppContent text editor app)
+* Home
+* Settings
 
-Webradio example list:
-- `example app/music/webradio/webradio.txt`
+  * Wi-Fi
+  * Timezone
+  * System Information
+* Storage Manager
 
-## Troubleshooting
+  * folder navigation
+  * delete confirmation before removing files
+* Text Editor
 
-- SD not detected:
-  - Reformat SD to FAT32
-  - Check card seating and wiring
-  - Verify `SD_CS` in `fOS2.0.ino`
-- SD apps not visible:
-  - Ensure app folders are under `/apps`
-  - Ensure each app has valid `app.cfg`
-  - Max 6 apps are shown
-- No local files in radio app:
-  - Place audio files in `/music/files`
-- No web stations in radio app:
-  - Ensure `/music/webradio/webradio.txt` exists
-  - Validate `Sender|URL` format
-- No weather data in weather app:
-  - Ensure device has Wi-Fi connection
-  - Check internet access to `ip-api.com` and `api.open-meteo.com`
-  - Re-open weather app after Wi-Fi reconnect
-- OTA update list appears late:
-  - list loading is asynchronous and no longer blocks the UI
-  - check serial output for `[OTA]` logs if files do not appear
-- GPIO38 button does nothing:
-  - wire the button between `GPIO38` and `GND`
-  - open Serial Monitor and check for `Sleep button GPIO38 changed`
-  - if no level changes appear, verify the actual header pin and wiring
-- Device boots after long-press sleep:
-  - this means the board likely reset during Light Sleep wakeup
-  - check `Boot diagnostics: reset=... wake=...` in Serial Monitor
-  - use short press for the stable display-off mode, or move the button to a safer GPIO for real Light Sleep
+  * create
+  * edit
+  * overwrite existing files
+* App Launcher (`AppL1`–`AppL6`)
+* App Content runtime
+
+Included applications:
+
+* Calculator
+* Radio
+* Clock
+
+  * digital clock
+  * integrated countdown timer
+* Weather
+
+Hardware features:
+
+* GPIO38 display control
+* Display backlight control
+* Light Sleep
+* OTA + Recovery
+* Persistent display brightness
+* SD card application system
+
+---
+
+# Example Bundle
+
+Included examples:
+
+* hello_fos
+* button_demo
+* ebook_demo
+* ui_demo
+* calculator_demo
+* radio_demo
+* clock_demo
+* weather_demo
+* text
+
+Web radio example:
+
+```
+example app/music/webradio/webradio.txt
+```
+
+---
+
+# Troubleshooting
+
+## SD card not detected
+
+* Format as FAT32.
+* Check SD wiring.
+* Verify `SD_CS`.
+
+## Apps not visible
+
+* Ensure every app has a valid `app.cfg`.
+* Store apps inside `/apps`.
+* Maximum of six apps are displayed.
+
+## Audio files missing
+
+Place music files inside:
+
+```
+/music/files
+```
+
+## Web radio stations missing
+
+Verify:
+
+```
+/music/webradio/webradio.txt
+```
+
+Format:
+
+```
+Station|URL
+```
+
+## Weather unavailable
+
+* Connect to Wi-Fi.
+* Verify internet connectivity.
+* Restart the Weather app.
+
+## OTA list appears slowly
+
+OTA loading runs asynchronously.
+
+Check the Serial Monitor for `[OTA]` messages.
+
+## GPIO38 button not working
+
+* Connect the button between `GPIO38` and `GND`.
+* Open the Serial Monitor.
+* Verify GPIO state changes.
+
+## Device restarts after Light Sleep
+
+Some CrowPanel revisions reset when waking from Light Sleep.
+
+Short press remains the recommended and most reliable display-off mode.
+
+---
+
+# Version History
+
+## v2.4.0
+
+* Added delete confirmation dialog for file deletion.
+* Added integrated countdown timer to the Clock application.
+* Improved usability and data safety.
+
+## v2.3.0
+
+* Hardware display/sleep button.
+* Light Sleep support.
+* Display-off idle mode.
+* Extended serial diagnostics.
+
+## v2.2.0
+
+* OTA + Recovery architecture.
+* Automatic rollback.
+* Persistent display settings.

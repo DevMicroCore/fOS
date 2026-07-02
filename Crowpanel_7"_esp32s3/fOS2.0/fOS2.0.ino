@@ -88,16 +88,29 @@ static lv_obj_t * gSdFileRoller = NULL;
 static lv_obj_t * gClockTabView = NULL;
 static lv_obj_t * gClockCurrentPanel = NULL;
 static lv_obj_t * gClockStopwatchPanel = NULL;
+static lv_obj_t * gClockTimerPanel = NULL;
 static lv_obj_t * gClockCurrentTimeLabel = NULL;
 static lv_obj_t * gClockCalendar = NULL;
 static lv_obj_t * gClockStopwatchTimeLabel = NULL;
 static lv_obj_t * gClockStopwatchToggleButton = NULL;
 static lv_obj_t * gClockStopwatchToggleLabel = NULL;
+static lv_obj_t * gClockTimerTimeLabel = NULL;
+static lv_obj_t * gClockTimerHoursRoller = NULL;
+static lv_obj_t * gClockTimerMinutesRoller = NULL;
+static lv_obj_t * gClockTimerSecondsRoller = NULL;
+static lv_obj_t * gClockTimerToggleButton = NULL;
+static lv_obj_t * gClockTimerToggleLabel = NULL;
+static lv_obj_t * gClockTimerResetButton = NULL;
 static uint8_t gClockActiveTab = 0;
 static bool gClockAppVisible = false;
 static bool gClockStopwatchRunning = false;
 static uint64_t gClockStopwatchElapsedMs = 0;
 static unsigned long gClockStopwatchLastMs = 0;
+static bool gClockTimerRunning = false;
+static bool gClockTimerHasBeenStarted = false;
+static uint64_t gClockTimerSelectedMs = 0;
+static uint64_t gClockTimerRemainingMs = 0;
+static unsigned long gClockTimerLastMs = 0;
 static int gClockCalendarYear = 0;
 static int gClockCalendarMonth = 0;
 static time_t gClockLastTimeLabelTs = 0;
@@ -268,12 +281,21 @@ static void changeClockDashboardMonth(int delta);
 static void showClockDashboardTab(uint8_t tabIndex);
 static void clockDashboardTabCurrentEvent(lv_event_t * e);
 static void clockDashboardTabStopwatchEvent(lv_event_t * e);
+static void clockDashboardTabTimerEvent(lv_event_t * e);
 static void clockDashboardMonthPrevEvent(lv_event_t * e);
 static void clockDashboardMonthNextEvent(lv_event_t * e);
 static void clockDashboardStopwatchToggleEvent(lv_event_t * e);
 static void clockDashboardStopwatchResetEvent(lv_event_t * e);
 static void updateClockDashboardStopwatchLabel();
 static void updateClockDashboardStopwatchToggleLabel();
+static String buildClockTimerRollerOptions(int maxValue);
+static uint64_t readClockTimerSelectionMs();
+static void updateClockTimerTimeLabel();
+static void updateClockTimerToggleLabel();
+static void syncClockTimerSelectionToUi();
+static void clockDashboardTimerSelectionChangedEvent(lv_event_t * e);
+static void clockDashboardTimerToggleEvent(lv_event_t * e);
+static void clockDashboardTimerResetEvent(lv_event_t * e);
 static void updateClockDashboardTick();
 static void renderClockDashboardApp();
 static void resetWeatherAppState();
@@ -2250,16 +2272,29 @@ static void resetClockDashboardState()
   gClockTabView = NULL;
   gClockCurrentPanel = NULL;
   gClockStopwatchPanel = NULL;
+  gClockTimerPanel = NULL;
   gClockCurrentTimeLabel = NULL;
   gClockCalendar = NULL;
   gClockStopwatchTimeLabel = NULL;
   gClockStopwatchToggleButton = NULL;
   gClockStopwatchToggleLabel = NULL;
+  gClockTimerTimeLabel = NULL;
+  gClockTimerHoursRoller = NULL;
+  gClockTimerMinutesRoller = NULL;
+  gClockTimerSecondsRoller = NULL;
+  gClockTimerToggleButton = NULL;
+  gClockTimerToggleLabel = NULL;
+  gClockTimerResetButton = NULL;
   gClockActiveTab = 0;
   gClockAppVisible = false;
   gClockStopwatchRunning = false;
   gClockStopwatchElapsedMs = 0;
   gClockStopwatchLastMs = 0;
+  gClockTimerRunning = false;
+  gClockTimerHasBeenStarted = false;
+  gClockTimerSelectedMs = 0;
+  gClockTimerRemainingMs = 0;
+  gClockTimerLastMs = 0;
   gClockCalendarYear = 0;
   gClockCalendarMonth = 0;
   gClockLastTimeLabelTs = 0;
@@ -2386,7 +2421,8 @@ static void changeClockDashboardMonth(int delta)
 
 static void showClockDashboardTab(uint8_t tabIndex)
 {
-  gClockActiveTab = (tabIndex == 0) ? 0 : 1;
+  if (tabIndex > 2) tabIndex = 2;
+  gClockActiveTab = tabIndex;
   if (gClockTabView != NULL) {
     lv_tabview_set_act(gClockTabView, gClockActiveTab, LV_ANIM_OFF);
   }
@@ -2403,6 +2439,12 @@ static void clockDashboardTabStopwatchEvent(lv_event_t * e)
 {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   showClockDashboardTab(1);
+}
+
+static void clockDashboardTabTimerEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showClockDashboardTab(2);
 }
 
 static void clockDashboardMonthPrevEvent(lv_event_t * e)
@@ -2453,6 +2495,113 @@ static void clockDashboardStopwatchResetEvent(lv_event_t * e)
   updateClockDashboardStopwatchLabel();
 }
 
+static String buildClockTimerRollerOptions(int maxValue)
+{
+  String options;
+  if (maxValue < 0) return options;
+
+  options.reserve((maxValue + 1) * 3);
+  for (int i = 0; i <= maxValue; i++) {
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%02d", i);
+    options += buf;
+    if (i < maxValue) {
+      options += "\n";
+    }
+  }
+  return options;
+}
+
+static uint64_t readClockTimerSelectionMs()
+{
+  if (gClockTimerHoursRoller == NULL ||
+      gClockTimerMinutesRoller == NULL ||
+      gClockTimerSecondsRoller == NULL) {
+    return 0;
+  }
+
+  int hours = lv_roller_get_selected(gClockTimerHoursRoller);
+  int minutes = lv_roller_get_selected(gClockTimerMinutesRoller);
+  int seconds = lv_roller_get_selected(gClockTimerSecondsRoller);
+
+  if (hours < 0) hours = 0;
+  if (minutes < 0) minutes = 0;
+  if (seconds < 0) seconds = 0;
+
+  return (((uint64_t)hours * 3600ULL) + ((uint64_t)minutes * 60ULL) + (uint64_t)seconds) * 1000ULL;
+}
+
+static void updateClockTimerTimeLabel()
+{
+  if (gClockTimerTimeLabel == NULL) return;
+
+  char timeBuf[16];
+  formatHmsFromSeconds((uint32_t)(gClockTimerRemainingMs / 1000ULL), timeBuf, sizeof(timeBuf));
+  lv_label_set_text(gClockTimerTimeLabel, timeBuf);
+}
+
+static void updateClockTimerToggleLabel()
+{
+  if (gClockTimerToggleLabel == NULL) return;
+  lv_label_set_text(gClockTimerToggleLabel, gClockTimerRunning ? "Stop" : "Start");
+}
+
+static void syncClockTimerSelectionToUi()
+{
+  gClockTimerSelectedMs = readClockTimerSelectionMs();
+  if (!gClockTimerRunning && !gClockTimerHasBeenStarted) {
+    gClockTimerRemainingMs = gClockTimerSelectedMs;
+    updateClockTimerTimeLabel();
+  }
+}
+
+static void clockDashboardTimerSelectionChangedEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  syncClockTimerSelectionToUi();
+}
+
+static void clockDashboardTimerToggleEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+  if (gClockTimerRunning) {
+    gClockTimerRunning = false;
+    gClockTimerHasBeenStarted = true;
+    gClockTimerLastMs = millis();
+  } else {
+    if (!gClockTimerHasBeenStarted) {
+      gClockTimerSelectedMs = readClockTimerSelectionMs();
+      gClockTimerRemainingMs = gClockTimerSelectedMs;
+    }
+
+    if (gClockTimerRemainingMs == 0) {
+      gClockTimerSelectedMs = readClockTimerSelectionMs();
+      gClockTimerRemainingMs = gClockTimerSelectedMs;
+    }
+
+    gClockTimerRunning = (gClockTimerRemainingMs > 0);
+    gClockTimerHasBeenStarted = gClockTimerRunning;
+    gClockTimerLastMs = millis();
+  }
+
+  updateClockTimerToggleLabel();
+}
+
+static void clockDashboardTimerResetEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+  gClockTimerSelectedMs = readClockTimerSelectionMs();
+  gClockTimerRemainingMs = gClockTimerSelectedMs;
+  gClockTimerRunning = false;
+  gClockTimerHasBeenStarted = false;
+  gClockTimerLastMs = millis();
+
+  updateClockTimerTimeLabel();
+  updateClockTimerToggleLabel();
+}
+
 static void updateClockDashboardTick()
 {
   if (!gClockAppVisible) return;
@@ -2469,14 +2618,32 @@ static void updateClockDashboardTick()
     refreshClockDashboardCalendar();
   }
 
-  if (!gClockStopwatchRunning) return;
+  if (gClockStopwatchRunning) {
+    unsigned long nowMs = millis();
+    if (nowMs >= gClockStopwatchLastMs) {
+      gClockStopwatchElapsedMs += (uint64_t)(nowMs - gClockStopwatchLastMs);
+    }
+    gClockStopwatchLastMs = nowMs;
+    updateClockDashboardStopwatchLabel();
+  }
+
+  if (!gClockTimerRunning) return;
 
   unsigned long nowMs = millis();
-  if (nowMs >= gClockStopwatchLastMs) {
-    gClockStopwatchElapsedMs += (uint64_t)(nowMs - gClockStopwatchLastMs);
+  unsigned long elapsedMs = nowMs - gClockTimerLastMs;
+  gClockTimerLastMs = nowMs;
+
+  if ((uint64_t)elapsedMs >= gClockTimerRemainingMs) {
+    gClockTimerRemainingMs = 0;
+    gClockTimerRunning = false;
+    gClockTimerHasBeenStarted = false;
+    updateClockTimerTimeLabel();
+    updateClockTimerToggleLabel();
+    return;
   }
-  gClockStopwatchLastMs = nowMs;
-  updateClockDashboardStopwatchLabel();
+
+  gClockTimerRemainingMs -= (uint64_t)elapsedMs;
+  updateClockTimerTimeLabel();
 }
 
 static void renderClockDashboardApp()
@@ -2505,9 +2672,11 @@ static void renderClockDashboardApp()
 
   lv_obj_t * tabCurrent = lv_tabview_add_tab(gClockTabView, "Current Time");
   lv_obj_t * tabStopwatch = lv_tabview_add_tab(gClockTabView, "Stopwatch");
+  lv_obj_t * tabTimer = lv_tabview_add_tab(gClockTabView, "Timer");
   gClockCurrentPanel = tabCurrent;
   gClockStopwatchPanel = tabStopwatch;
-  if (tabCurrent == NULL || tabStopwatch == NULL) {
+  gClockTimerPanel = tabTimer;
+  if (tabCurrent == NULL || tabStopwatch == NULL || tabTimer == NULL) {
     gClockAppVisible = false;
     return;
   }
@@ -2518,6 +2687,9 @@ static void renderClockDashboardApp()
   lv_obj_set_style_bg_color(tabStopwatch, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_opa(tabStopwatch, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_border_width(tabStopwatch, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(tabTimer, lv_color_hex(0x050C14), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(tabTimer, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(tabTimer, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 
   gClockCurrentTimeLabel = lv_label_create(tabCurrent);
   if (gClockCurrentTimeLabel == NULL) {
@@ -2612,6 +2784,138 @@ static void renderClockDashboardApp()
   lv_obj_add_event_cb(resetBtn, clockDashboardStopwatchResetEvent, LV_EVENT_ALL, NULL);
   lv_obj_add_event_cb(gClockStopwatchToggleButton, clockDashboardStopwatchToggleEvent, LV_EVENT_ALL, NULL);
 
+  gClockTimerTimeLabel = lv_label_create(tabTimer);
+  if (gClockTimerTimeLabel == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_label_set_text(gClockTimerTimeLabel, "00:01:00");
+  lv_obj_align(gClockTimerTimeLabel, LV_ALIGN_TOP_MID, 0, 16);
+  lv_obj_set_style_text_color(gClockTimerTimeLabel, lv_color_hex(0xF2F3F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gClockTimerTimeLabel, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * timerCard = lv_obj_create(tabTimer);
+  if (timerCard == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  gClockTimerPanel = timerCard;
+  lv_obj_set_size(timerCard, 740, 170);
+  lv_obj_align(timerCard, LV_ALIGN_TOP_MID, 0, 72);
+  lv_obj_set_style_radius(timerCard, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(timerCard, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(timerCard, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(timerCard, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_pad_all(timerCard, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(timerCard, LV_OBJ_FLAG_SCROLLABLE);
+
+  String hoursOptions = buildClockTimerRollerOptions(99);
+  String minutesOptions = buildClockTimerRollerOptions(59);
+  String secondsOptions = buildClockTimerRollerOptions(59);
+
+  gClockTimerHoursRoller = lv_roller_create(timerCard);
+  gClockTimerMinutesRoller = lv_roller_create(timerCard);
+  gClockTimerSecondsRoller = lv_roller_create(timerCard);
+  if (gClockTimerHoursRoller == NULL ||
+      gClockTimerMinutesRoller == NULL ||
+      gClockTimerSecondsRoller == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+
+  lv_obj_t * timerRollers[] = {
+    gClockTimerHoursRoller,
+    gClockTimerMinutesRoller,
+    gClockTimerSecondsRoller
+  };
+  const char * timerRollerOptions[] = {
+    hoursOptions.c_str(),
+    minutesOptions.c_str(),
+    secondsOptions.c_str()
+  };
+  const int timerRollerOffsets[] = { -220, 0, 220 };
+
+  for (int i = 0; i < 3; i++) {
+    lv_obj_set_size(timerRollers[i], 115, 120);
+    lv_obj_align(timerRollers[i], LV_ALIGN_CENTER, timerRollerOffsets[i], -4);
+    lv_roller_set_options(timerRollers[i], timerRollerOptions[i], LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_selected(timerRollers[i], (i == 1) ? 1 : 0, LV_ANIM_OFF);
+    lv_roller_set_visible_row_count(timerRollers[i], 3);
+    lv_obj_set_style_bg_color(timerRollers[i], lv_color_hex(0x141A23), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(timerRollers[i], 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(timerRollers[i], 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(timerRollers[i], lv_color_hex(0xF1F3F7), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(timerRollers[i], &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
+
+  lv_obj_t * timerHourLabel = lv_label_create(timerCard);
+  lv_label_set_text(timerHourLabel, "h");
+  lv_obj_align(timerHourLabel, LV_ALIGN_CENTER, -220, 70);
+  lv_obj_set_style_text_color(timerHourLabel, lv_color_hex(0x8FA4B8), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(timerHourLabel, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * timerMinuteLabel = lv_label_create(timerCard);
+  lv_label_set_text(timerMinuteLabel, "m");
+  lv_obj_align(timerMinuteLabel, LV_ALIGN_CENTER, 0, 70);
+  lv_obj_set_style_text_color(timerMinuteLabel, lv_color_hex(0x8FA4B8), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(timerMinuteLabel, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_t * timerSecondLabel = lv_label_create(timerCard);
+  lv_label_set_text(timerSecondLabel, "s");
+  lv_obj_align(timerSecondLabel, LV_ALIGN_CENTER, 220, 70);
+  lv_obj_set_style_text_color(timerSecondLabel, lv_color_hex(0x8FA4B8), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(timerSecondLabel, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  gClockTimerToggleButton = lv_btn_create(tabTimer);
+  if (gClockTimerToggleButton == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(gClockTimerToggleButton, 200, 50);
+  lv_obj_align(gClockTimerToggleButton, LV_ALIGN_BOTTOM_MID, -108, -14);
+  lv_obj_set_style_radius(gClockTimerToggleButton, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gClockTimerToggleButton, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockTimerToggleButton, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gClockTimerToggleButton, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(gClockTimerToggleButton, LV_OBJ_FLAG_SCROLLABLE);
+  gClockTimerToggleLabel = lv_label_create(gClockTimerToggleButton);
+  if (gClockTimerToggleLabel == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_label_set_text(gClockTimerToggleLabel, "Start");
+  lv_obj_set_style_text_color(gClockTimerToggleLabel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(gClockTimerToggleLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(gClockTimerToggleLabel);
+
+  gClockTimerResetButton = lv_btn_create(tabTimer);
+  if (gClockTimerResetButton == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(gClockTimerResetButton, 200, 50);
+  lv_obj_align(gClockTimerResetButton, LV_ALIGN_BOTTOM_MID, 108, -14);
+  lv_obj_set_style_radius(gClockTimerResetButton, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gClockTimerResetButton, lv_color_hex(0x3A4252), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(gClockTimerResetButton, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(gClockTimerResetButton, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(gClockTimerResetButton, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t * timerResetLabel = lv_label_create(gClockTimerResetButton);
+  if (timerResetLabel == NULL) {
+    gClockAppVisible = false;
+    return;
+  }
+  lv_label_set_text(timerResetLabel, "Reset");
+  lv_obj_set_style_text_color(timerResetLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(timerResetLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(timerResetLabel);
+
+  lv_obj_add_event_cb(gClockTimerHoursRoller, clockDashboardTimerSelectionChangedEvent, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_add_event_cb(gClockTimerMinutesRoller, clockDashboardTimerSelectionChangedEvent, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_add_event_cb(gClockTimerSecondsRoller, clockDashboardTimerSelectionChangedEvent, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_add_event_cb(gClockTimerToggleButton, clockDashboardTimerToggleEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(gClockTimerResetButton, clockDashboardTimerResetEvent, LV_EVENT_ALL, NULL);
+
   time_t nowTs = time(nullptr);
   struct tm localTm;
   if (isSystemTimeValid()) {
@@ -2628,11 +2932,18 @@ static void renderClockDashboardApp()
   gClockStopwatchRunning = false;
   gClockStopwatchElapsedMs = 0;
   gClockStopwatchLastMs = millis();
+  gClockTimerSelectedMs = readClockTimerSelectionMs();
+  gClockTimerRemainingMs = gClockTimerSelectedMs;
+  gClockTimerRunning = false;
+  gClockTimerHasBeenStarted = false;
+  gClockTimerLastMs = millis();
   gClockLastTimeLabelTs = 0;
 
   updateClockDashboardCurrentTimeLabel();
   updateClockDashboardStopwatchLabel();
   updateClockDashboardStopwatchToggleLabel();
+  updateClockTimerTimeLabel();
+  updateClockTimerToggleLabel();
   refreshClockDashboardCalendar();
 
   if (ui_HomeButton9 != NULL) {
