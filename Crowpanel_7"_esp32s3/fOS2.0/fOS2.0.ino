@@ -26,6 +26,7 @@ void audio_eof_mp3(const char *info);
 
 #define WIFI_DIR  "/system/wifi"
 #define WIFI_FILE "/system/wifi/wlans.txt"
+#define WIFI_ENABLED_FILE "/system/wifi/enabled.txt"
 #define TIMEZONE_DIR  "/system/timezone"
 #define TIMEZONE_FILE "/system/timezone/timezone.txt"
 #define DISPLAY_DIR "/system/display"
@@ -41,6 +42,7 @@ void audio_eof_mp3(const char *info);
 
 
 #define MAX_WIFI_PROFILES 5
+#define MAX_SCANNED_NETWORKS 20
 
 
 extern "C" void deleteSelectedFile(void);
@@ -160,6 +162,11 @@ struct WifiProfile {
   String pass;
 };
 
+struct ScannedNetwork {
+  String ssid;
+  int rssi;
+};
+
 struct TimeZoneEntry {
   const char* label;
   const char* tzRule;
@@ -189,6 +196,9 @@ static unsigned long lastClockUiUpdate = 0;
 static const int kMinBrightnessPercent = 5;
 static const int kDefaultBrightnessPercent = 100;
 static int gBrightnessPercent = kDefaultBrightnessPercent;
+static bool gWifiEnabled = false;
+static ScannedNetwork gScannedNetworks[MAX_SCANNED_NETWORKS];
+static int gScannedNetworkCount = 0;
 static const gpio_num_t kSleepButtonGpio = GPIO_NUM_38;
 static const bool kUseRealMcuSleep = false; // GPIO38 is unstable as sleep/wake pin on this board.
 static const unsigned long kSleepButtonDebounceMs = 80;
@@ -314,6 +324,11 @@ static uint8_t brightnessPercentToLevel(int percent);
 static void applyDisplayBrightnessPercent(int percent, bool updateSlider);
 static bool saveCurrentBrightness();
 static void loadSavedBrightness();
+static int wifiRssiToQualityPercent(int rssi);
+static bool saveWifiEnabledState(bool enabled);
+static void loadWifiEnabledState();
+static void applyWifiBootUiState();
+static void updateWifiSelectorDropdown();
 static void setupSleepButton();
 static bool hasUninterruptibleProcess();
 static void setDisplayPower(bool enabled);
@@ -555,6 +570,135 @@ static void loadSavedBrightness()
   }
 
   applyDisplayBrightnessPercent(loadedPercent, true);
+}
+
+static int wifiRssiToQualityPercent(int rssi)
+{
+  if (rssi >= -50) return 100;
+  if (rssi <= -90) return 0;
+  return ((rssi + 90) * 100) / 40;
+}
+
+static bool saveWifiEnabledState(bool enabled)
+{
+  if (!sd_ok) return false;
+
+  if (!SD.exists(WIFI_DIR)) {
+    SD.mkdir(WIFI_DIR);
+  }
+
+  if (SD.exists(WIFI_ENABLED_FILE)) {
+    SD.remove(WIFI_ENABLED_FILE);
+  }
+
+  File f = SD.open(WIFI_ENABLED_FILE, FILE_WRITE);
+  if (!f) return false;
+
+  f.println(enabled ? "1" : "0");
+  f.close();
+  return true;
+}
+
+static void loadWifiEnabledState()
+{
+  gWifiEnabled = false;
+
+  if (sd_ok && SD.exists(WIFI_ENABLED_FILE)) {
+    File f = SD.open(WIFI_ENABLED_FILE, FILE_READ);
+    if (f) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      f.close();
+      gWifiEnabled = (line == "1" || line.equalsIgnoreCase("true"));
+    }
+  }
+}
+
+static void applyWifiBootUiState()
+{
+  if (!uic_WifiSwitch) return;
+
+  if (gWifiEnabled) {
+    lv_obj_add_state(uic_WifiSwitch, LV_STATE_CHECKED);
+    if (uic_WifiSelectorDropdown) {
+      lv_obj_clear_flag(uic_WifiSelectorDropdown, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (uic_TextAreaWifiPassword) {
+      lv_obj_clear_flag(uic_TextAreaWifiPassword, LV_OBJ_FLAG_HIDDEN);
+    }
+  } else {
+    lv_obj_clear_state(uic_WifiSwitch, LV_STATE_CHECKED);
+    if (uic_WifiSelectorDropdown) {
+      lv_obj_add_flag(uic_WifiSelectorDropdown, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (uic_TextAreaWifiPassword) {
+      lv_obj_add_flag(uic_TextAreaWifiPassword, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+}
+
+static void updateWifiSelectorDropdown()
+{
+  if (!uic_WifiSelectorDropdown || !gWifiEnabled) return;
+
+  gScannedNetworkCount = 0;
+  int networkCount = WiFi.scanNetworks();
+
+  for (int i = 0; i < networkCount; i++) {
+    String ssid = WiFi.SSID(i);
+    if (ssid.length() == 0) continue;
+
+    int rssi = WiFi.RSSI(i);
+    int existing = -1;
+
+    for (int j = 0; j < gScannedNetworkCount; j++) {
+      if (gScannedNetworks[j].ssid == ssid) {
+        existing = j;
+        break;
+      }
+    }
+
+    if (existing >= 0) {
+      if (rssi > gScannedNetworks[existing].rssi) {
+        gScannedNetworks[existing].rssi = rssi;
+      }
+      continue;
+    }
+
+    if (gScannedNetworkCount >= MAX_SCANNED_NETWORKS) continue;
+
+    gScannedNetworks[gScannedNetworkCount].ssid = ssid;
+    gScannedNetworks[gScannedNetworkCount].rssi = rssi;
+    gScannedNetworkCount++;
+  }
+
+  for (int i = 0; i < gScannedNetworkCount - 1; i++) {
+    for (int j = i + 1; j < gScannedNetworkCount; j++) {
+      if (gScannedNetworks[j].rssi > gScannedNetworks[i].rssi) {
+        ScannedNetwork tmp = gScannedNetworks[i];
+        gScannedNetworks[i] = gScannedNetworks[j];
+        gScannedNetworks[j] = tmp;
+      }
+    }
+  }
+
+  if (gScannedNetworkCount == 0) {
+    lv_dropdown_set_options(uic_WifiSelectorDropdown, "Kein WLAN gefunden");
+    lv_dropdown_set_selected(uic_WifiSelectorDropdown, 0);
+    return;
+  }
+
+  String options;
+  for (int i = 0; i < gScannedNetworkCount; i++) {
+    if (i > 0) options += "\n";
+    options += gScannedNetworks[i].ssid;
+    options += " (";
+    options += String(wifiRssiToQualityPercent(gScannedNetworks[i].rssi));
+    options += "%)";
+  }
+
+  lv_dropdown_set_options(uic_WifiSelectorDropdown, options.c_str());
+  lv_dropdown_set_selected(uic_WifiSelectorDropdown, 0);
 }
 
 static void setupSleepButton()
@@ -3587,9 +3731,15 @@ static const unsigned long kWifiReconnectIntervalMs = 30000;
 
 extern "C" void SaveWifiConnection_Data(lv_event_t * e)
 {
+  (void)e;
   if (!sd_ok) return;
+  if (!uic_WifiSelectorDropdown || !uic_TextAreaWifiPassword) return;
+  if (gScannedNetworkCount == 0) return;
 
-  const char* ssid = lv_textarea_get_text(uic_TextAreaWifiSSID);
+  uint16_t selected = lv_dropdown_get_selected(uic_WifiSelectorDropdown);
+  if (selected >= (uint16_t)gScannedNetworkCount) return;
+
+  const char* ssid = gScannedNetworks[selected].ssid.c_str();
   const char* pass = lv_textarea_get_text(uic_TextAreaWifiPassword);
 
   if (strlen(ssid) == 0) return;
@@ -3638,6 +3788,8 @@ int loadWifiProfiles(WifiProfile profiles[])
 
 bool connectKnownWifi(bool updateUiState = true)
 {
+  if (!gWifiEnabled) return false;
+
   WifiProfile profiles[MAX_WIFI_PROFILES];
   int profileCount = loadWifiProfiles(profiles);
 
@@ -3728,6 +3880,7 @@ void wifiReconnectTaskRunner(void* parameter)
 
 void reconnectWifi()
 {
+  if (!gWifiEnabled) return;
   if (wifiConnecting) return;
 
   wifiConnecting = true;
@@ -3750,11 +3903,32 @@ void reconnectWifi()
   }
 }
 
-extern "C" void ReloadWiFiConnection_Data(lv_event_t * e)
+extern "C" void runWifiConnection_Data(lv_event_t * e)
 {
-  Serial.println("Manueller WLAN Reload");
+  (void)e;
 
+  gWifiEnabled = true;
+  saveWifiEnabledState(true);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  delay(100);
+
+  updateWifiSelectorDropdown();
   reconnectWifi();
+}
+
+extern "C" void StopWifiConnection_Data(lv_event_t * e)
+{
+  (void)e;
+
+  gWifiEnabled = false;
+  saveWifiEnabledState(false);
+
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+
+  gScannedNetworkCount = 0;
   updateWifiIcon();
 }
 
@@ -4142,8 +4316,14 @@ bootProgress(20, "Scan files");
 fillFileRoller_WithLiveProgress(20, 50);
 
 bootProgress(60, "Initialize WiFi");
-WiFi.mode(WIFI_STA);
-reconnectWifi();
+loadWifiEnabledState();
+applyWifiBootUiState();
+if (gWifiEnabled) {
+  WiFi.mode(WIFI_STA);
+  reconnectWifi();
+} else {
+  WiFi.mode(WIFI_OFF);
+}
 
 /* ================= AUDIO INIT ================= */
 bootProgress(70, "Initialize Audio");
@@ -4205,7 +4385,7 @@ void loop()
   }
 
   // alle 30 Sekunden Wi-Fi prüfen (non-blocking Reconnect)
-  if (millis() - lastReconnectAttempt > kWifiReconnectIntervalMs) {
+  if (gWifiEnabled && millis() - lastReconnectAttempt > kWifiReconnectIntervalMs) {
 
     lastReconnectAttempt = millis();
 

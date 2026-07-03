@@ -11,20 +11,28 @@ void SaveDisplaySettings_Data(lv_event_t * e);
 void StorageManagerSelect_Data(lv_event_t * e);
 void ResetStorageManagerToRoot_Data(void);
 void UnloadApp_Data(lv_event_t * e);
+void SaveWifiConnection_Data(lv_event_t * e);
+void runWifiConnection_Data(lv_event_t * e);
+void StopWifiConnection_Data(lv_event_t * e);
 
 void updateSystemInfo(lv_event_t * e)
 {
 	updateSystemInfoData();
 }
 
-void ReloadWiFiConnection(lv_event_t * e)
-{
-	ReloadWiFiConnection_Data();
-}
-
 void SaveWifiConnection(lv_event_t * e)
 {
-	SaveWifiConnection_Data();
+	SaveWifiConnection_Data(e);
+}
+
+void runWifiConnection(lv_event_t * e)
+{
+	runWifiConnection_Data(e);
+}
+
+void StopWifiConnection(lv_event_t * e)
+{
+	StopWifiConnection_Data(e);
 }
 
 void SaveTimeZone(lv_event_t * e)

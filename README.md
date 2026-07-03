@@ -1,8 +1,59 @@
-# fOS 2.4.0
+# fOS 2.5.0
 
-fOS 2.4.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 2.5.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 
-This release introduces a safer file management workflow with a delete confirmation dialog and expands the Clock application with an integrated countdown timer while keeping the production OTA + Recovery architecture introduced in earlier releases.
+This release improves Wi-Fi management by allowing Wi-Fi to be enabled or disabled from Settings with the selected state automatically restored after every reboot. Connecting to wireless networks is now easier thanks to a dropdown list of scanned Wi-Fi networks, eliminating the need to manually type SSIDs.
+
+---
+
+## What's New in 2.5.0
+
+* Wi-Fi improvements:
+
+  * Wi-Fi can now be enabled or disabled directly from Settings.
+  * The selected Wi-Fi state is saved automatically.
+  * The saved state is restored during every boot.
+
+* Improved Wi-Fi setup:
+
+  * available wireless networks are shown in a dropdown list
+  * SSIDs can be selected directly after scanning
+  * manual SSID entry is no longer required for nearby networks
+
+* File Manager improvements:
+
+  * confirmation dialog before deleting files
+  * prevents accidental file removal
+
+* Clock application:
+
+  * integrated countdown timer
+  * start, stop and reset controls
+
+* Hardware display/sleep button on `GPIO38`:
+
+  * short press turns display output and backlight off
+  * short press while display is off turns it back on
+  * firmware reduces normal background work while display is off
+
+* Long-press sleep override:
+
+  * holding the button for 3 seconds forces ESP32-S3 Light Sleep
+  * Light Sleep starts after releasing the button to avoid immediate wakeup
+  * update installs and music playback block forced sleep
+
+* Serial diagnostics:
+
+  * boot reset/wakeup cause is printed at startup
+  * button level changes on `GPIO38` are logged
+  * sleep/display state transitions are logged
+
+* Existing runtime features remain included:
+
+  * production OTA + Recovery workflow with `app0/app1`
+  * SD-staged update files in `/system/update/`
+  * display brightness persistence
+  * SD app runtime with calculator, radio, clock (including timer), and weather apps
 
 ---
 
@@ -265,6 +316,10 @@ Supported elements:
 * Settings
 
   * Wi-Fi
+    * Enable / Disable Wi-Fi
+    * Scan for nearby networks
+    * Select network from dropdown
+    * Password entry
   * Timezone
   * System Information
 * Storage Manager
@@ -385,6 +440,13 @@ Short press remains the recommended and most reliable display-off mode.
 ---
 
 # Version History
+
+## v2.5.0
+
+* Added Wi-Fi enable/disable option.
+* Wi-Fi state is saved and restored after reboot.
+* Added dropdown list for selecting scanned Wi-Fi networks.
+* Simplified Wi-Fi configuration.
 
 ## v2.4.0
 

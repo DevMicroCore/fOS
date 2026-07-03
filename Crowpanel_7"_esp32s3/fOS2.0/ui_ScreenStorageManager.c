@@ -5,12 +5,13 @@
 
 #include "ui.h"
 
+lv_obj_t *uic_ContainerReallyDelete;
 lv_obj_t *uic_LabelSDInfo;
 lv_obj_t *uic_BarSD;
 lv_obj_t *uic_FileRollerFileManager;
 lv_obj_t *uic_LabelDeleteFile;
 lv_obj_t *uic_ButtonDeleteFile;
-lv_obj_t *ui_ScreenStorageManager = NULL;lv_obj_t *ui_HomeButton1 = NULL;lv_obj_t *ui_LabelMenu2 = NULL;lv_obj_t *ui_ButtonSelect = NULL;lv_obj_t *ui_LabelMenu3 = NULL;lv_obj_t *ui_ButtonDeleteFile = NULL;lv_obj_t *ui_LabelDeleteFile = NULL;lv_obj_t *ui_FileRollerFileManager = NULL;lv_obj_t *ui_BarSD = NULL;lv_obj_t *ui_LabelSDInfo = NULL;
+lv_obj_t *ui_ScreenStorageManager = NULL;lv_obj_t *ui_HomeButton1 = NULL;lv_obj_t *ui_LabelMenu2 = NULL;lv_obj_t *ui_ButtonSelect = NULL;lv_obj_t *ui_LabelMenu3 = NULL;lv_obj_t *ui_ButtonDeleteFile = NULL;lv_obj_t *ui_LabelDeleteFile = NULL;lv_obj_t *ui_FileRollerFileManager = NULL;lv_obj_t *ui_BarSD = NULL;lv_obj_t *ui_LabelSDInfo = NULL;lv_obj_t *ui_ContainerReallyDelete = NULL;lv_obj_t *ui_ButtonDeleteFile1 = NULL;lv_obj_t *ui_LabelDeleteFile1 = NULL;lv_obj_t *ui_ButtonCancel = NULL;lv_obj_t *ui_LabelCancel = NULL;
 // event funtions
 void ui_event_HomeButton1( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
@@ -35,7 +36,7 @@ void ui_event_ButtonDeleteFile( lv_event_t * e) {
     lv_event_code_t event_code = lv_event_get_code(e);
 
 if ( event_code == LV_EVENT_CLICKED) {
-      DeleteFileSelected( e );
+      _ui_flag_modify( ui_ContainerReallyDelete, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
 }
 }
 
@@ -44,6 +45,30 @@ void ui_event_LabelDeleteFile( lv_event_t * e) {
 
 if ( event_code == LV_EVENT_CLICKED) {
       DeleteFileSelected( e );
+}
+}
+
+void ui_event_ButtonDeleteFile1( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
+if ( event_code == LV_EVENT_CLICKED) {
+      DeleteFileSelected( e );
+}
+}
+
+void ui_event_LabelDeleteFile1( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
+if ( event_code == LV_EVENT_CLICKED) {
+      DeleteFileSelected( e );
+}
+}
+
+void ui_event_ButtonCancel( lv_event_t * e) {
+    lv_event_code_t event_code = lv_event_get_code(e);
+
+if ( event_code == LV_EVENT_CLICKED) {
+      _ui_flag_modify( ui_ContainerReallyDelete, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
 }
 }
 
@@ -147,15 +172,74 @@ lv_obj_set_align( ui_LabelSDInfo, LV_ALIGN_CENTER );
 lv_label_set_text(ui_LabelSDInfo,"No SD card detected.");
 lv_obj_set_style_text_font(ui_LabelSDInfo, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_ContainerReallyDelete = lv_obj_create(ui_ScreenStorageManager);
+lv_obj_remove_style_all(ui_ContainerReallyDelete);
+lv_obj_set_width( ui_ContainerReallyDelete, 446);
+lv_obj_set_height( ui_ContainerReallyDelete, 77);
+lv_obj_set_align( ui_ContainerReallyDelete, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ContainerReallyDelete, LV_OBJ_FLAG_HIDDEN );   /// Flags
+lv_obj_clear_flag( ui_ContainerReallyDelete, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ContainerReallyDelete, 15, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_ContainerReallyDelete, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_ContainerReallyDelete, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_ButtonDeleteFile1 = lv_btn_create(ui_ContainerReallyDelete);
+lv_obj_set_width( ui_ButtonDeleteFile1, 200);
+lv_obj_set_height( ui_ButtonDeleteFile1, 50);
+lv_obj_set_x( ui_ButtonDeleteFile1, 110 );
+lv_obj_set_y( ui_ButtonDeleteFile1, 1 );
+lv_obj_set_align( ui_ButtonDeleteFile1, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonDeleteFile1, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonDeleteFile1, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonDeleteFile1, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_ButtonDeleteFile1, lv_color_hex(0xE8210B), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_ButtonDeleteFile1, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelDeleteFile1 = lv_label_create(ui_ButtonDeleteFile1);
+lv_obj_set_width( ui_LabelDeleteFile1, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelDeleteFile1, LV_SIZE_CONTENT);   /// 0
+lv_obj_set_align( ui_LabelDeleteFile1, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelDeleteFile1,"Delete file");
+lv_obj_set_style_text_color(ui_LabelDeleteFile1, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_text_opa(ui_LabelDeleteFile1, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_decor(ui_LabelDeleteFile1, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_LabelDeleteFile1, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_ButtonCancel = lv_btn_create(ui_ContainerReallyDelete);
+lv_obj_set_width( ui_ButtonCancel, 200);
+lv_obj_set_height( ui_ButtonCancel, 50);
+lv_obj_set_x( ui_ButtonCancel, -110 );
+lv_obj_set_y( ui_ButtonCancel, 0 );
+lv_obj_set_align( ui_ButtonCancel, LV_ALIGN_CENTER );
+lv_obj_add_flag( ui_ButtonCancel, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
+lv_obj_clear_flag( ui_ButtonCancel, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
+lv_obj_set_style_radius(ui_ButtonCancel, 7, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_bg_color(ui_ButtonCancel, lv_color_hex(0x2095F6), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_bg_opa(ui_ButtonCancel, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
+ui_LabelCancel = lv_label_create(ui_ButtonCancel);
+lv_obj_set_width( ui_LabelCancel, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_LabelCancel, LV_SIZE_CONTENT);   /// 0
+lv_obj_set_align( ui_LabelCancel, LV_ALIGN_CENTER );
+lv_label_set_text(ui_LabelCancel,"Cancel");
+lv_obj_set_style_text_color(ui_LabelCancel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_text_opa(ui_LabelCancel, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_decor(ui_LabelCancel, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_LabelCancel, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
+
 lv_obj_add_event_cb(ui_HomeButton1, ui_event_HomeButton1, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonSelect, ui_event_ButtonSelect, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_LabelDeleteFile, ui_event_LabelDeleteFile, LV_EVENT_ALL, NULL);
 lv_obj_add_event_cb(ui_ButtonDeleteFile, ui_event_ButtonDeleteFile, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_LabelDeleteFile1, ui_event_LabelDeleteFile1, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_ButtonDeleteFile1, ui_event_ButtonDeleteFile1, LV_EVENT_ALL, NULL);
+lv_obj_add_event_cb(ui_ButtonCancel, ui_event_ButtonCancel, LV_EVENT_ALL, NULL);
 uic_ButtonDeleteFile = ui_ButtonDeleteFile;
 uic_LabelDeleteFile = ui_LabelDeleteFile;
 uic_FileRollerFileManager = ui_FileRollerFileManager;
 uic_BarSD = ui_BarSD;
 uic_LabelSDInfo = ui_LabelSDInfo;
+uic_ContainerReallyDelete = ui_ContainerReallyDelete;
 
 }
 
@@ -179,5 +263,11 @@ uic_BarSD= NULL;
 ui_BarSD= NULL;
 uic_LabelSDInfo= NULL;
 ui_LabelSDInfo= NULL;
+uic_ContainerReallyDelete= NULL;
+ui_ContainerReallyDelete= NULL;
+ui_ButtonDeleteFile1= NULL;
+ui_LabelDeleteFile1= NULL;
+ui_ButtonCancel= NULL;
+ui_LabelCancel= NULL;
 
 }

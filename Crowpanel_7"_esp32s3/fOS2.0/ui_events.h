@@ -11,8 +11,9 @@ extern "C" {
 #endif
 
 void updateSystemInfo(lv_event_t * e);
-void ReloadWiFiConnection(lv_event_t * e);
 void SaveWifiConnection(lv_event_t * e);
+void runWifiConnection(lv_event_t * e);
+void StopWifiConnection(lv_event_t * e);
 void SaveTimeZone(lv_event_t * e);
 void SaveDisplaySettings(lv_event_t * e);
 void BackToHomeFromFileManager(lv_event_t * e);

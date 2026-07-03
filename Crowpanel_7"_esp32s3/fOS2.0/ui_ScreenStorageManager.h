@@ -27,12 +27,21 @@ extern lv_obj_t *ui_LabelDeleteFile;
 extern lv_obj_t *ui_FileRollerFileManager;
 extern lv_obj_t *ui_BarSD;
 extern lv_obj_t *ui_LabelSDInfo;
+extern lv_obj_t *ui_ContainerReallyDelete;
+extern void ui_event_ButtonDeleteFile1( lv_event_t * e);
+extern lv_obj_t *ui_ButtonDeleteFile1;
+extern void ui_event_LabelDeleteFile1( lv_event_t * e);
+extern lv_obj_t *ui_LabelDeleteFile1;
+extern void ui_event_ButtonCancel( lv_event_t * e);
+extern lv_obj_t *ui_ButtonCancel;
+extern lv_obj_t *ui_LabelCancel;
 // CUSTOM VARIABLES
 extern lv_obj_t *uic_ButtonDeleteFile;
 extern lv_obj_t *uic_LabelDeleteFile;
 extern lv_obj_t *uic_FileRollerFileManager;
 extern lv_obj_t *uic_BarSD;
 extern lv_obj_t *uic_LabelSDInfo;
+extern lv_obj_t *uic_ContainerReallyDelete;
 
 #ifdef __cplusplus
 } /*extern "C"*/
