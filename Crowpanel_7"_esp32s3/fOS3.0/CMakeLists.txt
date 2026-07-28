@@ -1,0 +1,19 @@
+SET(SOURCES ui_comp_button1.c
+    ui_comp_switch.c
+    ui_comp.c
+    ui_ScreenHome.c
+    ui_ScreenSettings.c
+    ui_ScreenStorageManager.c
+    ui_Update.c
+    ui_AppContent.c
+    ui_theme_manager.c
+    ui_themes.c
+    ui.c
+    ui_comp_hook.c
+    ui_helpers.c
+    ui_events.c
+    ui_img_350490791.c
+    ui_img_1837598647.c
+    ui_img_fos_256x256_png.c)
+
+add_library(ui ${SOURCES})

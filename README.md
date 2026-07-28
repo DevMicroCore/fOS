@@ -1,12 +1,23 @@
-# fOS 2.5.0
+# fOS 3.0.0-beta.1
 
-fOS 2.5.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 3.0.0-beta.1 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 
 This release improves Wi-Fi management by allowing Wi-Fi to be enabled or disabled from Settings with the selected state automatically restored after every reboot. Connecting to wireless networks is now easier thanks to a dropdown list of scanned Wi-Fi networks, eliminating the need to manually type SSIDs.
 
 ---
 
-## What's New in 2.5.0
+## What's New in 3.0.0-beta.1
+
+* Theme selection (Blue, Orange, Green) for native and SD apps.
+* Theme-aware UI: `bg=theme`, `bg=surface`, `fg=contrast`.
+* Custom folders.
+* Text app supports subfolders using paths like `folder/file.txt`.
+* Updated UI Demo.
+* Clock calendar starts on Monday.
+
+---
+
+# What's New in 2.5.0
 
 * Wi-Fi improvements:
 
@@ -164,17 +175,17 @@ Required libraries:
 # Installation
 
 1. Install Arduino IDE 2.x.
-2. Install `esp32 by Espressif Systems`.
+2. Install `esp32 2.0.15 by Espressif Systems`.
 3. Install the required libraries:
 
-   * lvgl
+   * lvgl 8.3.11
    * LovyanGFX
    * ESP32-audioI2S
 4. Open `fOS2.0.ino`.
 5. Select your ESP32-S3 board.
 6. Configure:
 
-   * custom partition scheme (`app0/app1`)
+   * custom partition scheme (`app0/app1`) or, if it's not available, the Huge App
    * `PSRAM = OPI PSRAM`
 7. Verify the correct panel define in `LGFX_CrowPanel.h`.
 8. Compile and upload.
@@ -298,6 +309,16 @@ type=switch;x=500;y=120;value=true
 type=checkbox;x=500;y=180;text=Option;value=false
 type=panel;x=20;y=20;w=760;h=430;bg=0xF2F2F2
 ```
+
+Theme-aware color values are also supported:
+
+```
+bg=theme
+bg=surface
+fg=contrast
+```
+
+If `bg` is omitted for `button`, `panel`, `textarea`, `switch`, or `checkbox`, the default background stays black (`0x000000`).
 
 Supported elements:
 
