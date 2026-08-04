@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 void updateSystemInfo(lv_event_t * e);
+void StartStorageManager(lv_event_t * e);
 void SaveWifiConnection(lv_event_t * e);
 void runWifiConnection(lv_event_t * e);
 void StopWifiConnection(lv_event_t * e);

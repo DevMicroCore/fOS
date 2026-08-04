@@ -15,6 +15,7 @@ void SaveWifiConnection_Data(lv_event_t * e);
 void runWifiConnection_Data(lv_event_t * e);
 void StopWifiConnection_Data(lv_event_t * e);
 void storageManagerNewFolderData(lv_event_t * e);
+void StartStorageManager_Data(lv_event_t * e);
 
 void updateSystemInfo(lv_event_t * e)
 {
@@ -82,4 +83,9 @@ void UnloadApp(lv_event_t * e)
 	if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
 		UnloadApp_Data(e);
 	}
+}
+
+void StartStorageManager(lv_event_t * e)
+{
+	StartStorageManager_Data(e);
 }

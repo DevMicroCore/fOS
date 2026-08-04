@@ -1,12 +1,92 @@
-# fOS 3.0.0-beta.1
+# fOS 3.0.0
 
-fOS 3.0.0-beta.1 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-
-This release improves Wi-Fi management by allowing Wi-Fi to be enabled or disabled from Settings with the selected state automatically restored after every reboot. Connecting to wireless networks is now easier thanks to a dropdown list of scanned Wi-Fi networks, eliminating the need to manually type SSIDs.
+fOS 3.0.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 
 ---
 
-## What's New in 3.0.0-beta.1
+# What's New in 3.0.0
+
+## 🎨 Theme System
+
+fOS now supports customizable system themes.
+
+Features:
+
+* Select between **Blue**, **Orange**, and **Green** themes.
+* Themes are applied consistently across all native applications.
+* SD applications also automatically use the selected theme.
+* Custom UI applications can use theme-aware colors:
+
+```text
+bg=theme
+bg=surface
+fg=contrast
+```
+
+These values automatically adapt to the currently selected system theme.
+
+---
+
+## 📁 File System
+
+The file system has been expanded.
+
+New features:
+
+* Create your own folders.
+* The Text application now supports subfolders.
+* Files can be saved and loaded using paths such as:
+
+```text
+notes/todo.txt
+projects/demo/readme.txt
+```
+
+---
+
+## 📻 Radio Application
+
+The Radio app has been redesigned.
+
+New features:
+
+* Browse folders inside the File Player.
+* Open folders using the **">"** button.
+* Volume slider.
+* Playback progress bar.
+* Seek within audio files using the progress bar.
+
+---
+
+## ⏰ Clock
+
+Improvements:
+
+* Calendar now starts with **Monday**.
+* Timers can play an optional alarm sound from:
+
+```text
+/system/timer.mp3
+```
+
+---
+
+## 🚀 Performance
+
+System improvements:
+
+* Faster boot time.
+* Reduced RAM usage.
+* Improved overall responsiveness.
+
+---
+
+## 🖥 Applications
+
+* Updated UI Demo application.
+---
+
+# What's New in 3.0.0-beta.1
 
 * Theme selection (Blue, Orange, Green) for native and SD apps.
 * Theme-aware UI: `bg=theme`, `bg=surface`, `fg=contrast`.
@@ -461,6 +541,32 @@ Short press remains the recommended and most reliable display-off mode.
 ---
 
 # Version History
+
+## v3.0.0
+
+### Added
+
+* Selectable Blue, Orange and Green themes.
+* Theme support for native applications.
+* Theme support for SD applications.
+* Theme-aware UI values:
+  * `bg=theme`
+  * `bg=surface`
+  * `fg=contrast`
+* Custom folder creation.
+* Text application subfolder support.
+* Timer alarm sound support using `/system/timer.mp3`.
+* Radio application folder navigation.
+* Radio application volume slider.
+* Radio application playback progress bar with seeking.
+
+### Changed
+
+* Updated UI Demo application.
+* Calendar now starts on Monday.
+* Faster boot process.
+* Reduced RAM usage.
+* Improved system responsiveness.
 
 ## v2.5.0
 

@@ -118,7 +118,7 @@ lv_obj_set_style_text_font(ui_LabelMenu2, &lv_font_montserrat_24, LV_PART_MAIN| 
 ui_ButtonNewFolder = lv_btn_create(ui_ScreenStorageManager);
 lv_obj_set_width( ui_ButtonNewFolder, 169);
 lv_obj_set_height( ui_ButtonNewFolder, 50);
-lv_obj_set_x( ui_ButtonNewFolder, -39 );
+lv_obj_set_x( ui_ButtonNewFolder, 43 );
 lv_obj_set_y( ui_ButtonNewFolder, -210 );
 lv_obj_set_align( ui_ButtonNewFolder, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonNewFolder, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
@@ -140,7 +140,7 @@ lv_obj_set_style_text_font(ui_LabelNewFolder, &lv_font_montserrat_24, LV_PART_MA
 ui_ButtonSelect = lv_btn_create(ui_ScreenStorageManager);
 lv_obj_set_width( ui_ButtonSelect, 122);
 lv_obj_set_height( ui_ButtonSelect, 50);
-lv_obj_set_x( ui_ButtonSelect, 116 );
+lv_obj_set_x( ui_ButtonSelect, 198 );
 lv_obj_set_y( ui_ButtonSelect, -210 );
 lv_obj_set_align( ui_ButtonSelect, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonSelect, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
@@ -160,9 +160,9 @@ lv_obj_set_style_text_decor(ui_LabelMenu3, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_
 lv_obj_set_style_text_font(ui_LabelMenu3, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_ButtonDeleteFile = lv_btn_create(ui_ScreenStorageManager);
-lv_obj_set_width( ui_ButtonDeleteFile, 203);
+lv_obj_set_width( ui_ButtonDeleteFile, 122);
 lv_obj_set_height( ui_ButtonDeleteFile, 50);
-lv_obj_set_x( ui_ButtonDeleteFile, 287 );
+lv_obj_set_x( ui_ButtonDeleteFile, 329 );
 lv_obj_set_y( ui_ButtonDeleteFile, -210 );
 lv_obj_set_align( ui_ButtonDeleteFile, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonDeleteFile, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
@@ -175,7 +175,7 @@ ui_LabelDeleteFile = lv_label_create(ui_ButtonDeleteFile);
 lv_obj_set_width( ui_LabelDeleteFile, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_LabelDeleteFile, LV_SIZE_CONTENT);   /// 0
 lv_obj_set_align( ui_LabelDeleteFile, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelDeleteFile,"Delete file");
+lv_label_set_text(ui_LabelDeleteFile,"Delete");
 lv_obj_set_style_text_color(ui_LabelDeleteFile, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_text_opa(ui_LabelDeleteFile, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelDeleteFile, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -215,7 +215,7 @@ lv_obj_set_style_text_font(ui_LabelSDInfo, &lv_font_montserrat_20, LV_PART_MAIN|
 
 ui_ContainerReallyDelete = lv_obj_create(ui_ScreenStorageManager);
 lv_obj_remove_style_all(ui_ContainerReallyDelete);
-lv_obj_set_width( ui_ContainerReallyDelete, 446);
+lv_obj_set_width( ui_ContainerReallyDelete, 280);
 lv_obj_set_height( ui_ContainerReallyDelete, 77);
 lv_obj_set_align( ui_ContainerReallyDelete, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ContainerReallyDelete, LV_OBJ_FLAG_HIDDEN );   /// Flags
@@ -225,9 +225,9 @@ lv_obj_set_style_bg_color(ui_ContainerReallyDelete, lv_color_hex(0xFFFFFF), LV_P
 lv_obj_set_style_bg_opa(ui_ContainerReallyDelete, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_ButtonDeleteFile1 = lv_btn_create(ui_ContainerReallyDelete);
-lv_obj_set_width( ui_ButtonDeleteFile1, 200);
+lv_obj_set_width( ui_ButtonDeleteFile1, 122);
 lv_obj_set_height( ui_ButtonDeleteFile1, 50);
-lv_obj_set_x( ui_ButtonDeleteFile1, 110 );
+lv_obj_set_x( ui_ButtonDeleteFile1, 65 );
 lv_obj_set_y( ui_ButtonDeleteFile1, 1 );
 lv_obj_set_align( ui_ButtonDeleteFile1, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonDeleteFile1, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags
@@ -240,16 +240,16 @@ ui_LabelDeleteFile1 = lv_label_create(ui_ButtonDeleteFile1);
 lv_obj_set_width( ui_LabelDeleteFile1, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_LabelDeleteFile1, LV_SIZE_CONTENT);   /// 0
 lv_obj_set_align( ui_LabelDeleteFile1, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelDeleteFile1,"Delete file");
+lv_label_set_text(ui_LabelDeleteFile1,"Delete");
 lv_obj_set_style_text_color(ui_LabelDeleteFile1, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_text_opa(ui_LabelDeleteFile1, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_decor(ui_LabelDeleteFile1, LV_TEXT_DECOR_NONE, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_LabelDeleteFile1, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_ButtonCancel = lv_btn_create(ui_ContainerReallyDelete);
-lv_obj_set_width( ui_ButtonCancel, 200);
+lv_obj_set_width( ui_ButtonCancel, 122);
 lv_obj_set_height( ui_ButtonCancel, 50);
-lv_obj_set_x( ui_ButtonCancel, -110 );
+lv_obj_set_x( ui_ButtonCancel, -65 );
 lv_obj_set_y( ui_ButtonCancel, 0 );
 lv_obj_set_align( ui_ButtonCancel, LV_ALIGN_CENTER );
 lv_obj_add_flag( ui_ButtonCancel, LV_OBJ_FLAG_SCROLL_ON_FOCUS );   /// Flags

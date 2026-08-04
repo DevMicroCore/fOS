@@ -45,6 +45,7 @@ void ui_event_ButtonSettingsStorage( lv_event_t * e) {
 
 if ( event_code == LV_EVENT_CLICKED) {
       _ui_screen_change( &ui_ScreenStorageManager, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_ScreenStorageManager_screen_init);
+      StartStorageManager( e );
 }
 }
 
@@ -207,7 +208,7 @@ lv_obj_set_height( ui_LabelSoftwareInformationData, 120);
 lv_obj_set_x( ui_LabelSoftwareInformationData, 235 );
 lv_obj_set_y( ui_LabelSoftwareInformationData, 165 );
 lv_obj_set_align( ui_LabelSoftwareInformationData, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelSoftwareInformationData,"fOS version:\n3.0.0-beta.1\nDeveloper: \nDevMicroCore");
+lv_label_set_text(ui_LabelSoftwareInformationData,"fOS version:\n3.0.0\nDeveloper: \nDevMicroCore");
 lv_obj_set_style_text_font(ui_LabelSoftwareInformationData, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_ButtonSettingsUpdater = lv_btn_create(ui_ScreenSettings);

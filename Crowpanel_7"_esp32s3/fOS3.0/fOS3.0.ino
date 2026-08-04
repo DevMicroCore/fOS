@@ -44,6 +44,8 @@ void audio_eof_mp3(const char *info);
 #define MAX_WIFI_PROFILES 5
 #define MAX_SCANNED_NETWORKS 20
 
+#define timerSound "/system/timer.mp3"
+
 
 extern "C" void deleteSelectedFile(void);
 extern "C" void fillFileRoller_TextViewer_Data(void);
@@ -80,6 +82,10 @@ static lv_obj_t * gRadioFileRoller = NULL;
 static lv_obj_t * gRadioWebRoller = NULL;
 static lv_obj_t * gRadioToggleButton = NULL;
 static lv_obj_t * gRadioToggleLabel = NULL;
+static lv_obj_t * gRadioVolumeSlider = NULL;
+static lv_obj_t * gRadioProgressSlider = NULL;
+static unsigned long gRadioProgressLastUpdateMs = 0;
+static String gRadioFileCurrentDir = String(MUSIC_FILES_DIR);
 static String gRadioCurrentFile = "";
 static String gRadioCurrentWebUrl = "";
 static lv_obj_t * gSdTextArea = NULL;
@@ -259,7 +265,12 @@ static void renderCalculatorButton(const char * text, int x, int y, int w, int h
 static void renderCalculatorApp();
 static void resetRadioState();
 static bool isMusicFileName(const String& filename);
+static String normalizeRadioFileBrowserPath(const String& path);
+static String getRadioFileBrowserParentPath(const String& path);
 static void fillRadioFileRoller();
+static void updateRadioProgressSlider();
+static void radioVolumeSliderEvent(lv_event_t * e);
+static void radioProgressSliderEvent(lv_event_t * e);
 static bool loadWebRadioStations();
 static void fillWebRadioRoller();
 static String getRadioSelectedFile();
@@ -1039,83 +1050,6 @@ void bootProgress(uint8_t percent, const char* text)
   delay(20);
 }
 
-int countTextFiles()
-{
-  int count = 0;
-
-  File dir = SD.open(TEXT_DIR);
-  if (!dir) return 0;
-
-  File file = dir.openNextFile();
-  while (file) {
-    if (!file.isDirectory()) {
-      count++;
-    }
-    file = dir.openNextFile();
-  }
-
-  dir.close();
-  return count;
-}
-
-void fillFileRoller_WithLiveProgress(int bootStart, int bootEnd)
-{
-  if (!sd_ok) return;
-
-  int totalFiles = countTextFiles();
-
-  File dir = SD.open(TEXT_DIR);
-  if (!dir) return;
-
-  String rollerText;
-  int processed = 0;
-
-  if (totalFiles == 0) {
-    bootProgress(bootEnd, "No files found");
-    fillFileRoller();
-    return;
-  }
-
-  File file = dir.openNextFile();
-  while (file) {
-
-    if (!file.isDirectory()) {
-      rollerText += file.name();
-      rollerText += "\n";
-      processed++;
-
-      // 🔁 Datei-Prozent (0–100)
-      int filePercent = (processed * 100) / totalFiles;
-
-      // 🔁 Umrechnen auf BOOT-Bereich (z. B. 30–70)
-      int bootPercent = mapPercent(
-        filePercent,
-        0, 100,
-        bootStart, bootEnd
-      );
-
-      char label[64];
-      snprintf(label, sizeof(label),
-               "Scan files (%d / %d)",
-               processed, totalFiles);
-
-      // 🔄 UI LIVE aktualisieren
-      lv_tick_inc(15);
-      lv_bar_set_value(uic_BootProgressBar, bootPercent, LV_ANIM_ON);
-      lv_label_set_text(uic_BootProgressLabel, label);
-      lv_timer_handler();
-      delay(15);
-    }
-
-    file = dir.openNextFile();
-  }
-
-  dir.close();
-
-  fillFileRoller();
-}
-
-
 /* ================= DISPLAY FLUSH ================= */
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
@@ -1892,6 +1826,9 @@ static void resetRadioState()
   gRadioWebRoller = NULL;
   gRadioToggleButton = NULL;
   gRadioToggleLabel = NULL;
+  gRadioVolumeSlider = NULL;
+  gRadioProgressSlider = NULL;
+  gRadioFileCurrentDir = String(MUSIC_FILES_DIR);
   gRadioCurrentFile = "";
   gRadioCurrentWebUrl = "";
 }
@@ -1907,6 +1844,38 @@ static bool isMusicFileName(const String& filename)
          name.endsWith(".m4a");
 }
 
+static String normalizeRadioFileBrowserPath(const String& path)
+{
+  String clean = path;
+  clean.trim();
+  while (clean.length() > 1 && clean.endsWith("/")) {
+    clean.remove(clean.length() - 1);
+  }
+  if (clean.length() == 0) {
+    return String(MUSIC_FILES_DIR);
+  }
+  return clean;
+}
+
+static String getRadioFileBrowserParentPath(const String& path)
+{
+  String clean = normalizeRadioFileBrowserPath(path);
+  String root = normalizeRadioFileBrowserPath(String(MUSIC_FILES_DIR));
+  if (clean == root) {
+    return root;
+  }
+
+  int slash = clean.lastIndexOf('/');
+  if (slash <= 0) {
+    return root;
+  }
+  String parent = clean.substring(0, slash);
+  if (parent.length() == 0) {
+    return root;
+  }
+  return parent;
+}
+
 static void fillRadioFileRoller()
 {
   if (gRadioFileRoller == NULL) return;
@@ -1915,7 +1884,8 @@ static void fillRadioFileRoller()
     return;
   }
 
-  File dir = SD.open(MUSIC_FILES_DIR);
+  gRadioFileCurrentDir = normalizeRadioFileBrowserPath(gRadioFileCurrentDir);
+  File dir = SD.open(gRadioFileCurrentDir.c_str());
   if (!dir || !dir.isDirectory()) {
     if (dir) dir.close();
     lv_roller_set_options(gRadioFileRoller, "Keine Dateien", LV_ROLLER_MODE_NORMAL);
@@ -1923,12 +1893,19 @@ static void fillRadioFileRoller()
   }
 
   String options = "";
+  if (gRadioFileCurrentDir != String(MUSIC_FILES_DIR)) {
+    options += "..\n";
+  }
+
   File entry = dir.openNextFile();
   while (entry) {
-    if (!entry.isDirectory()) {
-      String name = pathBasename(String(entry.name()));
-      name.trim();
-      if (name.length() > 0 && isMusicFileName(name)) {
+    String name = pathBasename(String(entry.name()));
+    name.trim();
+    if (name.length() > 0 && !name.startsWith("._")) {
+      if (entry.isDirectory()) {
+        options += name;
+        options += "/\n";
+      } else if (isMusicFileName(name)) {
         options += name;
         options += "\n";
       }
@@ -1946,6 +1923,72 @@ static void fillRadioFileRoller()
 
   lv_roller_set_options(gRadioFileRoller, options.c_str(), LV_ROLLER_MODE_NORMAL);
   lv_roller_set_selected(gRadioFileRoller, 0, LV_ANIM_OFF);
+}
+
+static void updateRadioProgressSlider()
+{
+  if (gRadioProgressSlider == NULL) return;
+  if (gRadioSource != RADIO_SOURCE_FILE || !gRadioPlaying) {
+    lv_slider_set_range(gRadioProgressSlider, 0, 1);
+    lv_slider_set_value(gRadioProgressSlider, 0, LV_ANIM_OFF);
+    return;
+  }
+
+  unsigned long now = millis();
+  if (lv_obj_has_state(gRadioProgressSlider, LV_STATE_PRESSED)) {
+    gRadioProgressLastUpdateMs = now;
+    return;
+  }
+
+  if (now - gRadioProgressLastUpdateMs < 200) {
+    return;
+  }
+  gRadioProgressLastUpdateMs = now;
+
+  int totalSeconds = audio.getAudioFileDuration();
+  int currentSeconds = audio.getAudioCurrentTime();
+
+  if (totalSeconds <= 0) {
+    totalSeconds = currentSeconds + 1;
+    if (totalSeconds < 1) {
+      totalSeconds = 1;
+    }
+  }
+
+  if (currentSeconds > totalSeconds) {
+    currentSeconds = totalSeconds;
+  }
+
+  lv_slider_set_range(gRadioProgressSlider, 0, totalSeconds);
+  lv_slider_set_value(gRadioProgressSlider, currentSeconds, LV_ANIM_OFF);
+}
+
+static void radioVolumeSliderEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  if (gRadioVolumeSlider == NULL) return;
+
+  int value = lv_slider_get_value(gRadioVolumeSlider);
+  audio.setVolume((unsigned char)value);
+}
+
+static void radioProgressSliderEvent(lv_event_t * e)
+{
+  if (gRadioProgressSlider == NULL) return;
+  if (gRadioSource != RADIO_SOURCE_FILE || !gRadioPlaying) return;
+
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_VALUE_CHANGED) {
+    if (!lv_obj_has_state(gRadioProgressSlider, LV_STATE_PRESSED)) {
+      return;
+    }
+  } else if (code != LV_EVENT_RELEASED && code != LV_EVENT_PRESS_LOST) {
+    return;
+  }
+
+  int position = lv_slider_get_value(gRadioProgressSlider);
+  audio.setAudioPlayPosition((unsigned short)position);
+  gRadioProgressLastUpdateMs = millis();
 }
 
 static bool loadWebRadioStations()
@@ -2056,8 +2099,28 @@ static void startOrStopSelectedRadio()
     String file = getRadioSelectedFile();
     if (file.length() == 0) return;
 
-    String path = String(MUSIC_FILES_DIR) + "/" + file;
+    if (file == "..") {
+      gRadioFileCurrentDir = getRadioFileBrowserParentPath(gRadioFileCurrentDir);
+      fillRadioFileRoller();
+      return;
+    }
+
+    if (file.endsWith("/")) {
+      String folderName = file;
+      folderName.remove(folderName.length() - 1);
+      gRadioFileCurrentDir = normalizeRadioFileBrowserPath(gRadioFileCurrentDir + "/" + folderName);
+      fillRadioFileRoller();
+      return;
+    }
+
+    String path = normalizeRadioFileBrowserPath(gRadioFileCurrentDir) + "/" + file;
     if (!SD.exists(path)) return;
+
+    if (gRadioPlaying && gRadioSource == RADIO_SOURCE_FILE && gRadioCurrentFile == path) {
+      stopRadioPlayback();
+      updateRadioToggleButtonLabel();
+      return;
+    }
 
     stopRadioPlayback();
     audio.connecttoFS(SD, path.c_str());
@@ -2065,6 +2128,7 @@ static void startOrStopSelectedRadio()
     gRadioSource = RADIO_SOURCE_FILE;
     gRadioCurrentFile = path;
     updateRadioToggleButtonLabel();
+    updateRadioProgressSlider();
     return;
   }
 
@@ -2105,7 +2169,7 @@ static void renderRadioApp()
 
   gRadioToggleButton = lv_btn_create(uic_AppContentArea);
   lv_obj_set_size(gRadioToggleButton, 162, 50);
-  lv_obj_set_pos(gRadioToggleButton, 320, 54);
+  lv_obj_set_pos(gRadioToggleButton, 320, 18);
   lv_obj_set_style_radius(gRadioToggleButton, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
   ui_object_set_themeable_style_property(gRadioToggleButton, LV_PART_MAIN| LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
   ui_object_set_themeable_style_property(gRadioToggleButton, LV_PART_MAIN| LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
@@ -2117,9 +2181,29 @@ static void renderRadioApp()
   lv_obj_set_style_text_color(gRadioToggleLabel, lv_color_hex(0x0A1A2B), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_center(gRadioToggleLabel);
 
+  gRadioVolumeSlider = lv_slider_create(uic_AppContentArea);
+  lv_obj_set_size(gRadioVolumeSlider, 754, 18);
+  lv_obj_set_pos(gRadioVolumeSlider, 24, 90);
+  lv_slider_set_range(gRadioVolumeSlider, 0, 21);
+  lv_slider_set_value(gRadioVolumeSlider, audio.getVolume(), LV_ANIM_OFF);
+  lv_obj_add_event_cb(gRadioVolumeSlider, radioVolumeSliderEvent, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_set_style_bg_color(gRadioVolumeSlider, lv_color_hex(0x1F2937), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioVolumeSlider, lv_color_hex((uint32_t)ui_get_theme_value(_ui_theme_color_MainTheme)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+
+  gRadioProgressSlider = lv_slider_create(uic_AppContentArea);
+  lv_obj_set_size(gRadioProgressSlider, 754, 18);
+  lv_obj_set_pos(gRadioProgressSlider, 24, 122);
+  lv_slider_set_range(gRadioProgressSlider, 0, 1);
+  lv_slider_set_value(gRadioProgressSlider, 0, LV_ANIM_OFF);
+  lv_obj_add_event_cb(gRadioProgressSlider, radioProgressSliderEvent, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_add_event_cb(gRadioProgressSlider, radioProgressSliderEvent, LV_EVENT_RELEASED, NULL);
+  lv_obj_add_event_cb(gRadioProgressSlider, radioProgressSliderEvent, LV_EVENT_PRESS_LOST, NULL);
+  lv_obj_set_style_bg_color(gRadioProgressSlider, lv_color_hex(0x1F2937), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(gRadioProgressSlider, lv_color_hex((uint32_t)ui_get_theme_value(_ui_theme_color_MainTheme)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+
   gRadioTabView = lv_tabview_create(uic_AppContentArea, LV_DIR_TOP, 50);
-  lv_obj_set_size(gRadioTabView, 800, 328);
-  lv_obj_set_pos(gRadioTabView, 0, 152);
+  lv_obj_set_size(gRadioTabView, 800, 318);
+  lv_obj_set_pos(gRadioTabView, 0, 160);
   lv_obj_add_event_cb(gRadioTabView, radioTabChangedEvent, LV_EVENT_VALUE_CHANGED, NULL);
 
   lv_obj_t * tabFiles = lv_tabview_add_tab(gRadioTabView, "File Player");
@@ -2143,7 +2227,7 @@ static void renderRadioApp()
   ui_object_set_themeable_style_property(tabBtns, LV_PART_ITEMS | LV_STATE_CHECKED, LV_STYLE_BORDER_OPA, _ui_theme_alpha_MainTheme);
 
   gRadioFileRoller = lv_roller_create(tabFiles);
-  lv_obj_set_size(gRadioFileRoller, 754, 235);
+  lv_obj_set_size(gRadioFileRoller, 754, 225);
   lv_obj_set_pos(gRadioFileRoller, 12, 10);
   lv_obj_set_style_radius(gRadioFileRoller, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_color(gRadioFileRoller, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -2158,7 +2242,7 @@ static void renderRadioApp()
   lv_obj_center(gRadioFileRoller);
 
   gRadioWebRoller = lv_roller_create(tabWeb);
-  lv_obj_set_size(gRadioWebRoller, 754, 235);
+  lv_obj_set_size(gRadioWebRoller, 754, 225);
   lv_obj_set_pos(gRadioWebRoller, 12, 10);
   lv_obj_set_style_radius(gRadioWebRoller, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_color(gRadioWebRoller, lv_color_hex(0x2A2A39), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -2175,6 +2259,7 @@ static void renderRadioApp()
   fillRadioFileRoller();
   fillWebRadioRoller();
   updateRadioToggleButtonLabel();
+  updateRadioProgressSlider();
 }
 
 void audio_eof_mp3(const char *info)
@@ -2186,6 +2271,7 @@ void audio_eof_mp3(const char *info)
   gRadioCurrentFile = "";
   gRadioCurrentWebUrl = "";
   updateRadioToggleButtonLabel();
+  updateRadioProgressSlider();
 }
 
 static void resetSdAppState()
@@ -2540,8 +2626,6 @@ static void saveTextFileFor(lv_obj_t * textArea, lv_obj_t * fileNameInput, lv_ob
   file.close();
 
   lv_textarea_set_text(fileNameInput, relativePath.c_str());
-  fillFileRoller();
-  updateSDUIData();
   fillTextRollerFor(roller);
 }
 
@@ -2775,7 +2859,7 @@ static void renderSdTextApp()
   ui_object_set_themeable_style_property(btnOpenConfirm, LV_PART_MAIN| LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
   lv_obj_clear_flag(btnOpenConfirm, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_t * lblOpenConfirm = lv_label_create(btnOpenConfirm);
-  lv_label_set_text(lblOpenConfirm, "Open");
+  lv_label_set_text(lblOpenConfirm, "Select");
   lv_obj_set_style_text_font(lblOpenConfirm, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(lblOpenConfirm, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_center(lblOpenConfirm);
@@ -3169,12 +3253,19 @@ static void updateClockDashboardTick()
   gClockTimerLastMs = nowMs;
 
   if ((uint64_t)elapsedMs >= gClockTimerRemainingMs) {
-    gClockTimerRemainingMs = 0;
-    gClockTimerRunning = false;
-    gClockTimerHasBeenStarted = false;
-    updateClockTimerTimeLabel();
-    updateClockTimerToggleLabel();
-    return;
+      gClockTimerRemainingMs = 0;
+      gClockTimerRunning = false;
+      gClockTimerHasBeenStarted = false;
+
+      audio.stopSong();
+      if (SD.exists(timerSound)) {
+        audio.setVolume(21);
+        audio.connecttoFS(SD, timerSound);
+      }
+
+      updateClockTimerTimeLabel();
+      updateClockTimerToggleLabel();
+      return;
   }
 
   gClockTimerRemainingMs -= (uint64_t)elapsedMs;
@@ -4683,6 +4774,12 @@ extern "C" void storageManagerNewFolderData(lv_event_t * e)
 /* =========================================================
    FILE ROLLER FUNKTIONEN
    ========================================================= */
+extern "C" void StartStorageManager_Data(lv_event_t * e)
+{
+  fillFileRoller();
+  updateSDUIData();
+}
+
 void fillFileRoller()
 {
   if (uic_FileRollerFileManager == NULL) return;
@@ -4861,6 +4958,7 @@ extern "C" void ResetStorageManagerToRoot_Data(void)
 {
   gStorageManagerCurrentDir = "/";
   fillFileRoller();
+  lv_roller_set_options(uic_FileRollerFileManager, "", LV_ROLLER_MODE_NORMAL);
 }
 
 
@@ -4992,8 +5090,6 @@ loadAndApplyDisplayTheme();
 updateClockUI();
 StartAppLauncher_Data(NULL);
 
-bootProgress(20, "Scan files");
-fillFileRoller_WithLiveProgress(20, 50);
 
 bootProgress(60, "Initialize WiFi");
 loadWifiEnabledState();
@@ -5013,10 +5109,6 @@ audio.setPinout(
   17    // I2S_DOUT
 );
 audio.setVolume(21); // 0..21 (CrowPanel Lautsprecher brauchen meist 10–14)
-
-
-bootProgress(80, "Update memory info");
-updateSDUIData();
 
 bootProgress(95, "Start user interface");
 bootProgress(100, "Finished");
@@ -5093,6 +5185,7 @@ void loop()
 
   // Audio
   audio.loop();
+  updateRadioProgressSlider();
 
   delay(5);
 }
