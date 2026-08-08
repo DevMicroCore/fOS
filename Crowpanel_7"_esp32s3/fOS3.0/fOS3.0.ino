@@ -129,9 +129,24 @@ static bool gClockCalendarSyncedWithRealTime = false;
 static lv_obj_t * uic_LabelWeatherTemperature = NULL;
 static lv_obj_t * uic_LabelWeatherInformation = NULL;
 static lv_obj_t * uic_RollerWeatherData = NULL;
+static lv_obj_t * uic_WeatherSearchPanel = NULL;
+static lv_obj_t * uic_WeatherSearchTextArea = NULL;
+static lv_obj_t * uic_WeatherSearchDropdown = NULL;
+static lv_obj_t * uic_WeatherSearchKeyboard = NULL;
+static lv_obj_t * uic_WeatherSearchConfirmButton = NULL;
+static lv_obj_t * uic_WeatherSearchOpenButton = NULL;
 static bool gWeatherAppVisible = false;
 static unsigned long gWeatherLastFetchMs = 0;
 static bool gWeatherFetchRunning = false;
+static bool gWeatherUseCurrentLocation = true;
+static String gWeatherSelectedLatitude = "";
+static String gWeatherSelectedLongitude = "";
+static String gWeatherSelectedLocationLabel = "Current Location";
+static const int kMaxWeatherSearchResults = 6;
+static String gWeatherSearchResultLabel[kMaxWeatherSearchResults + 1];
+static String gWeatherSearchResultLatitude[kMaxWeatherSearchResults + 1];
+static String gWeatherSearchResultLongitude[kMaxWeatherSearchResults + 1];
+static int gWeatherSearchResultCount = 0;
 static const unsigned long kWeatherRefreshIntervalMs = 15UL * 60UL * 1000UL;
 static int gCurrentAppIndex = -1;
 
@@ -333,7 +348,15 @@ static bool extractJsonStringField(const String& json, const char * key, String 
 static bool extractJsonNumberField(const String& json, const char * key, String * out);
 static bool extractJsonArrayRaw(const String& json, const char * key, String * out);
 static String weatherCodeToText(int code);
+static String urlEncode(const String& value);
 static bool fetchWeatherData(String * temperatureHumidity, String * information, String * rollerOptions);
+static bool performWeatherGeocodingSearch(const String& query);
+static void updateWeatherSearchDropdownOptions();
+static void showWeatherSearchPanel();
+static void hideWeatherSearchPanel();
+static void weatherSearchButtonEvent(lv_event_t * e);
+static void weatherSearchKeyboardEvent(lv_event_t * e);
+static void weatherSearchConfirmEvent(lv_event_t * e);
 static void applyWeatherUiData(const String& temperatureHumidity, const String& information, const String& rollerOptions);
 static void refreshWeatherDataIfNeeded(bool force);
 static void renderWeatherApp();
@@ -3592,9 +3615,20 @@ static void resetWeatherAppState()
   uic_LabelWeatherTemperature = NULL;
   uic_LabelWeatherInformation = NULL;
   uic_RollerWeatherData = NULL;
+  uic_WeatherSearchPanel = NULL;
+  uic_WeatherSearchTextArea = NULL;
+  uic_WeatherSearchDropdown = NULL;
+  uic_WeatherSearchKeyboard = NULL;
+  uic_WeatherSearchConfirmButton = NULL;
+  uic_WeatherSearchOpenButton = NULL;
   gWeatherAppVisible = false;
   gWeatherLastFetchMs = 0;
   gWeatherFetchRunning = false;
+  gWeatherUseCurrentLocation = true;
+  gWeatherSelectedLatitude = "";
+  gWeatherSelectedLongitude = "";
+  gWeatherSelectedLocationLabel = "Current Location";
+  gWeatherSearchResultCount = 0;
 }
 
 static bool extractJsonStringField(const String& json, const char * key, String * out)
@@ -3704,7 +3738,13 @@ static bool fetchWeatherData(String * temperatureHumidity, String * information,
   String latStr;
   String lonStr;
 
-  {
+  if (!gWeatherUseCurrentLocation && gWeatherSelectedLatitude.length() > 0 && gWeatherSelectedLongitude.length() > 0) {
+    latStr = gWeatherSelectedLatitude;
+    lonStr = gWeatherSelectedLongitude;
+    city = gWeatherSelectedLocationLabel;
+  }
+
+  if (latStr.length() == 0 || lonStr.length() == 0) {
     HTTPClient http;
     http.setTimeout(12000);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -3932,10 +3972,231 @@ static void refreshWeatherDataIfNeeded(bool force)
   gWeatherFetchRunning = false;
 }
 
+static void updateWeatherSearchDropdownOptions()
+{
+  if (uic_WeatherSearchDropdown == NULL) return;
+
+  String options = "Current Location";
+  for (int i = 0; i < gWeatherSearchResultCount; i++) {
+    options += "\n";
+    options += gWeatherSearchResultLabel[i];
+  }
+
+  if (gWeatherSearchResultCount == 0) {
+    options += "\nNo results";
+  }
+
+  lv_dropdown_set_options(uic_WeatherSearchDropdown, options.c_str());
+  lv_dropdown_set_selected(uic_WeatherSearchDropdown, 0);
+}
+
+static void showWeatherSearchPanel()
+{
+  if (uic_WeatherSearchPanel == NULL) return;
+  lv_obj_clear_flag(uic_WeatherSearchPanel, LV_OBJ_FLAG_HIDDEN);
+  if (uic_WeatherSearchKeyboard != NULL && uic_WeatherSearchTextArea != NULL) {
+    lv_keyboard_set_textarea(uic_WeatherSearchKeyboard, uic_WeatherSearchTextArea);
+    lv_obj_clear_flag(uic_WeatherSearchKeyboard, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (uic_WeatherSearchDropdown != NULL) {
+    updateWeatherSearchDropdownOptions();
+  }
+  if (uic_WeatherSearchConfirmButton != NULL) {
+    lv_obj_move_foreground(uic_WeatherSearchConfirmButton);
+  }
+}
+
+static void hideWeatherSearchPanel()
+{
+  if (uic_WeatherSearchPanel != NULL) {
+    lv_obj_add_flag(uic_WeatherSearchPanel, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (uic_WeatherSearchKeyboard != NULL) {
+    lv_keyboard_set_textarea(uic_WeatherSearchKeyboard, NULL);
+    lv_obj_add_flag(uic_WeatherSearchKeyboard, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static bool performWeatherGeocodingSearch(const String& query)
+{
+  if (query.length() == 0) {
+    gWeatherSearchResultCount = 0;
+    updateWeatherSearchDropdownOptions();
+    return false;
+  }
+
+  String encoded = urlEncode(query);
+  String geocodeUrl = "https://geocoding-api.open-meteo.com/v1/search?name=" + encoded + "&count=6&language=en&format=json";
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  http.setTimeout(15000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setUserAgent("fOS3.0-weather-search/1.0");
+  bool started = http.begin(client, geocodeUrl);
+  if (!started) return false;
+
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) {
+    http.end();
+    return false;
+  }
+
+  String payload = http.getString();
+  http.end();
+
+  String resultsRaw;
+  if (!extractJsonArrayRaw(payload, "results", &resultsRaw)) {
+    gWeatherSearchResultCount = 0;
+    updateWeatherSearchDropdownOptions();
+    return false;
+  }
+
+  gWeatherSearchResultCount = 0;
+  int pos = 0;
+  while (gWeatherSearchResultCount < kMaxWeatherSearchResults) {
+    int objStart = resultsRaw.indexOf('{', pos);
+    if (objStart < 0) break;
+    int objEnd = resultsRaw.indexOf('}', objStart);
+    if (objEnd < 0) break;
+    String item = resultsRaw.substring(objStart, objEnd + 1);
+
+    String name;
+    String country;
+    String lat;
+    String lon;
+    if (extractJsonStringField(item, "name", &name) && extractJsonNumberField(item, "latitude", &lat) && extractJsonNumberField(item, "longitude", &lon)) {
+      if (!extractJsonStringField(item, "country", &country)) {
+        country = "";
+      }
+      String label = name;
+      if (country.length() > 0) {
+        label += ", ";
+        label += country;
+      }
+      gWeatherSearchResultLabel[gWeatherSearchResultCount] = label;
+      gWeatherSearchResultLatitude[gWeatherSearchResultCount] = lat;
+      gWeatherSearchResultLongitude[gWeatherSearchResultCount] = lon;
+      gWeatherSearchResultCount++;
+    }
+
+    pos = objEnd + 1;
+  }
+
+  updateWeatherSearchDropdownOptions();
+  return gWeatherSearchResultCount > 0;
+}
+
+static void applyWeatherSearchSelection()
+{
+  if (uic_WeatherSearchDropdown == NULL) return;
+
+  int selected = lv_dropdown_get_selected(uic_WeatherSearchDropdown);
+  if (selected <= 0) {
+    gWeatherUseCurrentLocation = true;
+    gWeatherSelectedLocationLabel = "Current Location";
+    gWeatherSelectedLatitude = "";
+    gWeatherSelectedLongitude = "";
+  } else {
+    int index = selected - 1;
+    if (index < 0 || index >= gWeatherSearchResultCount) return;
+    gWeatherUseCurrentLocation = false;
+    gWeatherSelectedLatitude = gWeatherSearchResultLatitude[index];
+    gWeatherSelectedLongitude = gWeatherSearchResultLongitude[index];
+    gWeatherSelectedLocationLabel = gWeatherSearchResultLabel[index];
+  }
+
+  refreshWeatherDataIfNeeded(true);
+}
+
+static void weatherSearchKeyboardEvent(lv_event_t * e)
+{
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code != LV_EVENT_READY && code != LV_EVENT_CANCEL) return;
+  if (code == LV_EVENT_CANCEL) {
+    hideWeatherSearchPanel();
+    return;
+  }
+
+  if (uic_WeatherSearchTextArea == NULL) return;
+  String query = lv_textarea_get_text(uic_WeatherSearchTextArea);
+  query.trim();
+  if (query.length() == 0) return;
+  performWeatherGeocodingSearch(query);
+}
+
+static void weatherSearchButtonEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (uic_WeatherSearchPanel != NULL && !lv_obj_has_flag(uic_WeatherSearchPanel, LV_OBJ_FLAG_HIDDEN)) {
+    applyWeatherSearchSelection();
+    hideWeatherSearchPanel();
+  } else {
+    showWeatherSearchPanel();
+  }
+}
+
+static void weatherSearchConfirmEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  applyWeatherSearchSelection();
+  hideWeatherSearchPanel();
+}
+
+static String urlEncode(const String& value)
+{
+  String encoded;
+  encoded.reserve(value.length() * 3);
+  for (size_t i = 0; i < value.length(); i++) {
+    char c = value[i];
+    if ((c >= '0' && c <= '9') ||
+        (c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        c == '-' || c == '_' || c == '.' || c == '~') {
+      encoded += c;
+    } else if (c == ' ') {
+      encoded += '%';
+      encoded += '2';
+      encoded += '0';
+    } else {
+      const char hexDigits[] = "0123456789ABCDEF";
+      encoded += '%';
+      encoded += hexDigits[(c >> 4) & 0xF];
+      encoded += hexDigits[c & 0xF];
+    }
+  }
+  return encoded;
+}
+
 static void renderWeatherApp()
 {
   resetWeatherAppState();
   gWeatherAppVisible = true;
+
+  lv_obj_set_style_bg_color(uic_AppContentArea, lv_color_hex(0x0B121B), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_AppContentArea, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(uic_AppContentArea, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_OFF);
+
+  uic_WeatherSearchOpenButton = lv_btn_create(uic_AppContentArea);
+  if (uic_WeatherSearchOpenButton != NULL) {
+    lv_obj_set_size(uic_WeatherSearchOpenButton, 120, 50);
+    lv_obj_align(uic_WeatherSearchOpenButton, LV_ALIGN_CENTER, 325, -210);
+    lv_obj_set_style_radius(uic_WeatherSearchOpenButton, 7, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(uic_WeatherSearchOpenButton, lv_color_hex(0x1A82FF), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(uic_WeatherSearchOpenButton, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    ui_object_set_themeable_style_property(uic_WeatherSearchOpenButton, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
+    ui_object_set_themeable_style_property(uic_WeatherSearchOpenButton, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
+    lv_obj_set_style_border_width(uic_WeatherSearchOpenButton, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(uic_WeatherSearchOpenButton, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_t * searchLabel = lv_label_create(uic_WeatherSearchOpenButton);
+    lv_label_set_text(searchLabel, "Search");
+    lv_obj_set_style_text_color(searchLabel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+    lv_obj_set_style_text_font(searchLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_center(searchLabel);
+    lv_obj_add_event_cb(uic_WeatherSearchOpenButton, weatherSearchButtonEvent, LV_EVENT_CLICKED, NULL);
+  }
 
   uic_LabelWeatherTemperature = lv_label_create(uic_AppContentArea);
   if (uic_LabelWeatherTemperature == NULL) {
@@ -3945,6 +4206,7 @@ static void renderWeatherApp()
   lv_label_set_text(uic_LabelWeatherTemperature, "--C   --%");
   lv_obj_align(uic_LabelWeatherTemperature, LV_ALIGN_CENTER, 0, -183);
   lv_obj_set_style_text_font(uic_LabelWeatherTemperature, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(uic_LabelWeatherTemperature, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
 
   uic_LabelWeatherInformation = lv_label_create(uic_AppContentArea);
   if (uic_LabelWeatherInformation == NULL) {
@@ -3954,6 +4216,7 @@ static void renderWeatherApp()
   lv_label_set_text(uic_LabelWeatherInformation, "No weather data found");
   lv_obj_align(uic_LabelWeatherInformation, LV_ALIGN_CENTER, 0, -124);
   lv_obj_set_style_text_font(uic_LabelWeatherInformation, &lv_font_montserrat_40, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(uic_LabelWeatherInformation, lv_color_hex(0xB7C1DA), LV_PART_MAIN | LV_STATE_DEFAULT);
 
   uic_RollerWeatherData = lv_roller_create(uic_AppContentArea);
   if (uic_RollerWeatherData == NULL) {
@@ -3965,14 +4228,87 @@ static void renderWeatherApp()
   lv_obj_align(uic_RollerWeatherData, LV_ALIGN_CENTER, 0, 70);
   lv_obj_set_style_text_font(uic_RollerWeatherData, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_font(uic_RollerWeatherData, &lv_font_montserrat_20, LV_PART_SELECTED | LV_STATE_DEFAULT);
-
   ui_object_set_themeable_style_property(uic_RollerWeatherData, LV_PART_SELECTED| LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
   ui_object_set_themeable_style_property(uic_RollerWeatherData, LV_PART_SELECTED| LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
+  lv_obj_set_style_border_width(uic_RollerWeatherData, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  uic_WeatherSearchPanel = lv_obj_create(uic_AppContentArea);
+  if (uic_WeatherSearchPanel == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(uic_WeatherSearchPanel, 780, 340);
+  lv_obj_align(uic_WeatherSearchPanel, LV_ALIGN_CENTER, 0, 10);
+  lv_obj_set_style_radius(uic_WeatherSearchPanel, 22, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(uic_WeatherSearchPanel, lv_color_hex(0x101820), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_WeatherSearchPanel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_width(uic_WeatherSearchPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_add_flag(uic_WeatherSearchPanel, LV_OBJ_FLAG_HIDDEN);
+
+  uic_WeatherSearchTextArea = lv_textarea_create(uic_WeatherSearchPanel);
+  if (uic_WeatherSearchTextArea == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(uic_WeatherSearchTextArea, 740, LV_SIZE_CONTENT);
+  lv_obj_align(uic_WeatherSearchTextArea, LV_ALIGN_TOP_MID, 0, 15);
+  lv_textarea_set_placeholder_text(uic_WeatherSearchTextArea, "Search for a place ...");
+  lv_textarea_set_one_line(uic_WeatherSearchTextArea, true);
+  lv_textarea_set_align(uic_WeatherSearchTextArea, LV_TEXT_ALIGN_LEFT);
+  lv_obj_set_style_bg_color(uic_WeatherSearchTextArea, lv_color_hex(0x172032), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_WeatherSearchTextArea, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(uic_WeatherSearchTextArea, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(uic_WeatherSearchTextArea, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  uic_WeatherSearchDropdown = lv_dropdown_create(uic_WeatherSearchPanel);
+  if (uic_WeatherSearchDropdown == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(uic_WeatherSearchDropdown, 740, LV_SIZE_CONTENT);
+  lv_obj_align(uic_WeatherSearchDropdown, LV_ALIGN_TOP_MID, 0, 95);
+  lv_dropdown_set_options(uic_WeatherSearchDropdown, "Current Location");
+  ui_object_set_themeable_style_property(lv_dropdown_get_list(uic_WeatherSearchDropdown),  LV_PART_SELECTED| LV_STATE_CHECKED, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
+  ui_object_set_themeable_style_property(lv_dropdown_get_list(uic_WeatherSearchDropdown),  LV_PART_SELECTED| LV_STATE_CHECKED, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
+  lv_obj_set_style_text_color(uic_WeatherSearchDropdown, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(uic_WeatherSearchDropdown, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(uic_WeatherSearchDropdown, &lv_font_montserrat_20, LV_PART_INDICATOR| LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(lv_dropdown_get_list(uic_WeatherSearchDropdown), &lv_font_montserrat_20,  LV_PART_MAIN| LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(lv_dropdown_get_list(uic_WeatherSearchDropdown), &lv_font_montserrat_20,  LV_PART_SELECTED| LV_STATE_DEFAULT);
+
+  uic_WeatherSearchConfirmButton = lv_btn_create(uic_WeatherSearchPanel);
+  if (uic_WeatherSearchConfirmButton == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(uic_WeatherSearchConfirmButton, 220, 70);
+  lv_obj_align(uic_WeatherSearchConfirmButton, LV_ALIGN_BOTTOM_MID, 0, -16);
+  lv_obj_set_style_radius(uic_WeatherSearchConfirmButton, 18, LV_PART_MAIN | LV_STATE_DEFAULT);
+/*   lv_obj_set_style_bg_color(uic_WeatherSearchConfirmButton, lv_color_hex(0x1A82FF), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_WeatherSearchConfirmButton, 255, LV_PART_MAIN | LV_STATE_DEFAULT); */
+  lv_obj_set_style_border_width(uic_WeatherSearchConfirmButton, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_t * confirmLabel = lv_label_create(uic_WeatherSearchConfirmButton);
+  lv_label_set_text(confirmLabel, "Confirm");
+  lv_obj_set_style_text_font(confirmLabel, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(confirmLabel, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_center(confirmLabel);
+  lv_obj_add_event_cb(uic_WeatherSearchConfirmButton, weatherSearchConfirmEvent, LV_EVENT_CLICKED, NULL);
+
+  uic_WeatherSearchKeyboard = lv_keyboard_create(uic_AppContentArea);
+  if (uic_WeatherSearchKeyboard == NULL) {
+    gWeatherAppVisible = false;
+    return;
+  }
+  lv_obj_set_size(uic_WeatherSearchKeyboard, 793, 190);
+  lv_obj_align(uic_WeatherSearchKeyboard, LV_ALIGN_BOTTOM_MID, 0, -10);
+  lv_obj_add_event_cb(uic_WeatherSearchKeyboard, weatherSearchKeyboardEvent, LV_EVENT_ALL, NULL);
+  lv_obj_add_flag(uic_WeatherSearchKeyboard, LV_OBJ_FLAG_HIDDEN);
 
   if (ui_HomeButton9 != NULL) {
     lv_obj_move_foreground(ui_HomeButton9);
   }
 
+  updateWeatherSearchDropdownOptions();
   refreshWeatherDataIfNeeded(true);
 }
 

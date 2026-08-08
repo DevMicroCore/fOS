@@ -1,92 +1,24 @@
-# fOS 3.0.0
+# fOS 3.1.0
 
-fOS 3.0.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
-
----
-
-# What's New in 3.0.0
-
-## 🎨 Theme System
-
-fOS now supports customizable system themes.
-
-Features:
-
-* Select between **Blue**, **Orange**, and **Green** themes.
-* Themes are applied consistently across all native applications.
-* SD applications also automatically use the selected theme.
-* Custom UI applications can use theme-aware colors:
-
-```text
-bg=theme
-bg=surface
-fg=contrast
-```
-
-These values automatically adapt to the currently selected system theme.
+fOS 3.1.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
 
 ---
 
-## 📁 File System
+## What's New in 3.1.0
 
-The file system has been expanded.
+### Weather Application
 
-New features:
+The Weather application has been updated with a new **Search** button.
 
-* Create your own folders.
-* The Text application now supports subfolders.
-* Files can be saved and loaded using paths such as:
-
-```text
-notes/todo.txt
-projects/demo/readme.txt
-```
+* Press **Search** to open the location search menu.
+* Enter a location in the search field.
+* Press the **✅** button to search for the location.
+* All matching results are then displayed in the dropdown menu.
+* Select the desired location from the dropdown menu.
 
 ---
 
-## 📻 Radio Application
-
-The Radio app has been redesigned.
-
-New features:
-
-* Browse folders inside the File Player.
-* Open folders using the **">"** button.
-* Volume slider.
-* Playback progress bar.
-* Seek within audio files using the progress bar.
-
----
-
-## ⏰ Clock
-
-Improvements:
-
-* Calendar now starts with **Monday**.
-* Timers can play an optional alarm sound from:
-
-```text
-/system/timer.mp3
-```
-
----
-
-## 🚀 Performance
-
-System improvements:
-
-* Faster boot time.
-* Reduced RAM usage.
-* Improved overall responsiveness.
-
----
-
-## 🖥 Applications
-
-* Updated UI Demo application.
----
-
-# What's New in 3.0.0-beta.1
+## What's New in 3.0.0-beta.1
 
 * Theme selection (Blue, Orange, Green) for native and SD apps.
 * Theme-aware UI: `bg=theme`, `bg=surface`, `fg=contrast`.
@@ -255,17 +187,17 @@ Required libraries:
 # Installation
 
 1. Install Arduino IDE 2.x.
-2. Install `esp32 2.0.15 by Espressif Systems`.
+2. Install `esp32 by Espressif Systems`.
 3. Install the required libraries:
 
-   * lvgl 8.3.11
+   * lvgl
    * LovyanGFX
    * ESP32-audioI2S
 4. Open `fOS2.0.ino`.
 5. Select your ESP32-S3 board.
 6. Configure:
 
-   * custom partition scheme (`app0/app1`) or, if it's not available, the Huge App
+   * custom partition scheme (`app0/app1`)
    * `PSRAM = OPI PSRAM`
 7. Verify the correct panel define in `LGFX_CrowPanel.h`.
 8. Compile and upload.
@@ -552,31 +484,14 @@ This project is licensed under the **GNU GPLv3**.
 
 # Version History
 
-## v3.0.0
+## v3.1.0
 
-### Added
+* Updated Weather application.
+* Added **Search** button for location search.
+* Added location search menu with text input.
+* Search results are displayed in a dropdown menu after pressing **✅**.
 
-* Selectable Blue, Orange and Green themes.
-* Theme support for native applications.
-* Theme support for SD applications.
-* Theme-aware UI values:
-  * `bg=theme`
-  * `bg=surface`
-  * `fg=contrast`
-* Custom folder creation.
-* Text application subfolder support.
-* Timer alarm sound support using `/system/timer.mp3`.
-* Radio application folder navigation.
-* Radio application volume slider.
-* Radio application playback progress bar with seeking.
 
-### Changed
-
-* Updated UI Demo application.
-* Calendar now starts on Monday.
-* Faster boot process.
-* Reduced RAM usage.
-* Improved system responsiveness.
 
 ## v2.5.0
 
