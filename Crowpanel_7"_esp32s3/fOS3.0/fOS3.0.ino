@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include "ui_Email.h"
 #include <driver/gpio.h>
 #include <esp_sleep.h>
 #include <time.h>
@@ -37,8 +38,17 @@ void audio_eof_mp3(const char *info);
 #define WEBRADIO_DIR "/music/webradio"
 #define WEBRADIO_FILE "/music/webradio/webradio.txt"
 #define APPS_DIR "/apps"
+#define EMAIL_DIR "/email"
+#define EMAIL_INBOX_DIR "/email/inbox"
+#define EMAIL_OUTGOING_DIR "/email/outgoing"
+#define EMAIL_SYSTEM_DIR "/system/email"
+#define EMAIL_LOGIN_FILE "/system/email/login.txt"
 
 #define MAX_LAUNCHER_APPS 7
+#define MAX_EMAIL_MESSAGES 30
+#define EMAIL_MAX_BODY_CHARS 2200
+#define EMAIL_MAX_RAW_CHARS 24000
+#define EMAIL_MAX_FETCH_PER_RUN 10
 
 
 #define MAX_WIFI_PROFILES 5
@@ -161,11 +171,51 @@ struct WebRadioEntry {
   String url;
 };
 
+struct EmailLoginConfig {
+  String protocol;
+  String email;
+  String user;
+  String password;
+  String pop3Server;
+  String imapServer;
+  String smtpServer;
+  String fromEmail;
+  String replyTo;
+  String senderName;
+  String imapFolder;
+  uint16_t pop3Port;
+  uint16_t imapPort;
+  uint16_t smtpPort;
+  bool pop3Ssl;
+  bool imapSsl;
+  bool smtpSsl;
+  bool smtpStartTls;
+  bool allowTechnicalSender;
+};
+
+struct EmailMessageEntry {
+  String uid;
+  String filePath;
+  String from;
+  String to;
+  String subject;
+  String date;
+  String status;
+  String body;
+};
+
 static RadioSourceType gRadioSource = RADIO_SOURCE_NONE;
 static bool gRadioPlaying = false;
 static const int MAX_WEBRADIO_STATIONS = 40;
 static WebRadioEntry gWebRadioStations[MAX_WEBRADIO_STATIONS];
 static int gWebRadioCount = 0;
+static EmailMessageEntry gEmailMessages[MAX_EMAIL_MESSAGES];
+static int gEmailMessageCount = 0;
+static EmailMessageEntry gOutgoingEmailMessages[MAX_EMAIL_MESSAGES];
+static int gOutgoingEmailMessageCount = 0;
+static bool gEmailFetchRunning = false;
+static bool gEmailUiVisible = false;
+static unsigned long gEmailLastSendEventMs = 0;
 
 /* ================= LVGL ================= */
 static uint32_t last_tick = 0;
@@ -360,6 +410,23 @@ static void weatherSearchConfirmEvent(lv_event_t * e);
 static void applyWeatherUiData(const String& temperatureHumidity, const String& information, const String& rollerOptions);
 static void refreshWeatherDataIfNeeded(bool force);
 static void renderWeatherApp();
+static void resetEmailAppState();
+static bool ensureEmailDirectories();
+static void ensureEmailSdApp();
+static bool loadEmailLoginConfig(EmailLoginConfig * cfg);
+static void loadCachedEmails();
+static void loadCachedOutgoingEmails();
+static void fillEmailRollers();
+static bool fetchNewPop3Emails();
+static bool fetchNewImapEmails();
+static bool fetchNewEmails();
+static bool sendSmtpEmail(const String& recipient, const String& subject, const String& body, String * status);
+static String emailFormatRfc2822Date();
+static void emailSelectEvent(lv_event_t * e);
+static void emailTextAreaEvent(lv_event_t * e);
+static void emailSendButtonEvent(lv_event_t * e);
+static void renderEmailApp();
+extern "C" void SendEmail(lv_event_t * e);
 static String getStorageManagerParentPath(const String& path);
 static String joinStorageManagerPath(const String& base, const String& name);
 static bool isProtectedStoragePath(const String& path);
@@ -369,6 +436,7 @@ static uint8_t brightnessPercentToLevel(int percent);
 static void applyDisplayBrightnessPercent(int percent, bool updateSlider);
 static bool saveCurrentBrightness();
 static void loadSavedBrightness();
+static bool saveDisplayThemeIndex(uint8_t themeIdx);
 static int wifiRssiToQualityPercent(int rssi);
 static bool saveWifiEnabledState(bool enabled);
 static void loadWifiEnabledState();
@@ -617,8 +685,39 @@ static void loadSavedBrightness()
   applyDisplayBrightnessPercent(loadedPercent, true);
 }
 
+static uint8_t normalizeDisplayThemeIndex(int themeIdx)
+{
+  if (themeIdx < UI_THEME_DEFAULT || themeIdx > UI_THEME_GREENTHEME) {
+    return UI_THEME_DEFAULT;
+  }
+  return (uint8_t)themeIdx;
+}
+
+static bool saveDisplayThemeIndex(uint8_t themeIdx)
+{
+  if (!sd_ok) return false;
+
+  themeIdx = normalizeDisplayThemeIndex(themeIdx);
+
+  if (!SD.exists("/system")) {
+    SD.mkdir("/system");
+  }
+  if (!SD.exists(DISPLAY_DIR)) {
+    SD.mkdir(DISPLAY_DIR);
+  }
+  if (SD.exists("/system/display/theme.txt")) {
+    SD.remove("/system/display/theme.txt");
+  }
+
+  File themeFile = SD.open("/system/display/theme.txt", FILE_WRITE);
+  if (!themeFile) return false;
+  themeFile.print(themeIdx);
+  themeFile.close();
+  return true;
+}
+
 void loadAndApplyDisplayTheme() {
-  uint16_t loaded_theme = 0; // Standardwert (Theme 0), falls Datei nicht existiert
+  uint8_t loaded_theme = UI_THEME_DEFAULT; // Standardwert (Theme 0), falls Datei nicht existiert
 
   // 1. Theme von SD-Karte auslesen
   if (SD.exists("/system/display/theme.txt")) {
@@ -626,7 +725,7 @@ void loadAndApplyDisplayTheme() {
     if (themeFile) {
       String content = themeFile.readStringUntil('\n');
       content.trim();
-      loaded_theme = content.toInt();
+      loaded_theme = normalizeDisplayThemeIndex(content.toInt());
       themeFile.close();
       Serial.printf("Loaded theme index from SD: %u\n", loaded_theme);
     }
@@ -1038,16 +1137,13 @@ extern "C" void SaveDisplaySettings_Data(lv_event_t * e)
   );
 
   // === 2. NEU: THEME AUS DROPDOWN AUSLESEN & ANWENDEN ===
-  uint16_t selected_theme = lv_dropdown_get_selected(uic_DropdownTheme);
+  uint8_t selected_theme = normalizeDisplayThemeIndex(lv_dropdown_get_selected(uic_DropdownTheme));
   ui_theme_set(selected_theme);
   refreshVisibleSdAppForThemeChange();
   Serial.printf("Display theme applied: index=%u\n", selected_theme);
 
   // === 3. NEU: THEME AUF SD-KARTE SPEICHERN ===
-  File themeFile = SD.open("/system/display/theme.txt", FILE_WRITE);
-  if (themeFile) {
-    themeFile.print(selected_theme);
-    themeFile.close();
+  if (saveDisplayThemeIndex(selected_theme)) {
     Serial.println("Display theme saved to /system/display/theme.txt");
   } else {
     Serial.println("Display theme applied but not saved (SD not ready?)");
@@ -4312,6 +4408,1912 @@ static void renderWeatherApp()
   refreshWeatherDataIfNeeded(true);
 }
 
+static String emailReadLine(WiFiClientSecure& client, unsigned long timeoutMs = 10000)
+{
+  String line;
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    while (client.available()) {
+      char c = (char)client.read();
+      if (c == '\r') continue;
+      if (c == '\n') return line;
+      line += c;
+      if (line.length() > 512) return line;
+    }
+    if (!client.connected() && !client.available()) break;
+    delay(2);
+  }
+  return line;
+}
+
+static bool emailReadExpectedPrefix(WiFiClientSecure& client, const char * prefix, String * answer = NULL)
+{
+  String line = emailReadLine(client);
+  if (answer != NULL) *answer = line;
+  if (prefix == NULL) return line.length() > 0;
+  return line.startsWith(prefix);
+}
+
+static bool smtpExpectCode(WiFiClientSecure& client, int expectedCode, String * answer = NULL)
+{
+  bool gotExpected = false;
+  String lastLine;
+  unsigned long start = millis();
+  do {
+    lastLine = emailReadLine(client);
+    if (lastLine.length() >= 3 && lastLine.substring(0, 3).toInt() == expectedCode) {
+      gotExpected = true;
+    }
+    if (millis() - start > 15000) break;
+  } while (lastLine.length() >= 4 && lastLine.charAt(3) == '-');
+
+  if (answer != NULL) *answer = lastLine;
+  return gotExpected;
+}
+
+static String emailBase64Encode(const String& input)
+{
+  static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  String out;
+  int val = 0;
+  int valb = -6;
+  for (size_t i = 0; i < input.length(); i++) {
+    val = (val << 8) + (uint8_t)input[i];
+    valb += 8;
+    while (valb >= 0) {
+      out += table[(val >> valb) & 0x3F];
+      valb -= 6;
+    }
+  }
+  if (valb > -6) out += table[((val << 8) >> (valb + 8)) & 0x3F];
+  while (out.length() % 4) out += '=';
+  return out;
+}
+
+static int emailBase64Value(char c)
+{
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
+  return -1;
+}
+
+static String emailBase64Decode(const String& input)
+{
+  String out;
+  int val = 0;
+  int valb = -8;
+  for (size_t i = 0; i < input.length(); i++) {
+    char c = input[i];
+    if (c == '=') break;
+    int d = emailBase64Value(c);
+    if (d < 0) continue;
+    val = (val << 6) + d;
+    valb += 6;
+    if (valb >= 0) {
+      out += (char)((val >> valb) & 0xFF);
+      valb -= 8;
+    }
+  }
+  return out;
+}
+
+static String emailDecodeQuotedPrintableWord(const String& input)
+{
+  String out;
+  for (size_t i = 0; i < input.length(); i++) {
+    char c = input[i];
+    if (c == '_') {
+      out += ' ';
+    } else if (c == '=' && i + 2 < input.length()) {
+      char h1 = input[i + 1];
+      char h2 = input[i + 2];
+      if (isxdigit(h1) && isxdigit(h2)) {
+        char hex[3] = { h1, h2, 0 };
+        out += (char)strtol(hex, NULL, 16);
+        i += 2;
+      } else {
+        out += c;
+      }
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+static String emailDecodeMimeHeader(const String& input)
+{
+  String out;
+  int pos = 0;
+  while (pos < (int)input.length()) {
+    int start = input.indexOf("=?", pos);
+    if (start < 0) {
+      out += input.substring(pos);
+      break;
+    }
+    out += input.substring(pos, start);
+    int q1 = input.indexOf('?', start + 2);
+    int q2 = input.indexOf('?', q1 + 1);
+    int end = input.indexOf("?=", q2 + 1);
+    if (q1 < 0 || q2 < 0 || end < 0) {
+      out += input.substring(start);
+      break;
+    }
+    String encoding = input.substring(q1 + 1, q2);
+    String payload = input.substring(q2 + 1, end);
+    encoding.toUpperCase();
+    if (encoding == "B") {
+      out += emailBase64Decode(payload);
+    } else if (encoding == "Q") {
+      out += emailDecodeQuotedPrintableWord(payload);
+    } else {
+      out += payload;
+    }
+    pos = end + 2;
+    while (pos < (int)input.length() && input[pos] == ' ') pos++;
+  }
+  out.trim();
+  return out;
+}
+
+static String emailSanitizeFileName(const String& value)
+{
+  String out;
+  for (size_t i = 0; i < value.length(); i++) {
+    char c = value[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_') {
+      out += c;
+    } else {
+      out += '_';
+    }
+    if (out.length() >= 80) break;
+  }
+  if (out.length() == 0) out = String(millis());
+  return out;
+}
+
+static String emailTrimForRoller(String value, int maxLen)
+{
+  value.replace("\r", " ");
+  value.replace("\n", " ");
+  value.trim();
+  if ((int)value.length() > maxLen) {
+    value = value.substring(0, maxLen - 3) + "...";
+  }
+  return value;
+}
+
+static void resetEmailAppState()
+{
+  gEmailUiVisible = false;
+  gEmailFetchRunning = false;
+  gEmailMessageCount = 0;
+  gOutgoingEmailMessageCount = 0;
+  if (ui_Email != NULL) {
+    ui_Email_screen_destroy();
+  }
+}
+
+static bool ensureEmailDirectories()
+{
+  if (!sd_ok) return false;
+
+  if (!SD.exists("/system")) SD.mkdir("/system");
+  if (!SD.exists(EMAIL_SYSTEM_DIR)) SD.mkdir(EMAIL_SYSTEM_DIR);
+  if (!SD.exists(EMAIL_DIR)) SD.mkdir(EMAIL_DIR);
+  if (!SD.exists(EMAIL_INBOX_DIR)) SD.mkdir(EMAIL_INBOX_DIR);
+  if (!SD.exists(EMAIL_OUTGOING_DIR)) SD.mkdir(EMAIL_OUTGOING_DIR);
+
+  return SD.exists(EMAIL_INBOX_DIR) && SD.exists(EMAIL_OUTGOING_DIR);
+}
+
+static void ensureEmailSdApp()
+{
+  if (!sd_ok) return;
+  if (!ensureAppsDirectory()) return;
+
+  const char * appDir = "/apps/email";
+  const char * appCfg = "/apps/email/app.cfg";
+  if (!SD.exists(appDir)) {
+    SD.mkdir(appDir);
+  }
+  if (!SD.exists(appCfg)) {
+    File f = SD.open(appCfg, FILE_WRITE);
+    if (f) {
+      f.println("name=E-Mail");
+      f.println("icon=@");
+      f.println("type=email");
+      f.println("scrollable=false");
+      f.close();
+    }
+  }
+}
+
+static bool emailParseBool(String value, bool defaultValue)
+{
+  value.trim();
+  value.toLowerCase();
+  if (value == "1" || value == "true" || value == "yes" || value == "on") return true;
+  if (value == "0" || value == "false" || value == "no" || value == "off") return false;
+  return defaultValue;
+}
+
+static void emailParseServerValue(String value, String * host, uint16_t * port, bool * ssl, bool * startTls)
+{
+  value.trim();
+  if (value.length() == 0) return;
+
+  String lower = value;
+  lower.toLowerCase();
+  if (lower.startsWith("smtps://") || lower.startsWith("imaps://") || lower.startsWith("pop3s://") || lower.startsWith("ssl://")) {
+    int schemeEnd = value.indexOf("://");
+    value = value.substring(schemeEnd + 3);
+    if (ssl != NULL) *ssl = true;
+    if (startTls != NULL) *startTls = false;
+  } else if (lower.startsWith("smtp://") || lower.startsWith("imap://") || lower.startsWith("pop3://")) {
+    int schemeEnd = value.indexOf("://");
+    value = value.substring(schemeEnd + 3);
+  } else if (lower.startsWith("starttls://") || lower.startsWith("tls://")) {
+    int schemeEnd = value.indexOf("://");
+    value = value.substring(schemeEnd + 3);
+    if (ssl != NULL) *ssl = false;
+    if (startTls != NULL) *startTls = true;
+  }
+
+  int slash = value.indexOf('/');
+  if (slash >= 0) value = value.substring(0, slash);
+  value.trim();
+
+  int colon = value.lastIndexOf(':');
+  if (colon > 0 && value.indexOf(':') == colon) {
+    String portText = value.substring(colon + 1);
+    portText.trim();
+    int parsedPort = portText.toInt();
+    if (parsedPort > 0 && parsedPort <= 65535) {
+      value = value.substring(0, colon);
+      value.trim();
+      if (port != NULL) *port = (uint16_t)parsedPort;
+    }
+  }
+
+  if (host != NULL) *host = value;
+}
+
+static void applyEmailLoginKeyValue(EmailLoginConfig * cfg, String key, String value)
+{
+  if (cfg == NULL) return;
+  key.trim();
+  value.trim();
+  key.toLowerCase();
+
+  if (key == "protocol" || key == "incoming_protocol") {
+    value.toLowerCase();
+    cfg->protocol = value;
+  } else if (key == "email" || key == "address" || key == "mail") cfg->email = value;
+  else if (key == "from_email" || key == "sender_email" || key == "from") cfg->fromEmail = value;
+  else if (key == "reply_to" || key == "replyto") cfg->replyTo = value;
+  else if (key == "user" || key == "username" || key == "login") cfg->user = value;
+  else if (key == "password" || key == "pass") cfg->password = value;
+  else if (key == "incoming_server") {
+    emailParseServerValue(value, &cfg->pop3Server, &cfg->pop3Port, &cfg->pop3Ssl, NULL);
+    emailParseServerValue(value, &cfg->imapServer, &cfg->imapPort, &cfg->imapSsl, NULL);
+  }
+  else if (key == "pop3_server" || key == "pop_server") emailParseServerValue(value, &cfg->pop3Server, &cfg->pop3Port, &cfg->pop3Ssl, NULL);
+  else if (key == "imap_server" || key == "imap_host") emailParseServerValue(value, &cfg->imapServer, &cfg->imapPort, &cfg->imapSsl, NULL);
+  else if (key == "incoming_port") {
+    cfg->pop3Port = value.toInt();
+    cfg->imapPort = value.toInt();
+  }
+  else if (key == "pop3_port" || key == "pop_port") cfg->pop3Port = value.toInt();
+  else if (key == "imap_port") cfg->imapPort = value.toInt();
+  else if (key == "imap_folder" || key == "imap_mailbox" || key == "mailbox") cfg->imapFolder = value;
+  else if (key == "smtp_server" || key == "outgoing_server") emailParseServerValue(value, &cfg->smtpServer, &cfg->smtpPort, &cfg->smtpSsl, &cfg->smtpStartTls);
+  else if (key == "smtp_port" || key == "outgoing_port") cfg->smtpPort = value.toInt();
+  else if (key == "name" || key == "sender_name") cfg->senderName = value;
+  else if (key == "pop3_ssl") {
+    cfg->pop3Ssl = emailParseBool(value, true);
+  } else if (key == "imap_ssl") {
+    cfg->imapSsl = emailParseBool(value, true);
+  } else if (key == "smtp_ssl") {
+    cfg->smtpSsl = emailParseBool(value, true);
+  } else if (key == "smtp_starttls" || key == "smtp_tls" || key == "starttls") {
+    cfg->smtpStartTls = emailParseBool(value, false);
+    if (cfg->smtpStartTls) cfg->smtpSsl = false;
+  } else if (key == "allow_technical_sender") {
+    cfg->allowTechnicalSender = emailParseBool(value, false);
+  }
+}
+
+static bool loadEmailLoginConfig(EmailLoginConfig * cfg)
+{
+  if (cfg == NULL) return false;
+  cfg->protocol = "pop3";
+  cfg->email = "";
+  cfg->user = "";
+  cfg->password = "";
+  cfg->pop3Server = "";
+  cfg->imapServer = "";
+  cfg->smtpServer = "";
+  cfg->fromEmail = "";
+  cfg->replyTo = "";
+  cfg->senderName = "fOS";
+  cfg->imapFolder = "INBOX";
+  cfg->pop3Port = 995;
+  cfg->imapPort = 993;
+  cfg->smtpPort = 465;
+  cfg->pop3Ssl = true;
+  cfg->imapSsl = true;
+  cfg->smtpSsl = true;
+  cfg->smtpStartTls = false;
+  cfg->allowTechnicalSender = false;
+
+  if (!sd_ok || !SD.exists(EMAIL_LOGIN_FILE)) return false;
+  File f = SD.open(EMAIL_LOGIN_FILE, FILE_READ);
+  if (!f) return false;
+
+  bool foundKeyValue = false;
+  String flatLine = "";
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0 || line.startsWith("#")) continue;
+    int sep = line.indexOf('=');
+    if (sep < 0) sep = line.indexOf(':');
+    if (sep > 0) {
+      foundKeyValue = true;
+      applyEmailLoginKeyValue(cfg, line.substring(0, sep), line.substring(sep + 1));
+    } else {
+      if (flatLine.length() > 0) flatLine += "|";
+      flatLine += line;
+    }
+  }
+  f.close();
+
+  if (!foundKeyValue && flatLine.length() > 0) {
+    String parts[7];
+    int count = 0;
+    int start = 0;
+    while (count < 7) {
+      int sep = flatLine.indexOf('|', start);
+      if (sep < 0) sep = flatLine.length();
+      parts[count++] = flatLine.substring(start, sep);
+      if (sep >= (int)flatLine.length()) break;
+      start = sep + 1;
+    }
+    if (count >= 6) {
+      cfg->email = parts[0];
+      cfg->user = parts[1];
+      cfg->password = parts[2];
+      emailParseServerValue(parts[3], &cfg->pop3Server, &cfg->pop3Port, &cfg->pop3Ssl, NULL);
+      emailParseServerValue(parts[3], &cfg->imapServer, &cfg->imapPort, &cfg->imapSsl, NULL);
+      cfg->pop3Port = parts[4].toInt();
+      cfg->imapPort = parts[4].toInt();
+      emailParseServerValue(parts[5], &cfg->smtpServer, &cfg->smtpPort, &cfg->smtpSsl, &cfg->smtpStartTls);
+      if (count >= 7) cfg->smtpPort = parts[6].toInt();
+    }
+  }
+
+  if (cfg->user.length() == 0) cfg->user = cfg->email;
+  if (cfg->pop3Port == 0) cfg->pop3Port = 995;
+  if (cfg->imapPort == 0) cfg->imapPort = 993;
+  if (cfg->smtpPort == 0) cfg->smtpPort = 465;
+  if (cfg->smtpPort == 587) {
+    cfg->smtpStartTls = true;
+    cfg->smtpSsl = false;
+  } else if (cfg->smtpPort == 465 && !cfg->smtpStartTls) {
+    cfg->smtpSsl = true;
+  }
+  cfg->protocol.toLowerCase();
+  if (cfg->protocol != "imap") cfg->protocol = "pop3";
+  if (cfg->imapServer.length() == 0 && cfg->protocol == "imap") cfg->imapServer = cfg->pop3Server;
+  if (cfg->pop3Server.length() == 0 && cfg->protocol == "pop3") cfg->pop3Server = cfg->imapServer;
+  if (cfg->imapFolder.length() == 0) cfg->imapFolder = "INBOX";
+
+  bool incomingOk = (cfg->protocol == "imap")
+    ? (cfg->imapServer.length() > 0)
+    : (cfg->pop3Server.length() > 0);
+
+  return cfg->email.length() > 0 &&
+         cfg->user.length() > 0 &&
+         cfg->password.length() > 0 &&
+         incomingOk &&
+         cfg->smtpServer.length() > 0;
+}
+
+static bool parseCachedEmailFile(const String& path, EmailMessageEntry * msg)
+{
+  if (msg == NULL) return false;
+  File f = SD.open(path.c_str(), FILE_READ);
+  if (!f) return false;
+
+  msg->uid = "";
+  msg->filePath = path;
+  msg->from = "";
+  msg->to = "";
+  msg->subject = "";
+  msg->date = "";
+  msg->status = "";
+  msg->body = "";
+  bool inBody = false;
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.replace("\r", "");
+    if (inBody) {
+      if (msg->body.length() < EMAIL_MAX_BODY_CHARS) {
+        msg->body += line;
+        msg->body += "\n";
+      }
+      continue;
+    }
+    if (line == "body:") {
+      inBody = true;
+      continue;
+    }
+    int sep = line.indexOf(':');
+    if (sep <= 0) continue;
+    String key = line.substring(0, sep);
+    String value = line.substring(sep + 1);
+    key.trim();
+    value.trim();
+    if (key == "uid") msg->uid = value;
+    else if (key == "from") msg->from = value;
+    else if (key == "to") msg->to = value;
+    else if (key == "subject") msg->subject = value;
+    else if (key == "date") msg->date = value;
+    else if (key == "status") msg->status = value;
+  }
+  f.close();
+
+  if (msg->from.length() == 0 && msg->to.length() > 0) msg->from = "To: " + msg->to;
+  if (msg->from.length() == 0) msg->from = "(unknown)";
+  if (msg->subject.length() == 0) msg->subject = "(no subject)";
+  return true;
+}
+
+static int emailMonthNumber(const char * monthText)
+{
+  if (monthText == NULL) return 0;
+  static const char * months[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  };
+  String month(monthText);
+  for (int i = 0; i < 12; i++) {
+    if (month.equalsIgnoreCase(months[i])) return i + 1;
+  }
+  return 0;
+}
+
+static int64_t emailDaysFromCivil(int year, unsigned month, unsigned day)
+{
+  year -= month <= 2;
+  const int era = (year >= 0 ? year : year - 399) / 400;
+  const unsigned yearOfEra = (unsigned)(year - era * 400);
+  const unsigned adjustedMonth = month > 2 ? month - 3 : month + 9;
+  const unsigned dayOfYear = (153 * adjustedMonth + 2) / 5 + day - 1;
+  const unsigned dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear;
+  return (int64_t)era * 146097 + (int64_t)dayOfEra - 719468;
+}
+
+static int emailTimeZoneOffsetMinutes(const char * zoneText)
+{
+  if (zoneText == NULL || zoneText[0] == '\0') return 0;
+
+  String zone(zoneText);
+  zone.trim();
+  zone.toUpperCase();
+  if (zone == "UT" || zone == "UTC" || zone == "GMT") return 0;
+  if (zone == "EST") return -5 * 60;
+  if (zone == "EDT") return -4 * 60;
+  if (zone == "CST") return -6 * 60;
+  if (zone == "CDT") return -5 * 60;
+  if (zone == "MST") return -7 * 60;
+  if (zone == "MDT") return -6 * 60;
+  if (zone == "PST") return -8 * 60;
+  if (zone == "PDT") return -7 * 60;
+
+  if (zone[0] != '+' && zone[0] != '-') return 0;
+  String digits = zone.substring(1);
+  digits.replace(":", "");
+  if (digits.length() < 4) return 0;
+  for (int i = 0; i < 4; i++) {
+    if (!isdigit((unsigned char)digits[i])) return 0;
+  }
+  int hours = digits.substring(0, 2).toInt();
+  int minutes = digits.substring(2, 4).toInt();
+  if (hours > 23 || minutes > 59) return 0;
+  int offset = hours * 60 + minutes;
+  return zone[0] == '-' ? -offset : offset;
+}
+
+static int64_t emailDateSortKey(String date)
+{
+  date.trim();
+  int comma = date.indexOf(',');
+  if (comma >= 0) {
+    date = date.substring(comma + 1);
+    date.trim();
+  }
+
+  int day = 0;
+  int year = 0;
+  int hour = 0;
+  int minute = 0;
+  int second = 0;
+  char monthText[4] = { 0 };
+  char zoneText[8] = { 0 };
+
+  int fields = sscanf(
+    date.c_str(),
+    "%d %3s %d %d:%d:%d %7s",
+    &day, monthText, &year, &hour, &minute, &second, zoneText
+  );
+  if (fields < 6) {
+    second = 0;
+    zoneText[0] = '\0';
+    fields = sscanf(
+      date.c_str(),
+      "%d %3s %d %d:%d %7s",
+      &day, monthText, &year, &hour, &minute, zoneText
+    );
+    if (fields < 5) return 0;
+  }
+
+  if (year < 100) year += year >= 70 ? 1900 : 2000;
+  int month = emailMonthNumber(monthText);
+  if (year < 1970 || month < 1 || day < 1 || day > 31 ||
+      hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
+      second < 0 || second > 60) {
+    return 0;
+  }
+
+  int64_t timestamp = emailDaysFromCivil(year, (unsigned)month, (unsigned)day) * 86400LL;
+  timestamp += (int64_t)hour * 3600LL + (int64_t)minute * 60LL + second;
+  timestamp -= (int64_t)emailTimeZoneOffsetMinutes(zoneText) * 60LL;
+  return timestamp;
+}
+
+static uint64_t emailNumericFallbackKey(const EmailMessageEntry& msg)
+{
+  String value = msg.uid.length() > 0 ? msg.uid : msg.filePath;
+  int end = (int)value.length() - 1;
+  while (end >= 0 && !isdigit((unsigned char)value[end])) end--;
+  if (end < 0) return 0;
+  int start = end;
+  while (start > 0 && isdigit((unsigned char)value[start - 1])) start--;
+  return strtoull(value.substring(start, end + 1).c_str(), NULL, 10);
+}
+
+static bool emailMessageIsNewer(const EmailMessageEntry& left, const EmailMessageEntry& right)
+{
+  int64_t leftDate = emailDateSortKey(left.date);
+  int64_t rightDate = emailDateSortKey(right.date);
+  if (leftDate != rightDate) return leftDate > rightDate;
+
+  uint64_t leftFallback = emailNumericFallbackKey(left);
+  uint64_t rightFallback = emailNumericFallbackKey(right);
+  if (leftFallback != rightFallback) return leftFallback > rightFallback;
+  return left.filePath.compareTo(right.filePath) > 0;
+}
+
+static void sortEmailMessagesNewestFirst(EmailMessageEntry * messages, int count)
+{
+  if (messages == NULL || count < 2) return;
+  for (int i = 1; i < count; i++) {
+    EmailMessageEntry current = messages[i];
+    int insertAt = i;
+    while (insertAt > 0 && emailMessageIsNewer(current, messages[insertAt - 1])) {
+      messages[insertAt] = messages[insertAt - 1];
+      insertAt--;
+    }
+    messages[insertAt] = current;
+  }
+}
+
+static void loadEmailMessagesFromDir(const char * directoryPath, EmailMessageEntry * messages, int * count)
+{
+  if (messages == NULL || count == NULL) return;
+  *count = 0;
+  if (!ensureEmailDirectories()) return;
+
+  File dir = SD.open(directoryPath);
+  if (!dir || !dir.isDirectory()) {
+    if (dir) dir.close();
+    return;
+  }
+
+  File entry = dir.openNextFile();
+  while (entry) {
+    if (!entry.isDirectory()) {
+      String path = String(directoryPath) + "/" + pathBasename(String(entry.name()));
+      EmailMessageEntry msg;
+      if (parseCachedEmailFile(path, &msg)) {
+        if (*count < MAX_EMAIL_MESSAGES) {
+          messages[(*count)++] = msg;
+        } else {
+          int oldestIndex = 0;
+          for (int i = 1; i < *count; i++) {
+            if (emailMessageIsNewer(messages[oldestIndex], messages[i])) {
+              oldestIndex = i;
+            }
+          }
+          if (emailMessageIsNewer(msg, messages[oldestIndex])) {
+            messages[oldestIndex] = msg;
+          }
+        }
+      }
+    }
+    entry.close();
+    entry = dir.openNextFile();
+  }
+  dir.close();
+  sortEmailMessagesNewestFirst(messages, *count);
+}
+
+static void loadCachedEmails()
+{
+  loadEmailMessagesFromDir(EMAIL_INBOX_DIR, gEmailMessages, &gEmailMessageCount);
+}
+
+static void loadCachedOutgoingEmails()
+{
+  loadEmailMessagesFromDir(EMAIL_OUTGOING_DIR, gOutgoingEmailMessages, &gOutgoingEmailMessageCount);
+}
+
+static void fillEmailRoller(lv_obj_t * roller, EmailMessageEntry * messages, int messageCount, const char * emptyText, bool outgoing)
+{
+  if (roller == NULL) return;
+
+  String options;
+  if (!sd_ok) {
+    options = "SD card missing";
+  } else if (messageCount == 0) {
+    options = emptyText;
+  } else {
+    for (int i = 0; i < messageCount; i++) {
+      String date = emailTrimForRoller(messages[i].date, 16);
+      String address = outgoing && messages[i].to.length() > 0 ? messages[i].to : messages[i].from;
+      String from = emailTrimForRoller(address, 30);
+      String subject = emailTrimForRoller(messages[i].subject, 46);
+      if (date.length() == 0) date = "--";
+      if (outgoing && messages[i].status.length() > 0) {
+        options += date + " | " + messages[i].status + " | " + from + " | " + subject;
+      } else {
+        options += date + " | " + from + " | " + subject;
+      }
+      if (i + 1 < messageCount) options += "\n";
+    }
+  }
+
+  lv_roller_set_options(roller, options.c_str(), LV_ROLLER_MODE_NORMAL);
+  lv_roller_set_selected(roller, 0, LV_ANIM_OFF);
+}
+
+static void fillEmailRollers()
+{
+  fillEmailRoller(uic_EmailRollerInbox, gEmailMessages, gEmailMessageCount, "No cached emails", false);
+  fillEmailRoller(uic_EmailRollerOutgoing, gOutgoingEmailMessages, gOutgoingEmailMessageCount, "No outgoing emails", true);
+}
+
+static void emailApplyHeaderLine(EmailMessageEntry * msg, const String& headerLine)
+{
+  if (msg == NULL) return;
+  int sep = headerLine.indexOf(':');
+  if (sep <= 0) return;
+
+  String key = headerLine.substring(0, sep);
+  String value = headerLine.substring(sep + 1);
+  key.trim();
+  key.toLowerCase();
+  value.trim();
+  value = emailDecodeMimeHeader(value);
+
+  if (key == "from") msg->from = value;
+  else if (key == "subject") msg->subject = value;
+  else if (key == "date") msg->date = value;
+}
+
+static int emailFindHeaderBodySplit(const String& raw)
+{
+  int split = raw.indexOf("\n\n");
+  return split < 0 ? -1 : split;
+}
+
+static String emailHeaderValue(const String& headers, const String& wantedKey)
+{
+  String folded;
+  String current;
+  int start = 0;
+  while (start <= (int)headers.length()) {
+    int end = headers.indexOf('\n', start);
+    if (end < 0) end = headers.length();
+    String line = headers.substring(start, end);
+    line.replace("\r", "");
+
+    if (line.length() > 0 && (line[0] == ' ' || line[0] == '\t')) {
+      current += " ";
+      current += line;
+    } else {
+      if (current.length() > 0) {
+        if (folded.length() > 0) folded += "\n";
+        folded += current;
+      }
+      current = line;
+    }
+
+    if (end >= (int)headers.length()) break;
+    start = end + 1;
+  }
+  if (current.length() > 0) {
+    if (folded.length() > 0) folded += "\n";
+    folded += current;
+  }
+
+  String wanted = wantedKey;
+  wanted.toLowerCase();
+  start = 0;
+  while (start <= (int)folded.length()) {
+    int end = folded.indexOf('\n', start);
+    if (end < 0) end = folded.length();
+    String line = folded.substring(start, end);
+    int sep = line.indexOf(':');
+    if (sep > 0) {
+      String key = line.substring(0, sep);
+      key.trim();
+      key.toLowerCase();
+      if (key == wanted) {
+        String value = line.substring(sep + 1);
+        value.trim();
+        return value;
+      }
+    }
+    if (end >= (int)folded.length()) break;
+    start = end + 1;
+  }
+  return "";
+}
+
+static String emailDecodeQuotedPrintableBody(const String& input)
+{
+  String out;
+  for (size_t i = 0; i < input.length(); i++) {
+    char c = input[i];
+    if (c == '=' && i + 1 < input.length()) {
+      char n1 = input[i + 1];
+      if (n1 == '\n') {
+        i += 1;
+        continue;
+      }
+      if (n1 == '\r' && i + 2 < input.length() && input[i + 2] == '\n') {
+        i += 2;
+        continue;
+      }
+      if (i + 2 < input.length() && isxdigit((unsigned char)n1) && isxdigit((unsigned char)input[i + 2])) {
+        char hex[3] = { n1, input[i + 2], 0 };
+        out += (char)strtol(hex, NULL, 16);
+        i += 2;
+        continue;
+      }
+    }
+    if (c != '\r') out += c;
+  }
+  return out;
+}
+
+static String emailDecodeTransferBody(String body, String encoding)
+{
+  encoding.trim();
+  encoding.toLowerCase();
+  if (encoding == "base64") {
+    return emailBase64Decode(body);
+  }
+  if (encoding == "quoted-printable") {
+    return emailDecodeQuotedPrintableBody(body);
+  }
+  body.replace("\r", "");
+  return body;
+}
+
+static String emailDecodeHtmlEntity(const String& entity)
+{
+  if (entity == "amp") return "&";
+  if (entity == "lt") return "<";
+  if (entity == "gt") return ">";
+  if (entity == "quot") return "\"";
+  if (entity == "apos") return "'";
+  if (entity == "nbsp") return " ";
+  if (entity.startsWith("#x") || entity.startsWith("#X")) {
+    long value = strtol(entity.substring(2).c_str(), NULL, 16);
+    if (value > 0 && value < 128) {
+      String out;
+      out += (char)value;
+      return out;
+    }
+  } else if (entity.startsWith("#")) {
+    long value = strtol(entity.substring(1).c_str(), NULL, 10);
+    if (value > 0 && value < 128) {
+      String out;
+      out += (char)value;
+      return out;
+    }
+  }
+  return "&" + entity + ";";
+}
+
+static String emailHtmlToText(const String& html)
+{
+  String out;
+  bool inTag = false;
+  bool lastWasSpace = false;
+  for (size_t i = 0; i < html.length(); i++) {
+    char c = html[i];
+    if (c == '<') {
+      String tag;
+      size_t j = i + 1;
+      while (j < html.length() && j < i + 14 && html[j] != '>' && !isspace((unsigned char)html[j])) {
+        tag += html[j++];
+      }
+      tag.toLowerCase();
+      if (tag == "br" || tag == "br/" || tag == "p" || tag == "/p" || tag == "div" || tag == "/div" || tag == "li" || tag == "/li") {
+        if (out.length() > 0 && out[out.length() - 1] != '\n') out += "\n";
+        lastWasSpace = false;
+      }
+      inTag = true;
+      continue;
+    }
+    if (inTag) {
+      if (c == '>') inTag = false;
+      continue;
+    }
+    if (c == '&') {
+      int semi = html.indexOf(';', i + 1);
+      if (semi > (int)i && semi - (int)i <= 10) {
+        out += emailDecodeHtmlEntity(html.substring(i + 1, semi));
+        i = semi;
+        lastWasSpace = false;
+        continue;
+      }
+    }
+    if (c == '\r') continue;
+    if (c == '\n' || c == '\t' || c == ' ') {
+      if (!lastWasSpace) {
+        out += (c == '\n') ? '\n' : ' ';
+        lastWasSpace = true;
+      }
+    } else {
+      out += c;
+      lastWasSpace = false;
+    }
+  }
+  out.trim();
+  return out;
+}
+
+static String emailBoundaryFromContentType(String contentType)
+{
+  String lower = contentType;
+  lower.toLowerCase();
+  int pos = lower.indexOf("boundary=");
+  if (pos < 0) return "";
+  pos += 9;
+  while (pos < (int)contentType.length() && contentType[pos] == ' ') pos++;
+
+  String boundary;
+  if (pos < (int)contentType.length() && contentType[pos] == '"') {
+    pos++;
+    int end = contentType.indexOf('"', pos);
+    if (end < 0) end = contentType.length();
+    boundary = contentType.substring(pos, end);
+  } else {
+    int end = pos;
+    while (end < (int)contentType.length() && contentType[end] != ';' && contentType[end] != '\r' && contentType[end] != '\n') end++;
+    boundary = contentType.substring(pos, end);
+  }
+  boundary.trim();
+  return boundary;
+}
+
+static String emailNormalizeDisplayBody(String body)
+{
+  body.replace("\r", "");
+  body.replace("\t", " ");
+  while (body.indexOf("\n\n\n") >= 0) body.replace("\n\n\n", "\n\n");
+  body.trim();
+  if (body.length() > EMAIL_MAX_BODY_CHARS) {
+    body = body.substring(0, EMAIL_MAX_BODY_CHARS - 16);
+    body += "\n...(truncated)";
+  }
+  return body;
+}
+
+static void emailExtractMimeText(const String& headers, const String& content, String * plain, String * html)
+{
+  String contentType = emailHeaderValue(headers, "Content-Type");
+  String transferEncoding = emailHeaderValue(headers, "Content-Transfer-Encoding");
+  String disposition = emailHeaderValue(headers, "Content-Disposition");
+  String lowerType = contentType;
+  String lowerDisposition = disposition;
+  lowerType.toLowerCase();
+  lowerDisposition.toLowerCase();
+
+  if (lowerDisposition.startsWith("attachment")) return;
+
+  if (lowerType.indexOf("multipart/") >= 0) {
+    String boundary = emailBoundaryFromContentType(contentType);
+    if (boundary.length() == 0) return;
+    String marker = "--" + boundary;
+    int markerPos = content.indexOf(marker);
+    while (markerPos >= 0) {
+      int lineEnd = content.indexOf('\n', markerPos);
+      if (lineEnd < 0) break;
+      String markerLine = content.substring(markerPos, lineEnd);
+      markerLine.trim();
+      if (markerLine.endsWith("--")) break;
+
+      int partStart = lineEnd + 1;
+      int nextMarker = content.indexOf("\n" + marker, partStart);
+      int partEnd = nextMarker >= 0 ? nextMarker : content.length();
+      String part = content.substring(partStart, partEnd);
+      int split = emailFindHeaderBodySplit(part);
+      if (split >= 0) {
+        String partHeaders = part.substring(0, split);
+        String partBody = part.substring(split + 2);
+        emailExtractMimeText(partHeaders, partBody, plain, html);
+      }
+      if (plain != NULL && plain->length() > 0) return;
+      if (nextMarker < 0) break;
+      markerPos = nextMarker + 1;
+    }
+    return;
+  }
+
+  String decoded = emailDecodeTransferBody(content, transferEncoding);
+  if (lowerType.indexOf("text/html") >= 0) {
+    if (html != NULL && html->length() == 0) *html = emailHtmlToText(decoded);
+  } else if (lowerType.indexOf("text/plain") >= 0 || lowerType.length() == 0) {
+    if (plain != NULL && plain->length() == 0) *plain = decoded;
+  }
+}
+
+static String emailExtractReadableBody(const String& headers, const String& rawBody)
+{
+  String plain;
+  String html;
+  emailExtractMimeText(headers, rawBody, &plain, &html);
+  if (plain.length() > 0) return emailNormalizeDisplayBody(plain);
+  if (html.length() > 0) return emailNormalizeDisplayBody(html);
+
+  String fallback = emailDecodeTransferBody(rawBody, emailHeaderValue(headers, "Content-Transfer-Encoding"));
+  return emailNormalizeDisplayBody(fallback);
+}
+
+static EmailMessageEntry emailParseRawMessage(const String& uid, const String& raw)
+{
+  EmailMessageEntry msg;
+  msg.uid = uid;
+  msg.filePath = "";
+  msg.from = "(unknown)";
+  msg.to = "";
+  msg.subject = "(no subject)";
+  msg.date = "";
+  msg.status = "";
+  msg.body = "";
+
+  bool inHeaders = true;
+  String headerLine = "";
+  String headerBlock = "";
+  String rawBody = "";
+  int start = 0;
+  while (start <= (int)raw.length()) {
+    int end = raw.indexOf('\n', start);
+    if (end < 0) end = raw.length();
+    String line = raw.substring(start, end);
+    line.replace("\r", "");
+
+    if (inHeaders) {
+      if (line.length() == 0) {
+        if (headerLine.length() > 0) emailApplyHeaderLine(&msg, headerLine);
+        headerLine = "";
+        inHeaders = false;
+      } else if (line[0] == ' ' || line[0] == '\t') {
+        headerLine += " ";
+        headerLine += line;
+      } else {
+        if (headerLine.length() > 0) emailApplyHeaderLine(&msg, headerLine);
+        headerLine = line;
+      }
+      if (inHeaders && line.length() > 0) {
+        headerBlock += line;
+        headerBlock += "\n";
+      }
+    } else if (rawBody.length() < EMAIL_MAX_RAW_CHARS) {
+      rawBody += line;
+      rawBody += "\n";
+    }
+
+    if (end >= (int)raw.length()) break;
+    start = end + 1;
+  }
+
+  msg.body = emailExtractReadableBody(headerBlock, rawBody);
+  if (msg.body.length() == 0) msg.body = "(empty message)";
+  return msg;
+}
+
+static bool emailCachedBodyLooksUseful(const String& path)
+{
+  EmailMessageEntry cached;
+  if (!parseCachedEmailFile(path, &cached)) return false;
+  cached.body.trim();
+  return cached.body.length() > 0 && cached.body != "(empty message)";
+}
+
+static bool saveEmailToInbox(const EmailMessageEntry& msg)
+{
+  if (!ensureEmailDirectories()) return false;
+  String fileName = emailSanitizeFileName(msg.uid) + ".txt";
+  String path = String(EMAIL_INBOX_DIR) + "/" + fileName;
+  if (SD.exists(path.c_str())) return true;
+
+  File f = SD.open(path.c_str(), FILE_WRITE);
+  if (!f) return false;
+  f.println("uid:" + msg.uid);
+  f.println("from:" + msg.from);
+  f.println("subject:" + msg.subject);
+  f.println("date:" + msg.date);
+  f.println("body:");
+  f.println(msg.body);
+  f.close();
+  return true;
+}
+
+static bool fetchNewPop3Emails()
+{
+  if (gEmailFetchRunning) return false;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  EmailLoginConfig cfg;
+  if (!loadEmailLoginConfig(&cfg)) return false;
+  if (!cfg.pop3Ssl) {
+    Serial.println("[EMAIL] Only POP3 over SSL is supported.");
+    return false;
+  }
+
+  gEmailFetchRunning = true;
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(15000);
+
+  bool ok = false;
+  if (!client.connect(cfg.pop3Server.c_str(), cfg.pop3Port)) {
+    Serial.println("[EMAIL] POP3 connect failed");
+    gEmailFetchRunning = false;
+    return false;
+  }
+
+  String answer;
+  do {
+    if (!emailReadExpectedPrefix(client, "+OK", &answer)) break;
+    client.print("USER "); client.print(cfg.user); client.print("\r\n");
+    if (!emailReadExpectedPrefix(client, "+OK", &answer)) break;
+    client.print("PASS "); client.print(cfg.password); client.print("\r\n");
+    if (!emailReadExpectedPrefix(client, "+OK", &answer)) break;
+    client.print("UIDL\r\n");
+    if (!emailReadExpectedPrefix(client, "+OK", &answer)) break;
+
+    struct UidlEntry {
+      int number;
+      String uid;
+    };
+    UidlEntry uidls[MAX_EMAIL_MESSAGES];
+    int uidlCount = 0;
+    while (uidlCount < MAX_EMAIL_MESSAGES) {
+      String line = emailReadLine(client);
+      if (line == ".") break;
+      int sep = line.indexOf(' ');
+      if (sep <= 0) continue;
+      uidls[uidlCount].number = line.substring(0, sep).toInt();
+      uidls[uidlCount].uid = line.substring(sep + 1);
+      uidls[uidlCount].uid.trim();
+      uidlCount++;
+    }
+
+    int fetched = 0;
+    for (int i = uidlCount - 1; i >= 0 && fetched < EMAIL_MAX_FETCH_PER_RUN; i--) {
+      String cachePath = String(EMAIL_INBOX_DIR) + "/" + emailSanitizeFileName(uidls[i].uid) + ".txt";
+      if (SD.exists(cachePath.c_str())) {
+        if (emailCachedBodyLooksUseful(cachePath)) continue;
+        SD.remove(cachePath.c_str());
+      }
+
+      client.print("RETR "); client.print(uidls[i].number); client.print("\r\n");
+      if (!emailReadExpectedPrefix(client, "+OK", &answer)) continue;
+
+      String raw;
+      while (true) {
+        String line = emailReadLine(client, 15000);
+        if (line == ".") break;
+        if (line.length() == 0 && !client.connected() && !client.available()) break;
+        if (line.startsWith("..")) line.remove(0, 1);
+        if (raw.length() < EMAIL_MAX_RAW_CHARS) {
+          raw += line;
+          raw += "\n";
+        }
+      }
+
+      EmailMessageEntry msg = emailParseRawMessage(uidls[i].uid, raw);
+      if (saveEmailToInbox(msg)) fetched++;
+    }
+    ok = true;
+  } while (false);
+
+  client.print("QUIT\r\n");
+  client.stop();
+  gEmailFetchRunning = false;
+  return ok;
+}
+
+static String imapQuotedString(const String& value)
+{
+  String out = "\"";
+  for (size_t i = 0; i < value.length(); i++) {
+    char c = value[i];
+    if (c == '\\' || c == '"') out += '\\';
+    out += c;
+  }
+  out += "\"";
+  return out;
+}
+
+static String nextImapTag(int * counter)
+{
+  if (counter == NULL) return "A000";
+  (*counter)++;
+  char tag[8];
+  snprintf(tag, sizeof(tag), "A%03d", *counter);
+  return String(tag);
+}
+
+static bool imapTaggedLineOk(const String& tag, const String& line)
+{
+  if (!line.startsWith(tag)) return false;
+  int pos = tag.length();
+  while (pos < (int)line.length() && line[pos] == ' ') pos++;
+  return line.substring(pos).startsWith("OK");
+}
+
+static bool imapReadGreeting(WiFiClientSecure& client)
+{
+  unsigned long start = millis();
+  while (millis() - start < 15000) {
+    String line = emailReadLine(client, 15000);
+    if (line.startsWith("* OK")) return true;
+    if (line.startsWith("* BYE") || line.startsWith("* NO") || line.startsWith("* BAD")) return false;
+    if (line.length() == 0 && !client.connected() && !client.available()) break;
+  }
+  return false;
+}
+
+static bool imapReadTaggedResponse(WiFiClientSecure& client, const String& tag, String * response, unsigned long timeoutMs = 20000)
+{
+  if (response != NULL) *response = "";
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    String line = emailReadLine(client, timeoutMs);
+    if (response != NULL && response->length() < 3500) {
+      *response += line;
+      *response += "\n";
+    }
+    if (line.startsWith(tag)) {
+      return imapTaggedLineOk(tag, line);
+    }
+    if (line.length() == 0 && !client.connected() && !client.available()) break;
+  }
+  return false;
+}
+
+static bool imapSendCommand(WiFiClientSecure& client, int * tagCounter, const String& command, String * response = NULL)
+{
+  String tag = nextImapTag(tagCounter);
+  client.print(tag);
+  client.print(" ");
+  client.print(command);
+  client.print("\r\n");
+  return imapReadTaggedResponse(client, tag, response);
+}
+
+static int imapParseExistsCount(const String& response)
+{
+  int start = 0;
+  while (start < (int)response.length()) {
+    int end = response.indexOf('\n', start);
+    if (end < 0) end = response.length();
+    String line = response.substring(start, end);
+    line.trim();
+    if (line.startsWith("* ") && line.endsWith(" EXISTS")) {
+      int firstSpace = line.indexOf(' ');
+      int secondSpace = line.indexOf(' ', firstSpace + 1);
+      if (firstSpace >= 0 && secondSpace > firstSpace) {
+        return line.substring(firstSpace + 1, secondSpace).toInt();
+      }
+    }
+    start = end + 1;
+  }
+  return 0;
+}
+
+static String imapParseUidFromLine(const String& line)
+{
+  int uidPos = line.indexOf("UID ");
+  if (uidPos < 0) return "";
+  int start = uidPos + 4;
+  int end = start;
+  while (end < (int)line.length() && isdigit(line[end])) end++;
+  return line.substring(start, end);
+}
+
+static int imapFetchRecentUidList(WiFiClientSecure& client, int * tagCounter, int existsCount, String * uids, int maxUids)
+{
+  if (existsCount <= 0 || uids == NULL || maxUids <= 0) return 0;
+
+  int firstSeq = existsCount - maxUids + 1;
+  if (firstSeq < 1) firstSeq = 1;
+
+  String tag = nextImapTag(tagCounter);
+  client.print(tag);
+  client.print(" FETCH ");
+  client.print(firstSeq);
+  client.print(":* (UID)\r\n");
+
+  int uidCount = 0;
+  unsigned long start = millis();
+  while (millis() - start < 20000) {
+    String line = emailReadLine(client, 20000);
+    if (line.startsWith(tag)) {
+      if (!imapTaggedLineOk(tag, line)) return 0;
+      return uidCount;
+    }
+    String uid = imapParseUidFromLine(line);
+    if (uid.length() > 0 && uidCount < maxUids) {
+      uids[uidCount++] = uid;
+    }
+    if (line.length() == 0 && !client.connected() && !client.available()) break;
+  }
+  return uidCount;
+}
+
+static bool emailReadLiteralBytes(WiFiClientSecure& client, size_t byteCount, String * out, size_t maxStore, unsigned long timeoutMs = 30000)
+{
+  size_t readCount = 0;
+  unsigned long lastDataMs = millis();
+  while (readCount < byteCount && millis() - lastDataMs < timeoutMs) {
+    while (client.available() && readCount < byteCount) {
+      char c = (char)client.read();
+      readCount++;
+      lastDataMs = millis();
+      if (out != NULL && out->length() < maxStore) {
+        *out += c;
+      }
+    }
+    if (readCount >= byteCount) break;
+    if (!client.connected() && !client.available()) break;
+    delay(1);
+  }
+  return readCount == byteCount;
+}
+
+static int imapLiteralSizeFromLine(const String& line)
+{
+  int open = line.lastIndexOf('{');
+  int close = line.lastIndexOf('}');
+  if (open < 0 || close <= open) return -1;
+  return line.substring(open + 1, close).toInt();
+}
+
+static bool imapFetchRawMessage(WiFiClientSecure& client, int * tagCounter, const String& uid, String * raw)
+{
+  if (raw == NULL) return false;
+  *raw = "";
+
+  String tag = nextImapTag(tagCounter);
+  client.print(tag);
+  client.print(" UID FETCH ");
+  client.print(uid);
+  client.print(" (BODY.PEEK[])\r\n");
+
+  bool gotLiteral = false;
+  bool ok = false;
+  unsigned long start = millis();
+  while (millis() - start < 45000) {
+    String line = emailReadLine(client, 30000);
+    int literalSize = imapLiteralSizeFromLine(line);
+    if (literalSize >= 0) {
+      gotLiteral = emailReadLiteralBytes(client, (size_t)literalSize, raw, EMAIL_MAX_RAW_CHARS);
+      continue;
+    }
+    if (line.startsWith(tag)) {
+      ok = imapTaggedLineOk(tag, line);
+      break;
+    }
+    if (line.length() == 0 && !client.connected() && !client.available()) break;
+  }
+
+  raw->replace("\r", "");
+  return ok && gotLiteral && raw->length() > 0;
+}
+
+static bool fetchNewImapEmails()
+{
+  if (gEmailFetchRunning) return false;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  EmailLoginConfig cfg;
+  if (!loadEmailLoginConfig(&cfg)) return false;
+  if (!cfg.imapSsl) {
+    Serial.println("[EMAIL] Only IMAP over SSL is supported.");
+    return false;
+  }
+
+  gEmailFetchRunning = true;
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(15000);
+
+  bool ok = false;
+  if (!client.connect(cfg.imapServer.c_str(), cfg.imapPort)) {
+    Serial.println("[EMAIL] IMAP connect failed");
+    gEmailFetchRunning = false;
+    return false;
+  }
+
+  int tagCounter = 0;
+  do {
+    if (!imapReadGreeting(client)) break;
+    if (!imapSendCommand(client, &tagCounter, "LOGIN " + imapQuotedString(cfg.user) + " " + imapQuotedString(cfg.password))) break;
+
+    String selectResponse;
+    if (!imapSendCommand(client, &tagCounter, "SELECT " + imapQuotedString(cfg.imapFolder), &selectResponse)) break;
+    int existsCount = imapParseExistsCount(selectResponse);
+    if (existsCount <= 0) {
+      ok = true;
+      break;
+    }
+
+    String uids[MAX_EMAIL_MESSAGES];
+    int uidCount = imapFetchRecentUidList(client, &tagCounter, existsCount, uids, MAX_EMAIL_MESSAGES);
+    int fetched = 0;
+    for (int i = uidCount - 1; i >= 0 && fetched < EMAIL_MAX_FETCH_PER_RUN; i--) {
+      String cacheUid = "imap_" + uids[i];
+      String cachePath = String(EMAIL_INBOX_DIR) + "/" + emailSanitizeFileName(cacheUid) + ".txt";
+      if (SD.exists(cachePath.c_str())) {
+        if (emailCachedBodyLooksUseful(cachePath)) continue;
+        SD.remove(cachePath.c_str());
+      }
+
+      String raw;
+      if (!imapFetchRawMessage(client, &tagCounter, uids[i], &raw)) continue;
+      EmailMessageEntry msg = emailParseRawMessage(cacheUid, raw);
+      if (saveEmailToInbox(msg)) fetched++;
+    }
+    ok = true;
+  } while (false);
+
+  imapSendCommand(client, &tagCounter, "LOGOUT");
+  client.stop();
+  gEmailFetchRunning = false;
+  return ok;
+}
+
+static bool fetchNewEmails()
+{
+  EmailLoginConfig cfg;
+  if (!loadEmailLoginConfig(&cfg)) return false;
+  if (cfg.protocol == "imap") return fetchNewImapEmails();
+  return fetchNewPop3Emails();
+}
+
+static bool saveOutgoingEmail(const String& recipient, const String& subject, const String& body, const String& status)
+{
+  if (!ensureEmailDirectories()) return false;
+  String fileName = String("out_") + String((uint32_t)time(NULL)) + "_" + String(millis()) + ".txt";
+  String path = String(EMAIL_OUTGOING_DIR) + "/" + fileName;
+  File f = SD.open(path.c_str(), FILE_WRITE);
+  if (!f) return false;
+  f.println("uid:" + fileName);
+  f.println("to:" + recipient);
+  f.println("subject:" + subject);
+  f.println("date:" + emailFormatRfc2822Date());
+  f.println("status:" + status);
+  f.println("body:");
+  f.println(body);
+  f.close();
+  return true;
+}
+
+static String emailExtractAddress(String value)
+{
+  value.trim();
+  value.replace("\r", "");
+  value.replace("\n", "");
+
+  int lt = value.indexOf('<');
+  int gt = value.indexOf('>', lt + 1);
+  if (lt >= 0 && gt > lt) {
+    value = value.substring(lt + 1, gt);
+    value.trim();
+  }
+
+  if ((value.startsWith("\"") && value.endsWith("\"")) ||
+      (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.substring(1, value.length() - 1);
+    value.trim();
+  }
+
+  return value;
+}
+
+static bool emailLooksLikeAddress(const String& value)
+{
+  int at = value.indexOf('@');
+  int dot = value.lastIndexOf('.');
+  return value.length() >= 5 &&
+         at > 0 &&
+         dot > at + 1 &&
+         dot < (int)value.length() - 1 &&
+         value.indexOf(' ') < 0 &&
+         value.indexOf('<') < 0 &&
+         value.indexOf('>') < 0 &&
+         value.indexOf(',') < 0;
+}
+
+static String emailHeaderSafe(String value)
+{
+  value.replace("\r", " ");
+  value.replace("\n", " ");
+  value.trim();
+  return value;
+}
+
+static String emailDomainFromAddress(const String& address)
+{
+  int at = address.indexOf('@');
+  if (at >= 0 && at + 1 < (int)address.length()) {
+    String domain = address.substring(at + 1);
+    domain.trim();
+    if (domain.length() > 0) return domain;
+  }
+  return "fos.local";
+}
+
+static bool emailLooksLikeNetcupSystemSender(const String& address)
+{
+  String domain = emailDomainFromAddress(address);
+  domain.toLowerCase();
+  return domain.endsWith(".netcup.net") &&
+         (domain.indexOf(".mxe") >= 0 || domain.startsWith("mail"));
+}
+
+static String emailFormatMailbox(const String& address, String displayName)
+{
+  displayName = emailHeaderSafe(displayName);
+  if (displayName.length() == 0) {
+    return "<" + address + ">";
+  }
+  return "=?UTF-8?B?" + emailBase64Encode(displayName) + "?= <" + address + ">";
+}
+
+static String emailFormatRfc2822Date()
+{
+  if (!isSystemTimeValid()) {
+    requestNtpSync(true);
+    unsigned long start = millis();
+    while (!isSystemTimeValid() && millis() - start < 3000) {
+      delay(50);
+    }
+  }
+
+  time_t nowTs = time(nullptr);
+  if (nowTs < 1609459200) nowTs = 1609459200;
+
+  struct tm utcTm;
+  gmtime_r(&nowTs, &utcTm);
+
+  static const char * days[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+  static const char * months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+  char buf[48];
+  snprintf(
+    buf,
+    sizeof(buf),
+    "%s, %02d %s %04d %02d:%02d:%02d +0000",
+    days[utcTm.tm_wday],
+    utcTm.tm_mday,
+    months[utcTm.tm_mon],
+    utcTm.tm_year + 1900,
+    utcTm.tm_hour,
+    utcTm.tm_min,
+    utcTm.tm_sec
+  );
+  return String(buf);
+}
+
+static char emailHexDigit(uint8_t value)
+{
+  value &= 0x0F;
+  return value < 10 ? ('0' + value) : ('A' + value - 10);
+}
+
+static void emailAppendQuotedPrintableByte(String * out, uint8_t value)
+{
+  if (out == NULL) return;
+  *out += '=';
+  *out += emailHexDigit(value >> 4);
+  *out += emailHexDigit(value);
+}
+
+static String emailQuotedPrintableEncode(const String& input)
+{
+  String out;
+  int lineLen = 0;
+
+  for (size_t i = 0; i < input.length(); i++) {
+    uint8_t c = (uint8_t)input[i];
+    if (c == '\r') continue;
+    if (c == '\n') {
+      out += "\r\n";
+      lineLen = 0;
+      continue;
+    }
+
+    bool atLineEnd = (i + 1 >= input.length() || input[i + 1] == '\n' || input[i + 1] == '\r');
+    bool mustEncode = (c == '=') ||
+                      (c < 32 && c != '\t') ||
+                      (c >= 127) ||
+                      ((c == ' ' || c == '\t') && atLineEnd);
+    int addLen = mustEncode ? 3 : 1;
+    if (lineLen + addLen > 73) {
+      out += "=\r\n";
+      lineLen = 0;
+    }
+
+    if (mustEncode) {
+      emailAppendQuotedPrintableByte(&out, c);
+    } else {
+      out += (char)c;
+    }
+    lineLen += addLen;
+  }
+
+  return out;
+}
+
+static void smtpPrintDotStuffedText(WiFiClientSecure& client, const String& content)
+{
+  int start = 0;
+  while (start <= (int)content.length()) {
+    int end = content.indexOf('\n', start);
+    if (end < 0) end = content.length();
+    String line = content.substring(start, end);
+    line.replace("\r", "");
+    if (line.startsWith(".")) client.print(".");
+    client.print(line);
+    client.print("\r\n");
+    if (end >= (int)content.length()) break;
+    start = end + 1;
+  }
+}
+
+static bool sendSmtpEmail(const String& recipient, const String& subject, const String& body, String * status)
+{
+  if (status != NULL) *status = "";
+  if (WiFi.status() != WL_CONNECTED) {
+    if (status != NULL) *status = "No WiFi connection.";
+    return false;
+  }
+
+  EmailLoginConfig cfg;
+  if (!loadEmailLoginConfig(&cfg)) {
+    if (status != NULL) *status = "Missing /system/email/login.txt data.";
+    return false;
+  }
+  if (cfg.smtpStartTls || cfg.smtpPort == 587) {
+    if (status != NULL) *status = "SMTP 587 uses STARTTLS. Use SSL port 465.";
+    Serial.println("[EMAIL] SMTP STARTTLS requested. Use direct SSL/TLS on port 465 for this build.");
+    return false;
+  }
+  if (!cfg.smtpSsl) {
+    if (status != NULL) *status = "SMTP needs SSL. Use smtp_ssl=true and port 465.";
+    return false;
+  }
+
+  String fromSource = cfg.fromEmail.length() > 0 ? cfg.fromEmail : cfg.email;
+  String fromAddress = emailExtractAddress(fromSource);
+  String replyToAddress = emailExtractAddress(cfg.replyTo.length() > 0 ? cfg.replyTo : fromAddress);
+  String toAddress = emailExtractAddress(recipient);
+  if (!emailLooksLikeAddress(fromAddress)) {
+    if (status != NULL) *status = "Invalid from_email/email address in login.txt.";
+    return false;
+  }
+  if (!emailLooksLikeAddress(replyToAddress)) {
+    if (status != NULL) *status = "Invalid reply_to address in login.txt.";
+    return false;
+  }
+  if (!cfg.allowTechnicalSender && emailLooksLikeNetcupSystemSender(fromAddress)) {
+    if (status != NULL) *status = "DMARC risk: set from_email to your real mailbox/domain.";
+    Serial.println("[EMAIL] Refusing likely Netcup system sender. Set from_email to a real mailbox/domain authorized on this SMTP account.");
+    return false;
+  }
+  if (!emailLooksLikeAddress(toAddress)) {
+    if (status != NULL) *status = "Invalid recipient address.";
+    return false;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(15000);
+  Serial.print("[EMAIL] SMTP connect ");
+  Serial.print(cfg.smtpServer);
+  Serial.print(":");
+  Serial.println(cfg.smtpPort);
+  if (!client.connect(cfg.smtpServer.c_str(), cfg.smtpPort)) {
+    if (status != NULL) {
+      *status = "SMTP connect failed: ";
+      *status += cfg.smtpServer;
+      *status += ":";
+      *status += String(cfg.smtpPort);
+    }
+    Serial.println("[EMAIL] SMTP connect failed");
+    return false;
+  }
+
+  String answer;
+  bool ok = false;
+  do {
+    if (!smtpExpectCode(client, 220, &answer)) break;
+    client.print("EHLO ");
+    client.print(emailDomainFromAddress(fromAddress));
+    client.print("\r\n");
+    if (!smtpExpectCode(client, 250, &answer)) break;
+    client.print("AUTH LOGIN\r\n");
+    if (!smtpExpectCode(client, 334, &answer)) break;
+    client.print(emailBase64Encode(cfg.user)); client.print("\r\n");
+    if (!smtpExpectCode(client, 334, &answer)) break;
+    client.print(emailBase64Encode(cfg.password)); client.print("\r\n");
+    if (!smtpExpectCode(client, 235, &answer)) break;
+    client.print("MAIL FROM:<"); client.print(fromAddress); client.print(">\r\n");
+    if (!smtpExpectCode(client, 250, &answer)) break;
+    client.print("RCPT TO:<"); client.print(toAddress); client.print(">\r\n");
+    if (!smtpExpectCode(client, 250, &answer)) break;
+    client.print("DATA\r\n");
+    if (!smtpExpectCode(client, 354, &answer)) break;
+
+    client.print("From: ");
+    client.print(emailFormatMailbox(fromAddress, cfg.senderName));
+    client.print("\r\n");
+    client.print("To: <");
+    client.print(toAddress);
+    client.print(">\r\n");
+    client.print("Date: ");
+    client.print(emailFormatRfc2822Date());
+    client.print("\r\n");
+    client.print("Message-ID: <");
+    client.print(String((uint32_t)time(NULL)));
+    client.print(".");
+    client.print(String((uint32_t)millis()));
+    client.print(".");
+    client.print(String((uint32_t)esp_random(), HEX));
+    client.print("@");
+    client.print(emailDomainFromAddress(fromAddress));
+    client.print(">\r\n");
+    client.print("Reply-To: <");
+    client.print(replyToAddress);
+    client.print(">\r\n");
+    client.print("Subject: =?UTF-8?B?");
+    client.print(emailBase64Encode(emailHeaderSafe(subject)));
+    client.print("?=\r\n");
+    client.print("MIME-Version: 1.0\r\n");
+    client.print("Content-Type: text/plain; charset=UTF-8\r\n");
+    client.print("Content-Transfer-Encoding: quoted-printable\r\n\r\n");
+
+    String qpBody = emailQuotedPrintableEncode(body);
+    smtpPrintDotStuffedText(client, qpBody);
+    client.print(".\r\n");
+    if (!smtpExpectCode(client, 250, &answer)) break;
+    ok = true;
+  } while (false);
+
+  if (!ok && status != NULL) {
+    if (answer.length() > 0) *status = "SMTP error: " + answer;
+    else *status = "SMTP error.";
+  }
+  client.print("QUIT\r\n");
+  client.stop();
+  if (ok && status != NULL) *status = "Email sent.";
+  return ok;
+}
+
+static bool emailOutgoingTabActive()
+{
+  return ui_TabView1 != NULL && lv_tabview_get_tab_act(ui_TabView1) == 1;
+}
+
+static void resetEmailMessageScroll()
+{
+  if (uic_EmailMessageLabel == NULL) return;
+  lv_obj_t * scrollArea = lv_obj_get_parent(uic_EmailMessageLabel);
+  if (scrollArea != NULL) {
+    lv_obj_scroll_to_y(scrollArea, 0, LV_ANIM_OFF);
+  }
+}
+
+static void showSelectedEmail()
+{
+  if (uic_EmailMessageContainer == NULL) return;
+
+  bool outgoing = emailOutgoingTabActive();
+  lv_obj_t * roller = outgoing ? uic_EmailRollerOutgoing : uic_EmailRollerInbox;
+  EmailMessageEntry * messages = outgoing ? gOutgoingEmailMessages : gEmailMessages;
+  int messageCount = outgoing ? gOutgoingEmailMessageCount : gEmailMessageCount;
+  if (roller == NULL) return;
+
+  if (messageCount <= 0) {
+    lv_label_set_text(uic_EmailNameLabel, outgoing ? "Outgoing" : "Inbox");
+    lv_label_set_text(uic_EmailSubjectLabel, outgoing ? "No outgoing emails" : "No cached emails");
+    lv_label_set_text(uic_EmailMessageLabel, outgoing
+      ? "No sent emails have been saved yet."
+      : "No email has been downloaded yet. Check WiFi and /system/email/login.txt.");
+    resetEmailMessageScroll();
+    lv_obj_clear_flag(uic_EmailMessageContainer, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+
+  int selected = lv_roller_get_selected(roller);
+  if (selected < 0 || selected >= messageCount) selected = 0;
+  EmailMessageEntry& msg = messages[selected];
+  String headerName = outgoing ? (String("To: ") + (msg.to.length() ? msg.to : msg.from)) : msg.from;
+  String headerSubject = msg.subject;
+  if (outgoing && msg.status.length() > 0) {
+    headerSubject += " (" + msg.status + ")";
+  }
+  lv_label_set_text(uic_EmailNameLabel, headerName.c_str());
+  lv_label_set_text(uic_EmailSubjectLabel, headerSubject.c_str());
+  lv_label_set_long_mode(uic_EmailMessageLabel, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(uic_EmailMessageLabel, msg.body.c_str());
+  resetEmailMessageScroll();
+  lv_obj_clear_flag(uic_EmailMessageContainer, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void emailSelectEvent(lv_event_t * e)
+{
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showSelectedEmail();
+}
+
+static void emailTextAreaEvent(lv_event_t * e)
+{
+  lv_event_code_t code = lv_event_get_code(e);
+  if (code != LV_EVENT_FOCUSED && code != LV_EVENT_CLICKED) return;
+  lv_obj_t * ta = lv_event_get_target(e);
+  if (uic_NewEmailKeyboard != NULL && ta != NULL) {
+    lv_keyboard_set_textarea(uic_NewEmailKeyboard, ta);
+  }
+}
+
+static void emailSendButtonEvent(lv_event_t * e)
+{
+  SendEmail(e);
+}
+
+extern "C" void SendEmail(lv_event_t * e)
+{
+  if (e != NULL && lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  unsigned long nowMs = millis();
+  if (nowMs - gEmailLastSendEventMs < 800) return;
+  gEmailLastSendEventMs = nowMs;
+
+  if (uic_EmailAddressTextArea == NULL || uic_SubjectTextArea == NULL || ui_MessageTextArea == NULL) return;
+
+  String recipient = lv_textarea_get_text(uic_EmailAddressTextArea);
+  String subject = lv_textarea_get_text(uic_SubjectTextArea);
+  String body = lv_textarea_get_text(ui_MessageTextArea);
+  recipient.trim();
+  subject.trim();
+
+  String status;
+  bool ok = false;
+  if (recipient.length() == 0) {
+    status = "Please enter a recipient.";
+  } else {
+    ok = sendSmtpEmail(recipient, subject, body, &status);
+    saveOutgoingEmail(recipient, subject, body, ok ? "sent" : "error");
+    loadCachedOutgoingEmails();
+    fillEmailRollers();
+  }
+
+  if (uic_NewEmailContainer != NULL) {
+    lv_obj_add_flag(uic_NewEmailContainer, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (uic_EmailMessageContainer != NULL) {
+    lv_label_set_text(uic_EmailNameLabel, (String("To: ") + recipient).c_str());
+    lv_label_set_text(uic_EmailSubjectLabel, subject.length() ? subject.c_str() : "(no subject)");
+    lv_label_set_long_mode(uic_EmailMessageLabel, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(uic_EmailMessageLabel, status.c_str());
+    resetEmailMessageScroll();
+    lv_obj_clear_flag(uic_EmailMessageContainer, LV_OBJ_FLAG_HIDDEN);
+  }
+
+  if (ok) {
+    lv_textarea_set_text(uic_EmailAddressTextArea, "");
+    lv_textarea_set_text(uic_SubjectTextArea, "");
+    lv_textarea_set_text(ui_MessageTextArea, "");
+  }
+}
+
+static void renderEmailApp()
+{
+  resetEmailAppState();
+  gEmailUiVisible = true;
+
+  lv_obj_set_style_bg_color(uic_AppContentArea, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(uic_AppContentArea, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_clear_flag(uic_AppContentArea, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_OFF);
+
+  ui_Email_screen_init();
+  if (ui_Email == NULL) return;
+
+  while (lv_obj_get_child(ui_Email, 0) != NULL) {
+    lv_obj_t * child = lv_obj_get_child(ui_Email, 0);
+    lv_obj_set_parent(child, uic_AppContentArea);
+  }
+
+  if (uic_EmailMessageContainer != NULL) {
+    lv_obj_add_flag(uic_EmailMessageContainer, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (uic_NewEmailContainer != NULL) {
+    lv_obj_add_flag(uic_NewEmailContainer, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (uic_EmailMessageLabel != NULL) {
+    lv_label_set_long_mode(uic_EmailMessageLabel, LV_LABEL_LONG_WRAP);
+  }
+
+  if (ui_EmailSelect != NULL) {
+    lv_obj_add_event_cb(ui_EmailSelect, emailSelectEvent, LV_EVENT_CLICKED, NULL);
+  }
+  if (ui_EmailSend != NULL) {
+    lv_obj_add_event_cb(ui_EmailSend, emailSendButtonEvent, LV_EVENT_CLICKED, NULL);
+  }
+  if (uic_EmailAddressTextArea != NULL) {
+    lv_obj_add_event_cb(uic_EmailAddressTextArea, emailTextAreaEvent, LV_EVENT_ALL, NULL);
+  }
+  if (uic_SubjectTextArea != NULL) {
+    lv_obj_add_event_cb(uic_SubjectTextArea, emailTextAreaEvent, LV_EVENT_ALL, NULL);
+  }
+  if (ui_MessageTextArea != NULL) {
+    lv_obj_add_event_cb(ui_MessageTextArea, emailTextAreaEvent, LV_EVENT_ALL, NULL);
+  }
+
+  ensureEmailDirectories();
+  loadCachedEmails();
+  loadCachedOutgoingEmails();
+  fillEmailRollers();
+  if (WiFi.status() == WL_CONNECTED) {
+    fetchNewEmails();
+    loadCachedEmails();
+    loadCachedOutgoingEmails();
+    fillEmailRollers();
+  }
+
+  if (ui_HomeButton9 != NULL) {
+    lv_obj_move_foreground(ui_HomeButton9);
+  }
+}
+
 static void showAppContentForIndex(int appIndex)
 {
   if (appIndex < 0 || appIndex >= gLauncherAppCount) return;
@@ -4386,6 +6388,11 @@ static void showAppContentForIndex(int appIndex)
 
   if (app.appType == "weather") {
     renderWeatherApp();
+    return;
+  }
+
+  if (app.appType == "email") {
+    renderEmailApp();
     return;
   }
 
@@ -4496,6 +6503,7 @@ extern "C" void UnloadApp_Data(lv_event_t * e)
   resetSdAppState();
   resetClockDashboardState();
   resetWeatherAppState();
+  resetEmailAppState();
   StartAppLauncher_Data(NULL);
 }
 
@@ -4548,6 +6556,9 @@ void initSD()
       SD.mkdir(UPDATE_DIR);
       Serial.println("Ordner /system/update erstellt");
     }
+
+    ensureEmailDirectories();
+    ensureEmailSdApp();
 
   } else {
     sd_ok = false;

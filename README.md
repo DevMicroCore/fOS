@@ -1,6 +1,34 @@
-# fOS 3.1.0
+# fOS 3.2.0
 
-fOS 3.1.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 3.2.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+
+---
+
+## What's New in 3.2.0
+
+### Email Application
+
+fOS now includes an Email application for receiving, reading, composing, and
+sending messages directly on the CrowPanel.
+
+* Receive messages using IMAP or POP3 over SSL/TLS.
+* Send messages using SMTP over direct SSL/TLS on port 465.
+* Separate **Inbox** and **Outgoing** tabs with their own message rollers.
+* The newest messages are displayed first in both lists.
+* Up to 30 cached messages are shown per list.
+* Long message bodies can be scrolled vertically by touch.
+* Sent messages are stored in `/email/outgoing` and appear immediately in the
+  Outgoing list.
+* Incoming messages are cached in `/email/inbox`.
+* MIME multipart messages, `text/plain`, HTML fallback, quoted-printable, and
+  Base64 content are decoded for display.
+* Buttons, selected roller entries, active tab text and underline, text field
+  focus borders, and the message scrollbar follow the selected system theme.
+* Sender and Reply-To headers can be configured separately for correct mail
+  delivery and DMARC alignment.
+
+Email account settings are read from `/system/email/login.txt`. See
+[Email Setup](#email-setup) for the required format.
 
 ---
 
@@ -193,7 +221,7 @@ Required libraries:
    * lvgl
    * LovyanGFX
    * ESP32-audioI2S
-4. Open `fOS2.0.ino`.
+4. Open `fOS3.0.ino`.
 5. Select your ESP32-S3 board.
 6. Configure:
 
@@ -222,10 +250,13 @@ Required folders:
 
 ```
 /apps
+/email/inbox
+/email/outgoing
 /text
 /music/files
 /music/webradio
 /system
+/system/email
 ```
 
 Example web radio file:
@@ -249,9 +280,64 @@ Optional system files:
 /system/wifi/wlans.txt
 /system/timezone/timezone.txt
 /system/display/brightness.txt
+/system/email/login.txt
 /system/update/update.bin
 /system/update/recovery.bin
 ```
+
+---
+
+# Email Setup
+
+The Email application creates `/apps/email`, `/email/inbox`,
+`/email/outgoing`, and `/system/email` automatically when needed.
+
+Create the following account file on the SD card:
+
+```text
+/system/email/login.txt
+```
+
+Recommended IMAP configuration:
+
+```ini
+protocol=imap
+email=your-address@example.com
+user=your-login-name
+password=your-password
+imap_server=imap.example.com
+imap_port=993
+imap_ssl=true
+imap_folder=INBOX
+smtp_server=smtp.example.com
+smtp_port=465
+smtp_ssl=true
+from_email=your-address@example.com
+reply_to=your-address@example.com
+sender_name=fOS
+```
+
+For POP3 reception, use:
+
+```ini
+protocol=pop3
+pop3_server=pop3.example.com
+pop3_port=995
+pop3_ssl=true
+```
+
+The remaining account and SMTP values are the same as in the IMAP example.
+
+Important notes:
+
+* SMTP sending in this release requires direct SSL/TLS, normally on port 465.
+* STARTTLS on port 587 is not supported by this build.
+* `from_email` must be a real address authorized for the configured SMTP
+  account or domain. A technical mail-server hostname can be rejected by DMARC
+  checks.
+* The password is stored as plain text on the SD card. Protect the card and use
+  a dedicated app password if the mail provider supports one.
+* Wi-Fi and valid system time are required for mail transfer.
 
 ---
 
@@ -274,7 +360,7 @@ app.cfg
 ```
 name=Display Name
 icon=Optional Tile Icon
-type=ui|text|button|calculator|radio|clock|weather
+type=ui|text|button|calculator|radio|clock|weather|email
 scrollable=true|false
 ```
 
@@ -376,6 +462,15 @@ Included applications:
   * digital clock
   * integrated countdown timer
 * Weather
+* Email
+
+  * IMAP or POP3 inbox reception
+  * SMTP sending over direct SSL/TLS
+  * separate Inbox and Outgoing lists
+  * local SD cache for received and sent messages
+  * MIME body decoding
+  * touch-scrollable message view
+  * automatic system-theme integration
 
 Hardware features:
 
@@ -452,6 +547,27 @@ Station|URL
 * Verify internet connectivity.
 * Restart the Weather app.
 
+## Email account not loaded
+
+* Verify that `/system/email/login.txt` exists.
+* Check that `email`, `user`, `password`, the selected incoming server, and
+  `smtp_server` are present.
+* Use `protocol=imap` or `protocol=pop3`.
+
+## Email sending fails
+
+* Verify Wi-Fi connectivity and the system time.
+* Use the provider's direct SSL/TLS SMTP endpoint, normally port 465.
+* Set `smtp_ssl=true`.
+* Ensure `from_email` is authorized for the SMTP account and domain.
+* Check the Serial Monitor for `[EMAIL]` diagnostics.
+
+## Email body is empty
+
+Open the Email application with Wi-Fi enabled. Cached entries without a usable
+body are fetched again automatically. Very large messages can exceed the
+embedded mail buffer; plain-text messages and compact HTML messages work best.
+
 ## OTA list appears slowly
 
 OTA loading runs asynchronously.
@@ -483,6 +599,20 @@ This project is licensed under the **GNU GPLv3**.
 ---
 
 # Version History
+
+## v3.2.0
+
+* Added the Email application.
+* Added IMAP and POP3 reception over SSL/TLS.
+* Added SMTP sending over direct SSL/TLS on port 465.
+* Added MIME multipart, plain-text, HTML fallback, quoted-printable, and Base64
+  decoding.
+* Added separate Inbox and Outgoing rollers.
+* Added local storage for sent messages.
+* Sorted Inbox and Outgoing with the newest message first.
+* Added vertically scrollable message bodies.
+* Integrated the Email UI with the global system theme.
+* Added configurable sender, Reply-To, and DMARC safety checks.
 
 ## v3.1.0
 
