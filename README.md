@@ -1,6 +1,35 @@
-# fOS 3.2.0
+# fOS 3.3.0
 
-fOS 3.2.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+fOS 3.3.0 is a touchscreen firmware for ESP32-S3 CrowPanel devices.
+
+---
+
+## What's New in 3.3.0
+
+### Device-Bound Credential Encryption
+
+fOS now protects Wi-Fi and email passwords stored on the SD card.
+
+* Passwords are encrypted with authenticated AES-256-GCM encryption.
+* A random 256-bit device secret is generated once and stored in the ESP32's
+  internal NVS.
+* The encryption key is additionally bound to the ESP32's eFuse MAC address.
+* Every password uses a new random 96-bit nonce and a 128-bit authentication
+  tag.
+* Encrypted values are stored in the versioned `enc:v1:...` format.
+* Existing plain-text Wi-Fi and email passwords are migrated automatically when
+  first read.
+* New Wi-Fi profiles are encrypted before being written to the SD card.
+* Credentials copied to another ESP32 cannot be decrypted there.
+* Modified, damaged, or foreign encrypted values are rejected.
+* Credential loading fails closed if a secure migration cannot be completed.
+* Temporary and backup files protect the original configuration during an
+  interrupted migration.
+* Wi-Fi files are rewritten only when a plain-text password actually requires
+  migration, reducing unnecessary SD-card writes.
+
+The implementation uses the cryptographic and NVS components already included
+with the ESP32 platform to keep additional flash and RAM usage low.
 
 ---
 
@@ -335,8 +364,21 @@ Important notes:
 * `from_email` must be a real address authorized for the configured SMTP
   account or domain. A technical mail-server hostname can be rejected by DMARC
   checks.
-* The password is stored as plain text on the SD card. Protect the card and use
-  a dedicated app password if the mail provider supports one.
+* On the first load, fOS automatically replaces a plain-text `password` value
+  with an `enc:v1:...` value encrypted for this ESP32. Newly saved Wi-Fi
+  passwords are encrypted immediately as well.
+* Encryption uses AES-256-GCM. The device key is derived from a random secret in
+  the ESP32's internal NVS and the chip's eFuse MAC, so moving the SD card to a
+  different ESP32 does not expose or decrypt the passwords.
+* Do not edit an `enc:v1:...` value. To change a password, enter the new value in
+  plain text once; fOS encrypts it automatically on the next load.
+* Erasing the ESP32's NVS or replacing the board destroys access to existing
+  encrypted SD credentials. In that case, enter the passwords again.
+* For protection against a physical readout of the ESP32's internal flash,
+  enable ESP32 Flash Encryption/NVS Encryption for a production device. The
+  device binding described here primarily protects a removed or copied SD card.
+* A dedicated email app password is still recommended when supported by the
+  mail provider.
 * Wi-Fi and valid system time are required for mail transfer.
 
 ---
@@ -599,6 +641,19 @@ This project is licensed under the **GNU GPLv3**.
 ---
 
 # Version History
+
+## v3.3.0
+
+* Added device-bound AES-256-GCM encryption for Wi-Fi and email passwords.
+* Added automatic migration of existing plain-text SD credentials.
+* Added authenticated encryption, per-write random nonces, and recovery files
+  for interrupted credential migrations.
+* Added a random 256-bit device secret stored in NVS and bound it to the ESP32's
+  eFuse MAC address.
+* Added fail-closed handling for unsuccessful migrations and encrypted values
+  that cannot be authenticated.
+* Avoided unnecessary Wi-Fi credential file rewrites after migration.
+* Fixed the Base64 output buffer size used during password encryption.
 
 ## v3.2.0
 

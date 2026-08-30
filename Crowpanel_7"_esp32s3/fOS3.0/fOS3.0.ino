@@ -20,6 +20,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ota_recovery_manager.h"
+#include "SecureCredentials.h"
 
 void setup();
 void loop();
@@ -27,6 +28,8 @@ void audio_eof_mp3(const char *info);
 
 #define WIFI_DIR  "/system/wifi"
 #define WIFI_FILE "/system/wifi/wlans.txt"
+#define WIFI_FILE_TEMP "/system/wifi/wlans.tmp"
+#define WIFI_FILE_BACKUP "/system/wifi/wlans.bak"
 #define WIFI_ENABLED_FILE "/system/wifi/enabled.txt"
 #define TIMEZONE_DIR  "/system/timezone"
 #define TIMEZONE_FILE "/system/timezone/timezone.txt"
@@ -43,6 +46,8 @@ void audio_eof_mp3(const char *info);
 #define EMAIL_OUTGOING_DIR "/email/outgoing"
 #define EMAIL_SYSTEM_DIR "/system/email"
 #define EMAIL_LOGIN_FILE "/system/email/login.txt"
+#define EMAIL_LOGIN_TEMP "/system/email/login.tmp"
+#define EMAIL_LOGIN_BACKUP "/system/email/login.bak"
 
 #define MAX_LAUNCHER_APPS 7
 #define MAX_EMAIL_MESSAGES 30
@@ -756,6 +761,42 @@ static int wifiRssiToQualityPercent(int rssi)
   if (rssi >= -50) return 100;
   if (rssi <= -90) return 0;
   return ((rssi + 90) * 100) / 40;
+}
+
+static void recoverCredentialFileIfNeeded(const char * path, const char * backupPath)
+{
+  if (!sd_ok || path == NULL || backupPath == NULL) return;
+  if (!SD.exists(path) && SD.exists(backupPath)) {
+    SD.rename(backupPath, path);
+  } else if (SD.exists(path) && SD.exists(backupPath)) {
+    SD.remove(backupPath);
+  }
+}
+
+static bool installMigratedCredentialFile(const char * path, const char * tempPath, const char * backupPath)
+{
+  if (path == NULL || tempPath == NULL || backupPath == NULL || !SD.exists(tempPath)) return false;
+
+  if (SD.exists(backupPath)) SD.remove(backupPath);
+  if (SD.exists(path) && !SD.rename(path, backupPath)) return false;
+
+  if (SD.rename(tempPath, path)) {
+    if (SD.exists(backupPath)) SD.remove(backupPath);
+    return true;
+  }
+
+  if (SD.exists(backupPath)) SD.rename(backupPath, path);
+  return false;
+}
+
+static bool decodeStoredCredential(const String& storedValue, String * plainText)
+{
+  if (plainText == NULL) return false;
+  if (SecureCredentials::isEncrypted(storedValue)) {
+    return SecureCredentials::decrypt(storedValue, plainText);
+  }
+  *plainText = storedValue;
+  return true;
 }
 
 static bool saveWifiEnabledState(bool enabled)
@@ -4683,6 +4724,22 @@ static void emailParseServerValue(String value, String * host, uint16_t * port, 
   if (host != NULL) *host = value;
 }
 
+static int emailKeyValueSeparator(const String& line)
+{
+  const int equals = line.indexOf('=');
+  const int colon = line.indexOf(':');
+  int separator = -1;
+
+  if (equals > 0) separator = equals;
+  if (colon > 0 && (separator < 0 || colon < separator)) separator = colon;
+
+  // In the legacy one-line format, ':' can occur later in a server URL or
+  // host:port value. Only accept a key/value separator before the first '|'.
+  const int pipe = line.indexOf('|');
+  if (pipe >= 0 && (separator < 0 || pipe < separator)) return -1;
+  return separator;
+}
+
 static void applyEmailLoginKeyValue(EmailLoginConfig * cfg, String key, String value)
 {
   if (cfg == NULL) return;
@@ -4697,7 +4754,12 @@ static void applyEmailLoginKeyValue(EmailLoginConfig * cfg, String key, String v
   else if (key == "from_email" || key == "sender_email" || key == "from") cfg->fromEmail = value;
   else if (key == "reply_to" || key == "replyto") cfg->replyTo = value;
   else if (key == "user" || key == "username" || key == "login") cfg->user = value;
-  else if (key == "password" || key == "pass") cfg->password = value;
+  else if (key == "password" || key == "pass") {
+    String decrypted;
+    if (decodeStoredCredential(value, &decrypted)) cfg->password = decrypted;
+    else Serial.println("[SECURITY] E-Mail-Passwort kann auf diesem Gerät nicht entschlüsselt werden.");
+    SecureCredentials::clear(&decrypted);
+  }
   else if (key == "incoming_server") {
     emailParseServerValue(value, &cfg->pop3Server, &cfg->pop3Port, &cfg->pop3Ssl, NULL);
     emailParseServerValue(value, &cfg->imapServer, &cfg->imapPort, &cfg->imapSsl, NULL);
@@ -4728,6 +4790,134 @@ static void applyEmailLoginKeyValue(EmailLoginConfig * cfg, String key, String v
   }
 }
 
+static bool migrateEmailPasswordIfNeeded()
+{
+  recoverCredentialFileIfNeeded(EMAIL_LOGIN_FILE, EMAIL_LOGIN_BACKUP);
+  if (!sd_ok || !SD.exists(EMAIL_LOGIN_FILE)) return false;
+
+  bool needsMigration = false;
+  File inspection = SD.open(EMAIL_LOGIN_FILE, FILE_READ);
+  if (!inspection) return false;
+  while (inspection.available() && !needsMigration) {
+    String line = inspection.readStringUntil('\n');
+    line.replace("\r", "");
+    line.trim();
+    if (line.length() == 0 || line.startsWith("#")) continue;
+
+    int separator = emailKeyValueSeparator(line);
+    if (separator > 0) {
+      String key = line.substring(0, separator);
+      key.trim();
+      key.toLowerCase();
+      if (key == "password" || key == "pass") {
+        String value = line.substring(separator + 1);
+        value.trim();
+        needsMigration = value.length() > 0 && !SecureCredentials::isEncrypted(value);
+        SecureCredentials::clear(&value);
+      }
+    } else {
+      int first = line.indexOf('|');
+      int second = first < 0 ? -1 : line.indexOf('|', first + 1);
+      int third = second < 0 ? -1 : line.indexOf('|', second + 1);
+      if (second >= 0 && third > second) {
+        String value = line.substring(second + 1, third);
+        value.trim();
+        needsMigration = value.length() > 0 && !SecureCredentials::isEncrypted(value);
+        SecureCredentials::clear(&value);
+      }
+    }
+  }
+  inspection.close();
+  if (!needsMigration) return true;
+
+  File source = SD.open(EMAIL_LOGIN_FILE, FILE_READ);
+  if (!source) return false;
+  if (SD.exists(EMAIL_LOGIN_TEMP)) SD.remove(EMAIL_LOGIN_TEMP);
+  File target = SD.open(EMAIL_LOGIN_TEMP, FILE_WRITE);
+  if (!target) {
+    source.close();
+    return false;
+  }
+
+  bool migrationNeeded = false;
+  bool migrationFailed = false;
+  while (source.available()) {
+    String originalLine = source.readStringUntil('\n');
+    originalLine.replace("\r", "");
+    String line = originalLine;
+    line.trim();
+
+    bool handled = false;
+    if (line.length() > 0 && !line.startsWith("#")) {
+      int separator = emailKeyValueSeparator(line);
+      if (separator > 0) {
+        String key = line.substring(0, separator);
+        key.trim();
+        key.toLowerCase();
+        if (key == "password" || key == "pass") {
+          String storedPassword = line.substring(separator + 1);
+          storedPassword.trim();
+          if (storedPassword.length() > 0 && !SecureCredentials::isEncrypted(storedPassword)) {
+            String encryptedPassword;
+            if (SecureCredentials::encrypt(storedPassword, &encryptedPassword)) {
+              int originalSeparator = emailKeyValueSeparator(originalLine);
+              target.print(originalLine.substring(0, originalSeparator + 1));
+              target.println(encryptedPassword);
+              migrationNeeded = true;
+              handled = true;
+            } else {
+              migrationFailed = true;
+            }
+            SecureCredentials::clear(&encryptedPassword);
+            SecureCredentials::clear(&storedPassword);
+          }
+        }
+      } else {
+        // Legacy one-line format: email|user|password|incoming|port|smtp|port
+        int first = line.indexOf('|');
+        int second = first < 0 ? -1 : line.indexOf('|', first + 1);
+        int third = second < 0 ? -1 : line.indexOf('|', second + 1);
+        if (second >= 0 && third > second) {
+          String storedPassword = line.substring(second + 1, third);
+          storedPassword.trim();
+          if (storedPassword.length() > 0 && !SecureCredentials::isEncrypted(storedPassword)) {
+            String encryptedPassword;
+            if (SecureCredentials::encrypt(storedPassword, &encryptedPassword)) {
+              target.print(line.substring(0, second + 1));
+              target.print(encryptedPassword);
+              target.println(line.substring(third));
+              migrationNeeded = true;
+              handled = true;
+            } else {
+              migrationFailed = true;
+            }
+            SecureCredentials::clear(&encryptedPassword);
+            SecureCredentials::clear(&storedPassword);
+          }
+        }
+      }
+    }
+
+    if (!handled) target.println(originalLine);
+  }
+
+  target.flush();
+  target.close();
+  source.close();
+
+  if (!migrationNeeded || migrationFailed) {
+    SD.remove(EMAIL_LOGIN_TEMP);
+    if (migrationFailed) Serial.println("[SECURITY] Klartext-E-Mail-Passwort konnte nicht migriert werden.");
+    return !migrationFailed;
+  }
+
+  const bool installed = installMigratedCredentialFile(EMAIL_LOGIN_FILE, EMAIL_LOGIN_TEMP, EMAIL_LOGIN_BACKUP);
+  Serial.println(installed
+    ? "[SECURITY] E-Mail-Passwort auf der SD-Karte verschlüsselt."
+    : "[SECURITY] Migration des E-Mail-Passworts konnte nicht abgeschlossen werden.");
+  return installed;
+}
+
 static bool loadEmailLoginConfig(EmailLoginConfig * cfg)
 {
   if (cfg == NULL) return false;
@@ -4751,7 +4941,12 @@ static bool loadEmailLoginConfig(EmailLoginConfig * cfg)
   cfg->smtpStartTls = false;
   cfg->allowTechnicalSender = false;
 
-  if (!sd_ok || !SD.exists(EMAIL_LOGIN_FILE)) return false;
+  if (!sd_ok) return false;
+  if (!migrateEmailPasswordIfNeeded()) {
+    Serial.println("[SECURITY] E-Mail-Konfiguration wird wegen fehlgeschlagener Passwortmigration nicht verwendet.");
+    return false;
+  }
+  if (!SD.exists(EMAIL_LOGIN_FILE)) return false;
   File f = SD.open(EMAIL_LOGIN_FILE, FILE_READ);
   if (!f) return false;
 
@@ -4761,8 +4956,7 @@ static bool loadEmailLoginConfig(EmailLoginConfig * cfg)
     String line = f.readStringUntil('\n');
     line.trim();
     if (line.length() == 0 || line.startsWith("#")) continue;
-    int sep = line.indexOf('=');
-    if (sep < 0) sep = line.indexOf(':');
+    int sep = emailKeyValueSeparator(line);
     if (sep > 0) {
       foundKeyValue = true;
       applyEmailLoginKeyValue(cfg, line.substring(0, sep), line.substring(sep + 1));
@@ -4787,7 +4981,10 @@ static bool loadEmailLoginConfig(EmailLoginConfig * cfg)
     if (count >= 6) {
       cfg->email = parts[0];
       cfg->user = parts[1];
-      cfg->password = parts[2];
+      String decrypted;
+      if (decodeStoredCredential(parts[2], &decrypted)) cfg->password = decrypted;
+      else Serial.println("[SECURITY] E-Mail-Passwort kann auf diesem Gerät nicht entschlüsselt werden.");
+      SecureCredentials::clear(&decrypted);
       emailParseServerValue(parts[3], &cfg->pop3Server, &cfg->pop3Port, &cfg->pop3Ssl, NULL);
       emailParseServerValue(parts[3], &cfg->imapServer, &cfg->imapPort, &cfg->imapSsl, NULL);
       cfg->pop3Port = parts[4].toInt();
@@ -6606,45 +6803,148 @@ extern "C" void SaveWifiConnection_Data(lv_event_t * e)
 
   if (strlen(ssid) == 0) return;
 
+  String encryptedPassword;
+  if (!SecureCredentials::encrypt(String(pass), &encryptedPassword)) {
+    Serial.println("[SECURITY] WLAN-Passwort konnte nicht verschlüsselt werden; Profil wurde nicht gespeichert.");
+    return;
+  }
+
   File f = SD.open(WIFI_FILE, FILE_APPEND);
-  if (!f) return;
+  if (!f) {
+    SecureCredentials::clear(&encryptedPassword);
+    return;
+  }
 
   f.print(ssid);
   f.print("|");
-  f.println(pass);
+  f.println(encryptedPassword);
   f.close();
+  SecureCredentials::clear(&encryptedPassword);
 
-  Serial.println("WLAN Profil hinzugefügt");
+  Serial.println("WLAN Profil verschlüsselt hinzugefügt");
 }
 
 int loadWifiProfiles(WifiProfile profiles[])
 {
   if (!sd_ok) return 0;
+  recoverCredentialFileIfNeeded(WIFI_FILE, WIFI_FILE_BACKUP);
   if (!SD.exists(WIFI_FILE)) return 0;
+
+  // Only rewrite the file when a legacy clear-text entry is actually present.
+  // This avoids an unnecessary complete SD-card write on every Wi-Fi reconnect.
+  bool needsMigration = false;
+  File inspection = SD.open(WIFI_FILE, FILE_READ);
+  if (!inspection) return 0;
+  while (inspection.available() && !needsMigration) {
+    String line = inspection.readStringUntil('\n');
+    line.replace("\r", "");
+    line.trim();
+    if (line.length() == 0) continue;
+
+    const int separator = line.indexOf('|');
+    if (separator >= 0) {
+      String storedPassword = line.substring(separator + 1);
+      storedPassword.trim();
+      needsMigration = !SecureCredentials::isEncrypted(storedPassword);
+      SecureCredentials::clear(&storedPassword);
+    }
+  }
+  inspection.close();
 
   File f = SD.open(WIFI_FILE, FILE_READ);
   if (!f) return 0;
 
+  File migratedFile;
+  bool canMigrate = false;
+  if (needsMigration) {
+    if (SD.exists(WIFI_FILE_TEMP)) SD.remove(WIFI_FILE_TEMP);
+    migratedFile = SD.open(WIFI_FILE_TEMP, FILE_WRITE);
+    canMigrate = static_cast<bool>(migratedFile);
+  }
+  bool migrationNeeded = false;
+  bool migrationFailed = false;
+
   int count = 0;
 
-  while (f.available() && count < MAX_WIFI_PROFILES) {
-    String line = f.readStringUntil('\n');
+  while (f.available()) {
+    String originalLine = f.readStringUntil('\n');
+    originalLine.replace("\r", "");
+    String line = originalLine;
     line.trim();
-    if (line.length() == 0) continue;
+    if (line.length() == 0) {
+      if (canMigrate) migratedFile.println();
+      continue;
+    }
 
     int sep = line.indexOf('|');
-    if (sep < 0) continue;
+    if (sep < 0) {
+      if (canMigrate) migratedFile.println(originalLine);
+      continue;
+    }
 
-    profiles[count].ssid = line.substring(0, sep);
-    profiles[count].pass = line.substring(sep + 1);
+    String ssid = line.substring(0, sep);
+    String storedPassword = line.substring(sep + 1);
+    ssid.trim();
+    storedPassword.trim();
 
-    profiles[count].ssid.trim();
-    profiles[count].pass.trim();
+    String plainPassword;
+    const bool passwordOk = decodeStoredCredential(storedPassword, &plainPassword);
+    String valueForSd = storedPassword;
 
-    count++;
+    if (!SecureCredentials::isEncrypted(storedPassword)) {
+      if (canMigrate && SecureCredentials::encrypt(storedPassword, &valueForSd)) {
+        migrationNeeded = true;
+      } else {
+        migrationFailed = true;
+      }
+    }
+
+    if (canMigrate) {
+      migratedFile.print(ssid);
+      migratedFile.print("|");
+      migratedFile.println(valueForSd);
+    }
+
+    if (passwordOk && count < MAX_WIFI_PROFILES) {
+      profiles[count].ssid = ssid;
+      profiles[count].pass = plainPassword;
+      count++;
+    } else if (!passwordOk) {
+      Serial.println("[SECURITY] Ein WLAN-Passwort kann auf diesem Gerät nicht entschlüsselt werden.");
+    }
+
+    SecureCredentials::clear(&plainPassword);
+    SecureCredentials::clear(&valueForSd);
+    SecureCredentials::clear(&storedPassword);
   }
 
   f.close();
+
+  if (canMigrate) {
+    migratedFile.flush();
+    migratedFile.close();
+  }
+
+  bool migrationSucceeded = !needsMigration;
+  if (needsMigration && migrationNeeded && !migrationFailed && canMigrate) {
+    migrationSucceeded = installMigratedCredentialFile(WIFI_FILE, WIFI_FILE_TEMP, WIFI_FILE_BACKUP);
+    Serial.println(migrationSucceeded
+      ? "[SECURITY] WLAN-Passwörter auf der SD-Karte verschlüsselt."
+      : "[SECURITY] Migration der WLAN-Passwörter konnte nicht abgeschlossen werden.");
+  } else if (needsMigration) {
+    if (canMigrate) SD.remove(WIFI_FILE_TEMP);
+    Serial.println("[SECURITY] Mindestens ein Klartext-WLAN-Passwort konnte nicht migriert werden.");
+  }
+
+  // Fail closed: do not use clear-text credentials when their secure rewrite
+  // could not be completed. The original file remains available for a retry.
+  if (!migrationSucceeded) {
+    for (int i = 0; i < count; ++i) {
+      SecureCredentials::clear(&profiles[i].pass);
+    }
+    count = 0;
+  }
+
   return count;
 }
 
