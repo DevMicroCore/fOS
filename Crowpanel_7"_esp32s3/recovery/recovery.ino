@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
-#include <Update.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
+#include <string.h>
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
@@ -12,9 +12,13 @@
 namespace {
 
 #define RECOVERY_SD_CS 10
-constexpr const char *kUpdatePath = "/system/update/update.bin";
-constexpr const char *kTargetLabel = "app0";
+#define RECOVERY_UPDATE_PATH "/system/update/update.bin"
+#define RECOVERY_TARGET_LABEL "app0"
 #define RECOVERY_MIN_BIN_SIZE (32U * 1024U)
+#define RECOVERY_FLASH_SECTOR_SIZE 4096U
+#define RECOVERY_IO_BUFFER_SIZE 1024U
+#define RECOVERY_VERIFY_BUFFER_SIZE 512U
+#define RECOVERY_BOOT_GUARD_SIZE 16U
 
 LGFX gfx;
 
@@ -70,6 +74,13 @@ void drawProgress(uint8_t percent) {
   gfx.printf("%3u%%", percent);
 }
 
+uint32_t readLittleEndian32(const uint8_t *data) {
+  return static_cast<uint32_t>(data[0]) |
+    (static_cast<uint32_t>(data[1]) << 8) |
+    (static_cast<uint32_t>(data[2]) << 16) |
+    (static_cast<uint32_t>(data[3]) << 24);
+}
+
 bool validateBinFile(File& bin, size_t maxPartitionSize) {
   if (!bin || bin.isDirectory()) {
     return false;
@@ -80,7 +91,7 @@ bool validateBinFile(File& bin, size_t maxPartitionSize) {
     return false;
   }
 
-  uint8_t hdr[8] = {0};
+  uint8_t hdr[24] = {0};
   if (!bin.seek(0)) {
     return false;
   }
@@ -94,58 +105,127 @@ bool validateBinFile(File& bin, size_t maxPartitionSize) {
   if (hdr[0] != 0xE9) {
     return false;
   }
-  if (hdr[1] == 0 || hdr[1] > 16) {
+  const uint8_t segmentCount = hdr[1];
+  if (segmentCount == 0 || segmentCount > 16) {
     return false;
+  }
+
+  size_t offset = sizeof(hdr);
+  uint8_t segmentHeader[8];
+  for (uint8_t segment = 0; segment < segmentCount; ++segment) {
+    if (offset > sz || sz - offset < sizeof(segmentHeader) || !bin.seek(offset)) return false;
+    if (bin.read(segmentHeader, sizeof(segmentHeader)) != sizeof(segmentHeader)) return false;
+    const uint32_t segmentLength = readLittleEndian32(segmentHeader + 4);
+    offset += sizeof(segmentHeader);
+    if (segmentLength == 0 || segmentLength > sz - offset) return false;
+    offset += segmentLength;
+  }
+
+  // ESP images end with checksum/alignment data and optionally a SHA-256 hash.
+  const size_t trailerLength = sz - offset;
+  if (trailerLength == 0 || trailerLength > 64U) return false;
+  return bin.seek(0);
+}
+
+bool verifyPartitionAgainstFile(
+  File& source,
+  const esp_partition_t *partition,
+  size_t imageSize) {
+  if (!source.seek(0)) return false;
+  uint8_t sourceBuffer[RECOVERY_VERIFY_BUFFER_SIZE];
+  uint8_t flashBuffer[RECOVERY_VERIFY_BUFFER_SIZE];
+  size_t offset = 0;
+  while (offset < imageSize) {
+    size_t chunk = imageSize - offset;
+    if (chunk > sizeof(sourceBuffer)) chunk = sizeof(sourceBuffer);
+    if (source.read(sourceBuffer, chunk) != chunk) return false;
+    const esp_err_t readResult = esp_partition_read(partition, offset, flashBuffer, chunk);
+    if (readResult != ESP_OK) {
+      Serial.printf("[RECOVERY] Partition read failed at 0x%08x: %d\n",
+        static_cast<unsigned int>(offset), static_cast<int>(readResult));
+      return false;
+    }
+    if (memcmp(sourceBuffer, flashBuffer, chunk) != 0) {
+      Serial.printf("[RECOVERY] Verify mismatch at 0x%08x\n",
+        static_cast<unsigned int>(offset));
+      return false;
+    }
+    offset += chunk;
+    if ((offset & 0xFFFFU) == 0U) delay(1);
   }
   return true;
 }
 
-class ProgressFileStream : public Stream {
-public:
-  ProgressFileStream(File& file, size_t totalSize)
-  : _file(file), _total(totalSize), _done(0), _lastProgress(0), _lastBucket(255) {}
-
-  int available() override { return _file.available(); }
-  int read() override {
-    int c = _file.read();
-    if (c >= 0) {
-      advance(1);
-    }
-    return c;
-  }
-  int peek() override { return _file.peek(); }
-  void flush() override { _file.flush(); }
-  size_t write(uint8_t) override { return 0; }
-
-  size_t readBytes(char *buffer, size_t length) {
-    const size_t n = _file.read(reinterpret_cast<uint8_t *>(buffer), length);
-    if (n > 0) {
-      advance(n);
-    }
-    return n;
+bool writePartitionFromFile(
+  File& source,
+  const esp_partition_t *partition,
+  size_t imageSize) {
+  if (partition == nullptr || imageSize < RECOVERY_BOOT_GUARD_SIZE) return false;
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  if (running != nullptr && running->address == partition->address) {
+    Serial.println("[RECOVERY] Refusing to overwrite the running partition");
+    return false;
   }
 
-private:
-  File& _file;
-  size_t _total;
-  size_t _done;
-  uint8_t _lastProgress;
-  uint8_t _lastBucket;
+  const size_t eraseSize = (imageSize + RECOVERY_FLASH_SECTOR_SIZE - 1U) &
+    ~(static_cast<size_t>(RECOVERY_FLASH_SECTOR_SIZE) - 1U);
+  if (eraseSize > partition->size) return false;
 
-  void advance(size_t chunk) {
-    _done += chunk;
-    if (_total == 0) {
-      return;
-    }
-    const uint8_t p = static_cast<uint8_t>((100ULL * _done) / _total);
-    const uint8_t bucket = static_cast<uint8_t>(p / 5);  // Draw only every 5%
-    if (p == 100 || bucket != _lastBucket) {
-      _lastBucket = bucket;
-      _lastProgress = p;
-      drawProgress(p);
-    }
+  drawStatus("Erase app0...");
+  const esp_err_t eraseResult = esp_partition_erase_range(partition, 0, eraseSize);
+  if (eraseResult != ESP_OK) {
+    Serial.printf("[RECOVERY] Partition erase failed: %d\n", static_cast<int>(eraseResult));
+    return false;
   }
-};
+
+  uint8_t bootGuard[RECOVERY_BOOT_GUARD_SIZE];
+  if (!source.seek(0) || source.read(bootGuard, sizeof(bootGuard)) != sizeof(bootGuard)) return false;
+  if (!source.seek(RECOVERY_BOOT_GUARD_SIZE)) return false;
+
+  drawStatus("Write app0...");
+  drawProgress(0);
+  uint8_t buffer[RECOVERY_IO_BUFFER_SIZE];
+  size_t offset = RECOVERY_BOOT_GUARD_SIZE;
+  while (offset < imageSize) {
+    size_t chunk = imageSize - offset;
+    if (chunk > sizeof(buffer)) chunk = sizeof(buffer);
+    if (source.read(buffer, chunk) != chunk) {
+      Serial.printf("[RECOVERY] SD read failed at 0x%08x\n", static_cast<unsigned int>(offset));
+      return false;
+    }
+    const esp_err_t writeResult = esp_partition_write(partition, offset, buffer, chunk);
+    if (writeResult != ESP_OK) {
+      Serial.printf("[RECOVERY] Partition write failed at 0x%08x: %d\n",
+        static_cast<unsigned int>(offset), static_cast<int>(writeResult));
+      return false;
+    }
+    offset += chunk;
+    drawProgress(static_cast<uint8_t>((100ULL * offset) / imageSize));
+    if ((offset & 0xFFFFU) == 0U) delay(1);
+  }
+
+  // Write the image header last. An interrupted update therefore never leaves
+  // a partially written image marked as bootable.
+  const esp_err_t headerResult = esp_partition_write(partition, 0, bootGuard, sizeof(bootGuard));
+  if (headerResult != ESP_OK) {
+    Serial.printf("[RECOVERY] Header write failed: %d\n", static_cast<int>(headerResult));
+    return false;
+  }
+
+  drawStatus("Verify app0...");
+  return verifyPartitionAgainstFile(source, partition, imageSize);
+}
+
+void invalidatePartitionHeader(const esp_partition_t *partition) {
+  if (partition == nullptr) return;
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  if (running != nullptr && running->address == partition->address) return;
+  const esp_err_t result = esp_partition_erase_range(
+    partition, 0, RECOVERY_FLASH_SECTOR_SIZE);
+  if (result != ESP_OK) {
+    Serial.printf("[RECOVERY] Could not invalidate app0 header: %d\n", static_cast<int>(result));
+  }
+}
 
 bool flashApp0FromSd() {
   drawStatus("Initialize SD...");
@@ -155,7 +235,7 @@ bool flashApp0FromSd() {
   }
 
   drawStatus("Check update file...");
-  if (!SD.exists(kUpdatePath)) {
+  if (!SD.exists(RECOVERY_UPDATE_PATH)) {
     drawStatus("Missing /update.bin");
     return false;
   }
@@ -163,14 +243,14 @@ bool flashApp0FromSd() {
   const esp_partition_t *app0 = esp_partition_find_first(
     ESP_PARTITION_TYPE_APP,
     ESP_PARTITION_SUBTYPE_ANY,
-    kTargetLabel
+    RECOVERY_TARGET_LABEL
   );
   if (app0 == nullptr) {
     drawStatus("Partition app0 not found");
     return false;
   }
 
-  File updateBin = SD.open(kUpdatePath, FILE_READ);
+  File updateBin = SD.open(RECOVERY_UPDATE_PATH, FILE_READ);
   if (!updateBin) {
     drawStatus("Cannot open /update.bin");
     return false;
@@ -183,22 +263,19 @@ bool flashApp0FromSd() {
     return false;
   }
 
-  drawStatus("Flash app0...");
-  drawProgress(0);
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  Serial.printf("[RECOVERY] Running=%s, target=%s, offset=0x%08x, capacity=%u, image=%u\n",
+    running != nullptr ? running->label : "unknown",
+    app0->label,
+    static_cast<unsigned int>(app0->address),
+    static_cast<unsigned int>(app0->size),
+    static_cast<unsigned int>(imageSize));
 
-  if (!Update.begin(imageSize, U_FLASH, -1, LOW, kTargetLabel)) {
-    updateBin.close();
-    drawStatus("Update.begin failed");
-    return false;
-  }
-
-  ProgressFileStream stream(updateBin, imageSize);
-  const size_t written = Update.writeStream(stream);
-  const bool endOk = Update.end(true);
+  const bool flashed = writePartitionFromFile(updateBin, app0, imageSize);
   updateBin.close();
 
-  if (written != imageSize || !endOk) {
-    Update.abort();
+  if (!flashed) {
+    invalidatePartitionHeader(app0);
     drawStatus("Flash failed");
     return false;
   }
@@ -213,6 +290,7 @@ bool flashApp0FromSd() {
 
   const esp_err_t setErr = esp_ota_set_boot_partition(app0);
   if (setErr != ESP_OK) {
+    invalidatePartitionHeader(app0);
     drawStatus("Set boot app0 failed");
     Serial.printf("[RECOVERY] esp_ota_set_boot_partition err=%d\n", static_cast<int>(setErr));
     return false;
@@ -242,14 +320,12 @@ void setup() {
   drawStatus("Recovery start...");
 
   if (!flashApp0FromSd()) {
-    drawStatus("Recovery idle (retry in 5s)");
+    drawStatus("Recovery idle - restart to retry");
   }
 }
 
 void loop() {
-  delay(5000);
-  drawStatus("Retry update...");
-  if (!flashApp0FromSd()) {
-    drawStatus("Recovery idle (retry in 5s)");
-  }
+  // Do not repeatedly erase and rewrite flash after a deterministic failure.
+  // A manual restart performs one new, fully validated attempt.
+  delay(1000);
 }
