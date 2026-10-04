@@ -1,0 +1,12 @@
+{
+  "id": "devmicro.fscript-weather",
+  "name": "Weather",
+  "version": "2.0.0",
+  "min_fos": "4.0.0",
+  "type": "ui",
+  "icon": "WEATHER",
+  "layout": "layout.ui",
+  "executable": "main.fapp",
+  "scrollable": false,
+  "permissions": ["ui", "network"]
+}

@@ -11,10 +11,10 @@
 
 namespace {
 
-constexpr int kSdCs = 10;
+#define RECOVERY_SD_CS 10
 constexpr const char *kUpdatePath = "/system/update/update.bin";
 constexpr const char *kTargetLabel = "app0";
-constexpr size_t kMinBinSize = 32 * 1024;
+#define RECOVERY_MIN_BIN_SIZE (32U * 1024U)
 
 LGFX gfx;
 
@@ -76,7 +76,7 @@ bool validateBinFile(File& bin, size_t maxPartitionSize) {
   }
 
   const size_t sz = static_cast<size_t>(bin.size());
-  if (sz < kMinBinSize || sz > maxPartitionSize) {
+  if (sz < RECOVERY_MIN_BIN_SIZE || sz > maxPartitionSize) {
     return false;
   }
 
@@ -149,7 +149,7 @@ private:
 
 bool flashApp0FromSd() {
   drawStatus("Initialize SD...");
-  if (!SD.begin(kSdCs)) {
+  if (!SD.begin(RECOVERY_SD_CS)) {
     drawStatus("SD init failed");
     return false;
   }

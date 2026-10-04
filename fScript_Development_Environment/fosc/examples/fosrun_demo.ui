@@ -1,0 +1,2 @@
+type=label;id=lbl_status;x=20;y=20;w=420;h=50;text=Ready
+type=button;id=btn_add;x=20;y=90;w=180;h=60;text=Add

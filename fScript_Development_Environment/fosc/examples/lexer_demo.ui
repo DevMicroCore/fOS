@@ -1,0 +1,2 @@
+type=button;id=btn_ok;x=30;y=40;w=180;h=55;text=Start;bg=theme;fg=contrast
+type=label;id=lbl_status;x=30;y=115;w=300;h=50;text=Bereit;fg=0xFFFFFF

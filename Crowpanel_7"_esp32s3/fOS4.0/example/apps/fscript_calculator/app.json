@@ -1,0 +1,12 @@
+{
+  "id": "devmicro.fscript-calculator",
+  "name": "Calculator fScript",
+  "version": "1.0.0",
+  "min_fos": "4.0.0",
+  "type": "ui",
+  "icon": "123",
+  "layout": "layout.ui",
+  "executable": "main.fapp",
+  "scrollable": false,
+  "permissions": ["ui"]
+}

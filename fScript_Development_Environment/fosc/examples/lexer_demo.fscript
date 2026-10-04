@@ -1,0 +1,17 @@
+-- fScript lexer demonstration
+var counter = 0
+var name = "Max"
+var scale = 1.5
+
+function add(a, b)
+    return a + b
+end
+
+on btn_ok.click
+    counter = add(counter, 1)
+    if counter > 5 then
+        lbl_status.text = "Hallo " + name
+    else
+        lbl_status.text = "Noch nicht bereit"
+    end
+end

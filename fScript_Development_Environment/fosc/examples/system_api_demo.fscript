@@ -1,0 +1,17 @@
+var online = wifi_status()
+var previous = file_read("state.txt")
+var saved = file_write("state.txt", "last state: " + previous)
+var timer_started = timer.start(5000)
+
+Serial.printf("Wi-Fi connected: " + online + "\n")
+Serial.printf("State saved: " + saved + "\n")
+
+on app.timer
+  Serial.printf("app.timer\n")
+end
+
+// Requires an existing sound.mp3 and the audio permission:
+// audio_play("sound.mp3")
+
+// Requires the system.restart permission:
+// system.restart()

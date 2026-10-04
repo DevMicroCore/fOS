@@ -1,0 +1,10 @@
+var count = 0
+
+on app.start
+  lbl_status.text = "Ready"
+end
+
+on btn_add.click
+  count = count + 1
+  lbl_status.text = "Count: " + count
+end

@@ -1,0 +1,17 @@
+var total = 0
+
+for var i = 1 to 5 then
+  if i == 2 then
+    continue
+  elseif i == 4 then
+    break
+  else
+    total = total + i
+  end
+end
+
+while total < 6 then
+  total = total + 1
+end
+
+lbl_status.text = "Total: " + total

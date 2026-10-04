@@ -1,0 +1,4 @@
+type=canvas;id=drawing;x=18;y=18;w=650;h=430;bg=0xFFFFFF;clickable=true;scrollable=false
+type=button;id=btn_clear;x=685;y=28;w=100;h=58;text=Leeren;bg=theme;fg=0xFFFFFF
+type=label;id=lbl_position;x=680;y=112;w=112;h=80;text=x: 0\ny: 0;fg=0xFFFFFF
+type=label;id=lbl_help;x=680;y=215;w=112;h=120;text=Finger auf die weisse Flaeche setzen und ziehen.;fg=0xFFFFFF

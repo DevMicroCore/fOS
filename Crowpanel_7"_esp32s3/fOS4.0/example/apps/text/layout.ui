@@ -1,0 +1,23 @@
+# fScript version of the built-in fOS text editor.
+type=panel;x=0;y=0;w=800;h=480;bg=0x000000;border=0;radius=0;clickable=false;scrollable=false
+
+type=button;id=btn_new;x=66;y=5;w=200;h=50;text=Open New File;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+type=button;id=btn_save_as;x=276;y=5;w=200;h=50;text=Save as . . .;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+type=button;id=btn_open;x=486;y=5;w=200;h=50;text=Open file;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+
+type=label;id=lbl_status;x=15;y=58;w=770;h=22;text=Bereit;fg=0xFFFFFF;font=20;align=left
+type=textarea;id=txt_editor;x=13;y=82;w=774;h=190;text=;placeholder=You can enter your text here ...;bg=0xFFFFFF;fg=0x000000;font=20
+type=keyboard;id=keyboard_editor;x=3;y=278;w=793;h=197;target=txt_editor;font=20
+
+# Save dialog and its separate keyboard.
+type=panel;id=panel_save;x=100;y=72;w=600;h=150;bg=0xFAFAFA;border=0;radius=12;clickable=false;scrollable=false;hidden=true
+type=textarea;id=txt_filename;parent=panel_save;x=12;y=10;w=576;h=52;text=;placeholder=folder/file.txt;one_line=true;max_length=120;bg=0xFFFFFF;fg=0x000000;font=20
+type=button;id=btn_save_confirm;parent=panel_save;x=62;y=84;w=160;h=50;text=Save;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+type=button;id=btn_save_cancel;parent=panel_save;x=234;y=84;w=160;h=50;text=Cancel;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+type=keyboard;id=keyboard_filename;x=3;y=278;w=793;h=197;target=txt_filename;font=20;hidden=true
+
+# File selection dialog.
+type=panel;id=panel_open;x=100;y=23;w=600;h=350;bg=0xFAFAFA;border=0;radius=12;clickable=false;scrollable=false;hidden=true
+type=roller;id=roller_files;parent=panel_open;x=12;y=10;w=576;h=266;text=Keine Dateien;bg=0xFFFFFF;fg=0x000000;font=20;radius=5;border=0
+type=button;id=btn_open_confirm;parent=panel_open;x=62;y=288;w=160;h=50;text=Select;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+type=button;id=btn_open_cancel;parent=panel_open;x=234;y=288;w=160;h=50;text=Cancel;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false

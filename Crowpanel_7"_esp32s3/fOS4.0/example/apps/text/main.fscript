@@ -1,0 +1,133 @@
+-- fScript text editor for fOS 4.0.
+-- Files are stored below the app's files/ directory.
+
+var current_dir = "files"
+var current_file = ""
+
+function refresh_files()
+  var listing = file_list(current_dir)
+  if listing == "" then
+    listing = "Keine Dateien"
+  end
+  if current_dir != "files" then
+    listing = "..\n" + listing
+  end
+  roller_files.text = listing
+  roller_files.value = 0
+end
+
+function close_save_dialog()
+  keyboard_filename.hidden = true
+  panel_save.hidden = true
+end
+
+function save_current_file()
+  var name = txt_filename.text
+  if name == "" then
+    lbl_status.text = "Bitte einen Dateinamen eingeben"
+    return
+  end
+
+  var length = string_length(name)
+  if length < 4 or string_slice(name, length - 4, 4) != ".txt" then
+    name = name + ".txt"
+  end
+
+  var path = "files/" + name
+  var saved = txt_editor.save_file(path)
+  if saved then
+    current_file = path
+    txt_filename.text = name
+    lbl_status.text = "Gespeichert: " + name
+    close_save_dialog()
+    refresh_files()
+  else
+    lbl_status.text = "Speichern fehlgeschlagen"
+  end
+end
+
+function open_selected_file()
+  var selected = roller_files.text
+  if selected == "" or selected == "Keine Dateien" then
+    lbl_status.text = "Keine Datei ausgewaehlt"
+    return
+  end
+
+  if selected == ".." then
+    var slash = string_last_index(current_dir, "/")
+    if slash >= 0 then
+      current_dir = string_slice(current_dir, 0, slash)
+    else
+      current_dir = "files"
+    end
+    refresh_files()
+    lbl_status.text = current_dir
+    return
+  end
+
+  var selected_length = string_length(selected)
+  if selected_length > 0 and string_slice(selected, selected_length - 1, 1) == "/" then
+    current_dir = current_dir + "/" + string_slice(selected, 0, selected_length - 1)
+    refresh_files()
+    lbl_status.text = current_dir
+    return
+  end
+
+  var path = current_dir + "/" + selected
+  var loaded = txt_editor.load_file(path)
+  if loaded then
+    current_file = path
+    txt_filename.text = string_slice(path, 6, string_length(path) - 6)
+    lbl_status.text = "Geoeffnet: " + selected
+    panel_open.hidden = true
+  else
+    lbl_status.text = "Datei konnte nicht geoeffnet werden"
+  end
+end
+
+on app.start
+  refresh_files()
+  lbl_status.text = "Bereit"
+end
+
+on btn_new.click
+  txt_editor.clear()
+  txt_filename.clear()
+  current_file = ""
+  lbl_status.text = "Neue Datei"
+end
+
+on btn_save_as.click
+  panel_save.hidden = false
+  keyboard_filename.hidden = false
+  txt_filename.focus()
+end
+
+on btn_save_confirm.click
+  save_current_file()
+end
+
+on btn_save_cancel.click
+  close_save_dialog()
+end
+
+on keyboard_filename.ready
+  save_current_file()
+end
+
+on keyboard_filename.cancel
+  close_save_dialog()
+end
+
+on btn_open.click
+  refresh_files()
+  panel_open.hidden = false
+end
+
+on btn_open_confirm.click
+  open_selected_file()
+end
+
+on btn_open_cancel.click
+  panel_open.hidden = true
+end

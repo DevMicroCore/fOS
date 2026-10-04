@@ -1,0 +1,232 @@
+var expression = ""
+var showing_error = false
+var decimal_used = false
+var result_text = ""
+var last_char = ""
+var comma_index = -1
+var operator_index = -1
+
+function show_display()
+    if showing_error then
+        txt_display.text = "Math Error"
+    else
+        if expression == "" then
+            txt_display.text = "0"
+        else
+            txt_display.text = expression
+        end
+    end
+end
+
+function clear_all()
+    expression = ""
+    showing_error = false
+    decimal_used = false
+    show_display()
+end
+
+function is_operator(value)
+    if value == "+" then
+        return true
+    else
+        if value == "-" then
+            return true
+        else
+            if value == "*" then
+                return true
+            else
+                if value == "/" then
+                    return true
+                else
+                    return false
+                end
+            end
+        end
+    end
+end
+
+function reset_after_error()
+    if showing_error then
+        expression = ""
+        showing_error = false
+        decimal_used = false
+    end
+end
+
+function set_max_operator_index(candidate)
+    if candidate > operator_index then
+        operator_index = candidate
+    end
+end
+
+function update_decimal_state()
+    comma_index = string_last_index(expression, ",")
+    operator_index = string_last_index(expression, "+")
+    set_max_operator_index(string_last_index(expression, "-"))
+    set_max_operator_index(string_last_index(expression, "*"))
+    set_max_operator_index(string_last_index(expression, "/"))
+    decimal_used = comma_index > operator_index
+end
+
+function append_digit(digit)
+    reset_after_error()
+    expression = expression + digit
+    show_display()
+end
+
+function append_comma()
+    reset_after_error()
+    update_decimal_state()
+    if decimal_used == false then
+        if expression == "" then
+            expression = "0,"
+        else
+            last_char = string_slice(expression, string_length(expression) - 1, 1)
+            if is_operator(last_char) then
+                expression = expression + "0,"
+            else
+                expression = expression + ","
+            end
+        end
+        decimal_used = true
+    end
+    show_display()
+end
+
+function append_operator(operator)
+    reset_after_error()
+    if expression == "" then
+        if operator == "-" then
+            expression = "-"
+        end
+        show_display()
+        return
+    end
+    last_char = string_slice(expression, string_length(expression) - 1, 1)
+    if is_operator(last_char) then
+        expression = string_slice(expression, 0, string_length(expression) - 1) + operator
+    else
+        expression = expression + operator
+    end
+    decimal_used = false
+    show_display()
+end
+
+function backspace()
+    if showing_error then
+        clear_all()
+        return
+    end
+    if string_length(expression) > 0 then
+        expression = string_slice(expression, 0, string_length(expression) - 1)
+        update_decimal_state()
+    end
+    show_display()
+end
+
+function calculate()
+    reset_after_error()
+    if expression == "" then
+        show_display()
+        return
+    end
+    last_char = string_slice(expression, string_length(expression) - 1, 1)
+    if is_operator(last_char) then
+        expression = "0"
+        decimal_used = false
+        show_display()
+        return
+    end
+    if last_char == "," then
+        expression = "0"
+        decimal_used = false
+        show_display()
+        return
+    end
+    result_text = math_eval(expression)
+    if result_text == "Math Error" then
+        expression = ""
+        showing_error = true
+        decimal_used = false
+    else
+        expression = result_text
+        update_decimal_state()
+    end
+    show_display()
+end
+
+on app.start
+    clear_all()
+end
+
+on btn_clear.click
+    clear_all()
+end
+
+on btn_back.click
+    backspace()
+end
+
+on btn_divide.click
+    append_operator("/")
+end
+
+on btn_multiply.click
+    append_operator("*")
+end
+
+on btn_minus.click
+    append_operator("-")
+end
+
+on btn_plus.click
+    append_operator("+")
+end
+
+on btn_equals.click
+    calculate()
+end
+
+on btn_comma.click
+    append_comma()
+end
+
+on btn_0.click
+    append_digit("0")
+end
+
+on btn_1.click
+    append_digit("1")
+end
+
+on btn_2.click
+    append_digit("2")
+end
+
+on btn_3.click
+    append_digit("3")
+end
+
+on btn_4.click
+    append_digit("4")
+end
+
+on btn_5.click
+    append_digit("5")
+end
+
+on btn_6.click
+    append_digit("6")
+end
+
+on btn_7.click
+    append_digit("7")
+end
+
+on btn_8.click
+    append_digit("8")
+end
+
+on btn_9.click
+    append_digit("9")
+end

@@ -1,0 +1,3 @@
+SomaFM Groove Salad|http://ice1.somafm.com/groovesalad-128-mp3
+SomaFM Drone Zone|http://ice1.somafm.com/dronezone-128-mp3
+ByteFM|https://stream.byte.fm/stream/bytefm_www
