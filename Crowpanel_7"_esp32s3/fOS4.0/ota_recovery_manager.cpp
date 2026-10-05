@@ -17,6 +17,7 @@
 #include <freertos/task.h>
 
 #include "ui_Update.h"
+#include "src/core/DefaultOtaIndexes.h"
 
 namespace {
 
@@ -25,11 +26,13 @@ namespace {
 #define OTA_MAX_RECOVERY_FILES 16U
 #define OTA_MAX_BOOT_ATTEMPTS 3U
 #define OTA_VALIDATION_DELAY_MS 30000UL
-#define OTA_LIST_RETRY_MS 15000UL
+#define OTA_LIST_RETRY_MS (15UL * 60UL * 1000UL)
 #define OTA_WIFI_STABLE_BEFORE_TLS_MS 3000UL
 #define OTA_HTTP_CONNECT_TIMEOUT_MS 15000U
 #define OTA_HTTP_READ_TIMEOUT_MS 30000U
 #define OTA_HTTP_RETRIES 3U
+#define OTA_LIST_TASK_STACK 8192U
+#define OTA_INSTALL_TASK_STACK 8192U
 #define OTA_SD_WRITE_RETRIES 4U
 #define OTA_SD_RESERVE_BYTES (64UL * 1024UL)
 #define OTA_MIN_APP_BIN_SIZE (32U * 1024U)
@@ -41,10 +44,14 @@ namespace {
 #define OTA_PREFS_NAMESPACE "ota_state"
 #define OTA_KEY_PENDING "pending_update"
 #define OTA_KEY_BOOT_COUNTER "boot_attempt_counter"
-#define OTA_API_LIST "https://api.github.com/repos/DevMicroCore/fOS/contents/Crowpanel_7%22_esp32s3/ota"
-#define OTA_API_RECOVERY_LIST "https://api.github.com/repos/DevMicroCore/fOS/contents/Crowpanel_7%22_esp32s3/update"
-#define OTA_RAW_BASE "https://raw.githubusercontent.com/DevMicroCore/fOS/main/Crowpanel_7%22_esp32s3/ota/"
-#define OTA_RAW_RECOVERY_BASE "https://raw.githubusercontent.com/DevMicroCore/fOS/main/Crowpanel_7%22_esp32s3/update/"
+#define OTA_INDEX_HEADER "FOS_OTA_INDEX_V1"
+#define OTA_RAW_LIST "https://raw.githubusercontent.com/DevMicroCore/fOS/main/Crowpanel_7%22_esp32s3/ota/fos-ota.index"
+#define OTA_RAW_RECOVERY_LIST "https://raw.githubusercontent.com/DevMicroCore/fOS/main/Crowpanel_7%22_esp32s3/update/fos-recovery.index"
+#define OTA_RAW_FILE_BASE "https://raw.githubusercontent.com/DevMicroCore/fOS/main/Crowpanel_7%22_esp32s3/ota/"
+#define OTA_RAW_RECOVERY_FILE_BASE "https://raw.githubusercontent.com/DevMicroCore/fOS/main/Crowpanel_7%22_esp32s3/update/"
+#define OTA_API_FILE_BASE "https://api.github.com/repos/DevMicroCore/fOS/contents/Crowpanel_7%22_esp32s3/ota/"
+#define OTA_API_RECOVERY_FILE_BASE "https://api.github.com/repos/DevMicroCore/fOS/contents/Crowpanel_7%22_esp32s3/update/"
+#define OTA_API_REF "?ref=main"
 #define OTA_UPDATE_DIR "/system/update"
 #define OTA_SD_UPDATE_FILE "/system/update/update.bin"
 #define OTA_SD_RECOVERY_FILE "/system/update/recovery.bin"
@@ -58,7 +65,6 @@ static const char * const kRecoveryFallbackNames[] = {
 
 struct GithubFileEntry {
   String name;
-  String downloadUrl;
   uint32_t size;
 };
 
@@ -73,7 +79,6 @@ volatile bool gWifiBusy = false;
 uint8_t gOtaCount = 0;
 GithubFileEntry gOtaFiles[OTA_MAX_FILES];
 lv_obj_t *gBoundDropdown = nullptr;
-TaskHandle_t gListTaskHandle = nullptr;
 volatile bool gListTaskRunning = false;
 volatile bool gListRequested = false;
 volatile bool gListDone = false;
@@ -81,7 +86,6 @@ volatile bool gListSuccess = false;
 uint8_t gListCount = 0;
 GithubFileEntry gListFiles[OTA_MAX_FILES];
 
-TaskHandle_t gInstallTaskHandle = nullptr;
 volatile bool gInstallTaskRunning = false;
 volatile bool gInstallRequested = false;
 volatile bool gInstallDone = false;
@@ -126,6 +130,41 @@ bool hasBinExtension(const String& name) {
   return low.endsWith(".bin");
 }
 
+String githubContentsFileUrl(const char *baseUrl, const String& filename) {
+  static const char hex[] = "0123456789ABCDEF";
+  String url = baseUrl;
+  url.reserve(url.length() + filename.length() + strlen(OTA_API_REF) + 8U);
+  for (size_t i = 0; i < filename.length(); ++i) {
+    const uint8_t value = static_cast<uint8_t>(filename[i]);
+    if (isalnum(value) || value == '-' || value == '_' || value == '.' || value == '~') {
+      url += static_cast<char>(value);
+    } else {
+      url += '%';
+      url += hex[value >> 4];
+      url += hex[value & 0x0F];
+    }
+  }
+  url += OTA_API_REF;
+  return url;
+}
+
+String githubRawFileUrl(const char *baseUrl, const String& filename) {
+  static const char hex[] = "0123456789ABCDEF";
+  String url = baseUrl;
+  url.reserve(url.length() + filename.length() + 8U);
+  for (size_t i = 0; i < filename.length(); ++i) {
+    const uint8_t value = static_cast<uint8_t>(filename[i]);
+    if (isalnum(value) || value == '-' || value == '_' || value == '.' || value == '~') {
+      url += static_cast<char>(value);
+    } else {
+      url += '%';
+      url += hex[value >> 4];
+      url += hex[value & 0x0F];
+    }
+  }
+  return url;
+}
+
 void postProgress(uint8_t value) {
   if (value > 100) {
     value = 100;
@@ -150,145 +189,81 @@ void flushProgressToUi() {
   gProgressDirty = false;
 }
 
-bool fetchGithubListing(const char *apiUrl, GithubFileEntry *entries, uint8_t maxEntries, uint8_t *outCount) {
-  if (outCount == nullptr) {
+bool fetchIndexedListing(
+  const char *indexUrl,
+  const char *fallbackIndex,
+  GithubFileEntry *entries,
+  uint8_t maxEntries,
+  uint8_t *outCount) {
+  if (indexUrl == nullptr || fallbackIndex == nullptr || entries == nullptr || outCount == nullptr) {
     return false;
   }
   *outCount = 0;
 
   String body;
-  bool ok = false;
-  for (uint8_t attempt = 1; attempt <= OTA_HTTP_RETRIES; ++attempt) {
-    if (WiFi.status() != WL_CONNECTED) {
-      logLine("GitHub API deferred: WiFi disconnected");
-      break;
-    }
-
+  bool onlineIndexLoaded = false;
+  for (uint8_t attempt = 1; attempt <= 2; ++attempt) {
+    if (WiFi.status() != WL_CONNECTED) break;
     const size_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     const size_t largestInternal = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     logLine(
-      "TLS heap before try " + String(attempt) + ": free=" +
+      "Index TLS heap before try " + String(attempt) + ": free=" +
       String(freeInternal) + ", largest=" + String(largestInternal));
-    if (freeInternal < OTA_MIN_TLS_FREE_INTERNAL_HEAP || largestInternal < OTA_MIN_TLS_LARGEST_BLOCK) {
-      logLine("GitHub API deferred: insufficient internal TLS heap");
-      break;
-    }
+    if (freeInternal < OTA_MIN_TLS_FREE_INTERNAL_HEAP ||
+        largestInternal < OTA_MIN_TLS_LARGEST_BLOCK) break;
+
     WiFiClientSecure client;
     client.setInsecure();
-
+    client.setHandshakeTimeout(20);
     HTTPClient http;
     http.setConnectTimeout(OTA_HTTP_CONNECT_TIMEOUT_MS);
     http.setTimeout(OTA_HTTP_READ_TIMEOUT_MS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.useHTTP10(true);
-
-    if (!http.begin(client, apiUrl)) {
-      logLine("HTTP begin failed for API listing (try " + String(attempt) + ")");
+    if (!http.begin(client, indexUrl)) {
+      logLine("HTTP begin failed for OTA index (try " + String(attempt) + ")");
       delay(120);
       continue;
     }
-
     http.addHeader("User-Agent", "fOS/4.0.0 OTA");
-    http.addHeader("Accept", "application/vnd.github+json");
     http.addHeader("Connection", "close");
-
     const int code = http.GET();
     if (code == HTTP_CODE_OK) {
       body = http.getString();
-      http.end();
-      if (!body.isEmpty() && body.length() <= OTA_MAX_API_PAYLOAD) {
-        ok = true;
-        break;
-      }
-      logLine("API payload empty/large (try " + String(attempt) + ")");
+      if (!body.isEmpty() && body.length() <= OTA_MAX_API_PAYLOAD &&
+          body.startsWith(OTA_INDEX_HEADER)) onlineIndexLoaded = true;
     } else {
-      logLine(
-        "GitHub API HTTP error: " + String(code) + " (" +
-        HTTPClient::errorToString(code) + ", try " + String(attempt) + ")");
+      logLine("OTA index HTTP error: " + String(code) + " (try " + String(attempt) + ")");
     }
     http.end();
+    if (onlineIndexLoaded) break;
+    if (code > 0 && code < 500 && code != 408) break;
     delay(150);
   }
 
-  if (!ok) {
-    return false;
+  if (!onlineIndexLoaded) {
+    body = fallbackIndex;
+    logLine("Online OTA index unavailable; using built-in index");
   }
 
-  const String nameMarker = "\"name\":\"";
-  const String dlMarker = "\"download_url\":\"";
-  const String typeMarker = "\"type\":\"";
-  const String sizeMarker = "\"size\":";
-
-  size_t scanPos = 0;
   uint8_t count = 0;
-  while (count < maxEntries) {
-    const int namePos = body.indexOf(nameMarker, static_cast<int>(scanPos));
-    if (namePos < 0) {
-      break;
-    }
-    const int nameStart = namePos + nameMarker.length();
-    const int nameEnd = body.indexOf('"', nameStart);
-    if (nameEnd < 0) {
-      break;
-    }
-    const String nameValue = body.substring(nameStart, nameEnd);
-
-    const int nextNamePos = body.indexOf(nameMarker, nameEnd + 1);
-    const int windowEnd = nextNamePos >= 0 ? nextNamePos : body.length();
-
-    const int dlPos = body.indexOf(dlMarker, nameEnd);
-    if (dlPos < 0 || dlPos >= windowEnd) {
-      scanPos = static_cast<size_t>(nameEnd + 1);
-      continue;
-    }
-    const int dlStart = dlPos + dlMarker.length();
-    const int dlEnd = body.indexOf('"', dlStart);
-    if (dlEnd < 0 || dlEnd > windowEnd) {
-      scanPos = static_cast<size_t>(nameEnd + 1);
-      continue;
-    }
-    const String dlValue = body.substring(dlStart, dlEnd);
-
-    const int typePos = body.indexOf(typeMarker, dlEnd);
-    if (typePos < 0 || typePos >= windowEnd) {
-      scanPos = static_cast<size_t>(nameEnd + 1);
-      continue;
-    }
-    const int typeStart = typePos + typeMarker.length();
-    const int typeEnd = body.indexOf('"', typeStart);
-    if (typeEnd < 0 || typeEnd > windowEnd) {
-      scanPos = static_cast<size_t>(nameEnd + 1);
-      continue;
-    }
-    const String typeValue = body.substring(typeStart, typeEnd);
-
-    uint32_t sizeValue = 0;
-    const int sizePos = body.indexOf(sizeMarker, nameEnd);
-    if (sizePos >= 0 && sizePos < windowEnd) {
-      int numberStart = sizePos + sizeMarker.length();
-      while (numberStart < windowEnd && body[numberStart] == ' ') {
-        ++numberStart;
-      }
-      int numberEnd = numberStart;
-      while (numberEnd < windowEnd && isdigit(static_cast<unsigned char>(body[numberEnd]))) {
-        ++numberEnd;
-      }
-      if (numberEnd > numberStart) {
-        sizeValue = static_cast<uint32_t>(strtoul(body.substring(numberStart, numberEnd).c_str(), nullptr, 10));
-      }
-    }
-
-    scanPos = static_cast<size_t>(windowEnd);
-
-    if (typeValue != "file" || nameValue.isEmpty() || dlValue.isEmpty() || !hasBinExtension(nameValue)) {
-      continue;
-    }
-
-    entries[count].name = nameValue;
-    entries[count].downloadUrl = dlValue;
-    entries[count].size = sizeValue;
+  int cursor = 0;
+  while (cursor < static_cast<int>(body.length()) && count < maxEntries) {
+    int end = body.indexOf('\n', cursor);
+    if (end < 0) end = body.length();
+    String line = body.substring(cursor, end);
+    if (line.endsWith("\r")) line.remove(line.length() - 1);
+    cursor = end + 1;
+    if (line.length() == 0 || line.startsWith("#") || line == OTA_INDEX_HEADER) continue;
+    const int tab = line.indexOf('\t');
+    const String name = tab >= 0 ? line.substring(0, tab) : line;
+    if (!hasBinExtension(name) || name.indexOf('/') >= 0 || name.indexOf("..") >= 0) continue;
+    uint32_t size = 0;
+    if (tab >= 0) size = static_cast<uint32_t>(strtoul(line.substring(tab + 1).c_str(), nullptr, 10));
+    entries[count].name = name;
+    entries[count].size = size;
     ++count;
   }
-
   *outCount = count;
   return count > 0;
 }
@@ -302,6 +277,14 @@ void sortEntriesByNameDesc(GithubFileEntry *entries, uint8_t count) {
         entries[j] = tmp;
       }
     }
+  }
+}
+
+void clearEntries(GithubFileEntry *entries, uint8_t count) {
+  if (entries == nullptr) return;
+  for (uint8_t i = 0; i < count; ++i) {
+    entries[i].name = "";
+    entries[i].size = 0;
   }
 }
 
@@ -323,7 +306,7 @@ bool validateBinHeader(File& file, size_t maxPartitionSize) {
     return false;
   }
 
-  uint8_t header[8] = {0};
+  uint8_t header[24] = {0};
   if (!file.seek(0)) {
     return false;
   }
@@ -341,9 +324,71 @@ bool validateBinHeader(File& file, size_t maxPartitionSize) {
 
   const uint8_t segmentCount = header[1];
   if (segmentCount == 0 || segmentCount > 16) {
+    logLine("Image validation failed: invalid segment count=" + String(segmentCount));
     return false;
   }
 
+  size_t offset = sizeof(header);
+  uint8_t segmentHeader[8];
+  for (uint8_t segment = 0; segment < segmentCount; ++segment) {
+    if (offset > fileSize || fileSize - offset < sizeof(segmentHeader) || !file.seek(offset)) {
+      logLine("Image validation failed: missing segment " + String(segment) +
+        " header at " + String(static_cast<uint32_t>(offset), HEX));
+      return false;
+    }
+    if (file.read(segmentHeader, sizeof(segmentHeader)) != sizeof(segmentHeader)) {
+      logLine("Image validation failed: cannot read segment " + String(segment) + " header");
+      return false;
+    }
+
+    const uint32_t loadAddress =
+      static_cast<uint32_t>(segmentHeader[0]) |
+      (static_cast<uint32_t>(segmentHeader[1]) << 8) |
+      (static_cast<uint32_t>(segmentHeader[2]) << 16) |
+      (static_cast<uint32_t>(segmentHeader[3]) << 24);
+    const uint32_t segmentLength =
+      static_cast<uint32_t>(segmentHeader[4]) |
+      (static_cast<uint32_t>(segmentHeader[5]) << 8) |
+      (static_cast<uint32_t>(segmentHeader[6]) << 16) |
+      (static_cast<uint32_t>(segmentHeader[7]) << 24);
+    offset += sizeof(segmentHeader);
+
+    Serial.printf("[OTA] Segment %u: file=0x%08x, load=0x%08x, length=%u\n",
+      segment,
+      static_cast<unsigned int>(offset),
+      static_cast<unsigned int>(loadAddress),
+      static_cast<unsigned int>(segmentLength));
+
+    if (segmentLength == 0 || segmentLength > fileSize - offset) {
+      logLine("Image validation failed: segment " + String(segment) +
+        " length=" + String(segmentLength) + " exceeds remaining=" +
+        String(static_cast<uint32_t>(fileSize - offset)));
+      return false;
+    }
+    offset += segmentLength;
+  }
+
+  if (offset >= fileSize) {
+    logLine("Image validation failed: checksum is missing");
+    return false;
+  }
+  const size_t paddedEnd = (offset + 1U + 15U) & ~static_cast<size_t>(15U);
+  const size_t requiredEnd = paddedEnd + (header[23] == 1U ? 32U : 0U);
+  if (requiredEnd > fileSize) {
+    logLine("Image validation failed: incomplete checksum/hash trailer");
+    return false;
+  }
+  if (requiredEnd != fileSize) {
+    logLine("Image validation warning: " + String(static_cast<uint32_t>(fileSize - requiredEnd)) +
+      " trailing bytes after ESP image");
+  }
+
+  logLine("Image structure OK: size=" + String(static_cast<uint32_t>(fileSize)) +
+    ", segments=" + String(segmentCount) + ", hash=" + String(header[23]));
+  if (!file.seek(0)) {
+    logLine("Image validation failed: cannot rewind image");
+    return false;
+  }
   return true;
 }
 
@@ -378,21 +423,36 @@ bool downloadUrlToSdFile(const String& url,
                          const char *finalPath,
                          uint8_t progressStart,
                          uint8_t progressEnd,
-                         const char *phaseText) {
+                         const char *phaseText,
+                         int *lastHttpStatus = nullptr) {
   const String tempPath = String(finalPath) + OTA_SD_TEMP_SUFFIX;
+  if (lastHttpStatus != nullptr) *lastHttpStatus = 0;
   removeIfExists(tempPath.c_str());
   removeIfExists(finalPath);
+  logLine(String(phaseText) + ": source=" + url);
 
   for (uint8_t attempt = 1; attempt <= OTA_HTTP_RETRIES; ++attempt) {
     removeIfExists(tempPath.c_str());
     removeIfExists(finalPath);
 
+    const size_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    const size_t largestInternal = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    logLine(
+      String(phaseText) + " TLS heap before try " + String(attempt) +
+      ": free=" + String(freeInternal) + ", largest=" + String(largestInternal));
+    if (freeInternal < OTA_MIN_TLS_FREE_INTERNAL_HEAP ||
+        largestInternal < OTA_MIN_TLS_LARGEST_BLOCK) {
+      logLine(String(phaseText) + ": TLS heap is below the recommended reserve");
+    }
+
     WiFiClientSecure client;
     client.setInsecure();
+    client.setHandshakeTimeout(20);
 
     HTTPClient http;
     http.setConnectTimeout(OTA_HTTP_CONNECT_TIMEOUT_MS);
     http.setTimeout(OTA_HTTP_READ_TIMEOUT_MS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.useHTTP10(true);
 
     if (!http.begin(client, url)) {
@@ -402,11 +462,20 @@ bool downloadUrlToSdFile(const String& url,
     }
 
     http.addHeader("User-Agent", "fOS/4.0.0 OTA");
+    if (url.startsWith("https://api.github.com/")) {
+      http.addHeader("Accept", "application/vnd.github.raw+json");
+      http.addHeader("X-GitHub-Api-Version", "2022-11-28");
+    }
     http.addHeader("Connection", "close");
     const int code = http.GET();
+    if (lastHttpStatus != nullptr) *lastHttpStatus = code;
     if (code != HTTP_CODE_OK) {
-      setInstallError(String(phaseText) + ": HTTP code " + String(code) + " (try " + String(attempt) + ")");
+      setInstallError(
+        String(phaseText) + ": HTTP code " + String(code) + " (" +
+        HTTPClient::errorToString(code) + ", try " + String(attempt) + ")");
       http.end();
+      if (code > 0 && code != 408 && code != 429 && code < 500) break;
+      if (code == 429) break;
       delay(150);
       continue;
     }
@@ -521,6 +590,26 @@ bool downloadUrlToSdFile(const String& url,
   return false;
 }
 
+bool downloadGithubFileWithFallback(
+  const String& filename,
+  const char *rawBase,
+  const char *apiBase,
+  const char *finalPath,
+  uint8_t progressStart,
+  uint8_t progressEnd,
+  const char *phaseText) {
+  const String rawUrl = githubRawFileUrl(rawBase, filename);
+  if (downloadUrlToSdFile(
+        rawUrl, finalPath, progressStart, progressEnd, phaseText)) return true;
+
+  // The Contents API is only a fallback for an individual binary. Directory
+  // discovery never consumes the unauthenticated GitHub API quota anymore.
+  logLine(String(phaseText) + ": raw download failed; trying GitHub API once");
+  const String apiUrl = githubContentsFileUrl(apiBase, filename);
+  return downloadUrlToSdFile(
+    apiUrl, finalPath, progressStart, progressEnd, phaseText);
+}
+
 class ProgressFileStream : public Stream {
 public:
   ProgressFileStream(File& file, size_t total, uint8_t pStart, uint8_t pEnd)
@@ -584,6 +673,17 @@ bool flashPartitionFromSd(const char *sdPath,
     return false;
   }
 
+  // Arduino-ESP32 Core 3.x accepts a label parameter in Update.begin(), but
+  // currently ignores it and always selects the next OTA partition. Refuse the
+  // operation unless that implicit target is exactly the partition requested
+  // by fOS.
+  const esp_partition_t *updateTarget = esp_ota_get_next_update_partition(nullptr);
+  if (updateTarget == nullptr || updateTarget->address != target->address) {
+    setInstallError(String("Update target mismatch: expected ") + partitionLabel +
+      ", got " + (updateTarget != nullptr ? updateTarget->label : "none"));
+    return false;
+  }
+
   File in = SD.open(sdPath, FILE_READ);
   if (!in) {
     setInstallError(String("SD file missing: ") + sdPath);
@@ -606,11 +706,12 @@ bool flashPartitionFromSd(const char *sdPath,
   postProgress(progressStart);
   ProgressFileStream stream(in, imageSize, progressStart, progressEnd);
   const size_t written = Update.writeStream(stream);
-  const bool okEnd = Update.end(true);
+  const bool completeWrite = written == imageSize && !Update.hasError();
+  const bool okEnd = completeWrite && Update.end(false);
 
   in.close();
 
-  if (written != imageSize || !okEnd) {
+  if (!completeWrite || !okEnd) {
     setInstallError(String("Flashing failed for ") + partitionLabel + " written=" + String(written) +
                     " size=" + String(imageSize) + " err=" + String(Update.getError()));
     Update.abort();
@@ -629,8 +730,8 @@ void setDropdownFallback(const char *text) {
   lv_dropdown_set_options(uic_DropdownUpdate, text);
 }
 
-bool getSelectedOtaFile(String *nameOut, String *urlOut) {
-  if (nameOut == nullptr || urlOut == nullptr) {
+bool getSelectedOtaFile(String *nameOut, uint32_t *sizeOut = nullptr) {
+  if (nameOut == nullptr) {
     return false;
   }
   if (uic_DropdownUpdate == nullptr || gOtaCount == 0) {
@@ -643,9 +744,8 @@ bool getSelectedOtaFile(String *nameOut, String *urlOut) {
   }
 
   *nameOut = gOtaFiles[idx].name;
-  *urlOut = gOtaFiles[idx].downloadUrl;
-  if (urlOut->isEmpty()) {
-    *urlOut = String(OTA_RAW_BASE) + *nameOut;
+  if (sizeOut != nullptr) {
+    *sizeOut = gOtaFiles[idx].size;
   }
   return true;
 }
@@ -758,7 +858,9 @@ void otaListTaskMain(void *param) {
   gListSuccess = false;
   gListCount = 0;
 
-  if (fetchGithubListing(OTA_API_LIST, gListFiles, OTA_MAX_FILES, &count)) {
+  if (fetchIndexedListing(
+        OTA_RAW_LIST, FOSDefaultIndexes::kOta,
+        gListFiles, OTA_MAX_FILES, &count)) {
     sortEntriesByNameDesc(gListFiles, count);
     gListCount = count;
     gListSuccess = (count > 0);
@@ -766,7 +868,6 @@ void otaListTaskMain(void *param) {
 
   gListDone = true;
   gListTaskRunning = false;
-  gListTaskHandle = nullptr;
   vTaskDelete(nullptr);
 }
 
@@ -778,21 +879,21 @@ bool startOtaListTask() {
   gListDone = false;
   gListSuccess = false;
   gListCount = 0;
+  clearEntries(gListFiles, OTA_MAX_FILES);
   gListTaskRunning = true;
 
   BaseType_t created = xTaskCreatePinnedToCore(
     otaListTaskMain,
     "ota_list",
-    8192,
+    OTA_LIST_TASK_STACK,
     nullptr,
     1,
-    &gListTaskHandle,
+    nullptr,
     1
   );
 
   if (created != pdPASS) {
     gListTaskRunning = false;
-    gListTaskHandle = nullptr;
     logLine("Failed to create OTA list task");
     return false;
   }
@@ -824,13 +925,17 @@ void applyFetchedOtaListToUi() {
     }
     gOtaCount = 0;
     gOtaListLoaded = false;
+    clearEntries(gOtaFiles, OTA_MAX_FILES);
+    clearEntries(gListFiles, OTA_MAX_FILES);
     return;
   }
 
+  clearEntries(gOtaFiles, OTA_MAX_FILES);
   gOtaCount = gListCount;
   for (uint8_t i = 0; i < gListCount; ++i) {
     gOtaFiles[i] = gListFiles[i];
   }
+  clearEntries(gListFiles, OTA_MAX_FILES);
   gOtaListLoaded = true;
   logLine("Loaded " + String(gOtaCount) + " OTA files");
   renderCachedOtaListToUi();
@@ -839,12 +944,16 @@ void applyFetchedOtaListToUi() {
 bool downloadNewestRecoveryToSd() {
   GithubFileEntry recoveryFiles[OTA_MAX_RECOVERY_FILES];
   uint8_t recoveryCount = 0;
-  if (!fetchGithubListing(OTA_API_RECOVERY_LIST, recoveryFiles, OTA_MAX_RECOVERY_FILES, &recoveryCount)) {
-    logLine("Recovery listing unavailable, trying RAW fallback names");
+  if (!fetchIndexedListing(
+        OTA_RAW_RECOVERY_LIST, FOSDefaultIndexes::kRecovery,
+        recoveryFiles, OTA_MAX_RECOVERY_FILES, &recoveryCount)) {
+    logLine("Recovery index unavailable, trying fallback names");
     const size_t fallbackCount = sizeof(kRecoveryFallbackNames) / sizeof(kRecoveryFallbackNames[0]);
     for (size_t i = 0; i < fallbackCount; ++i) {
-      const String url = String(OTA_RAW_RECOVERY_BASE) + kRecoveryFallbackNames[i];
-      if (downloadUrlToSdFile(url, OTA_SD_RECOVERY_FILE, 70, 85, "Download recovery fallback")) {
+      if (downloadGithubFileWithFallback(
+            String(kRecoveryFallbackNames[i]),
+            OTA_RAW_RECOVERY_FILE_BASE, OTA_API_RECOVERY_FILE_BASE,
+            OTA_SD_RECOVERY_FILE, 70, 85, "Download recovery fallback")) {
         logLine("Recovery fallback success: " + String(kRecoveryFallbackNames[i]));
         return true;
       }
@@ -855,13 +964,11 @@ bool downloadNewestRecoveryToSd() {
 
   sortEntriesByNameDesc(recoveryFiles, recoveryCount);
   const String recoveryName = recoveryFiles[0].name;
-  String recoveryUrl = recoveryFiles[0].downloadUrl;
-  if (recoveryUrl.isEmpty()) {
-    recoveryUrl = String(OTA_RAW_RECOVERY_BASE) + recoveryName;
-  }
 
   logLine("Selected recovery image: " + recoveryName);
-  return downloadUrlToSdFile(recoveryUrl, OTA_SD_RECOVERY_FILE, 70, 85, "Download recovery");
+  return downloadGithubFileWithFallback(
+    recoveryName, OTA_RAW_RECOVERY_FILE_BASE, OTA_API_RECOVERY_FILE_BASE,
+    OTA_SD_RECOVERY_FILE, 70, 85, "Download recovery");
 }
 
 bool ensureSdMounted() {
@@ -899,8 +1006,8 @@ bool executeInstallFlow() {
   }
 
   String selectedName;
-  String selectedUrl;
-  if (!getSelectedOtaFile(&selectedName, &selectedUrl)) {
+  uint32_t selectedExpectedSize = 0;
+  if (!getSelectedOtaFile(&selectedName, &selectedExpectedSize)) {
     setInstallError("Install aborted: no OTA file selected");
     return false;
   }
@@ -908,8 +1015,36 @@ bool executeInstallFlow() {
   logLine("Selected OTA image: " + selectedName);
   postProgress(1);
 
-  if (!downloadUrlToSdFile(selectedUrl, OTA_SD_UPDATE_FILE, 1, 70, "Download app0 update")) {
+  if (!downloadGithubFileWithFallback(
+        selectedName, OTA_RAW_FILE_BASE, OTA_API_FILE_BASE,
+        OTA_SD_UPDATE_FILE, 1, 70, "Download app0 update")) {
     return false;
+  }
+
+  const esp_partition_t *app0 = findAppPartitionByLabel("app0");
+  if (app0 == nullptr) {
+    setInstallError("app0 partition not found");
+    return false;
+  }
+  {
+    File appUpdate = SD.open(OTA_SD_UPDATE_FILE, FILE_READ);
+    if (!appUpdate) {
+      setInstallError("Missing update.bin after download");
+      return false;
+    }
+    const uint32_t downloadedSize = static_cast<uint32_t>(appUpdate.size());
+    if (selectedExpectedSize != 0U && downloadedSize != selectedExpectedSize) {
+      appUpdate.close();
+      setInstallError("OTA index size mismatch: expected " + String(selectedExpectedSize) +
+        ", downloaded " + String(downloadedSize) + ". Regenerate fos-ota.index");
+      return false;
+    }
+    const bool validAppImage = validateBinHeader(appUpdate, app0->size);
+    appUpdate.close();
+    if (!validAppImage) {
+      setInstallError("Downloaded app0 image has an invalid ESP structure");
+      return false;
+    }
   }
 
   if (!downloadNewestRecoveryToSd()) {
@@ -965,7 +1100,6 @@ void installTaskMain(void *param) {
   gInstallSuccess = ok;
   gInstallDone = true;
   gInstallTaskRunning = false;
-  gInstallTaskHandle = nullptr;
   vTaskDelete(nullptr);
 }
 
@@ -981,16 +1115,15 @@ bool startInstallTask() {
   BaseType_t created = xTaskCreatePinnedToCore(
     installTaskMain,
     "ota_install",
-    10240,
+    OTA_INSTALL_TASK_STACK,
     nullptr,
     1,
-    &gInstallTaskHandle,
+    nullptr,
     1
   );
 
   if (created != pdPASS) {
     gInstallTaskRunning = false;
-    gInstallTaskHandle = nullptr;
     setInstallError("Failed to create install task");
     return false;
   }

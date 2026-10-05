@@ -24,6 +24,26 @@ applications while preserving all existing SD-card applications.
 * Existing native Calculator, Radio, Clock, Weather, Email and Text apps remain
   unchanged.
 
+### GitHub App Store and OTA reliability
+
+* Replaced repeated GitHub directory API scans with compact App Store and OTA
+  index files.
+* Added flash-resident indexes for the apps and binaries shipped with this
+  release, so a temporary GitHub API `403` does not hide updates or apps.
+* Direct file downloads retain a narrowly scoped GitHub Contents API fallback.
+* HTTP `403`, `404` and `429` responses are no longer retried in a tight loop.
+* Added a repository index generator and ready-to-upload index files.
+* Recovery now validates the ESP image size and header before erasing `app0`, writes
+  the target partition directly, restores the boot header last and verifies
+  every flashed byte against the SD file before activating the image.
+* OTA now checks the downloaded application size against `fos-ota.index` and
+  validates every ESP image segment before installing the recovery image.
+  Recovery reports all segment offsets and lengths before erasing `app0`.
+* Recovery no longer rewrites flash every five seconds after a deterministic
+  failure.
+* OTA refuses to continue if Arduino Core selects a different implicit update
+  partition than the one requested by fOS.
+
 ### Memory behavior
 
 * The UI registry uses a fixed capacity of 64 named UI objects.

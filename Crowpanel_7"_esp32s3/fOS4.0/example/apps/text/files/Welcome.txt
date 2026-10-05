@@ -1,3 +1,0 @@
-Willkommen in der fScript Text-App.
-
-Du kannst diesen Text bearbeiten und unter einem neuen Namen speichern.

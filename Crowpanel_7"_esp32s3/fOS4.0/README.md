@@ -731,6 +731,13 @@ embedded mail buffer; plain-text messages and compact HTML messages work best.
 
 OTA loading runs asynchronously.
 
+OTA and the official App Store use compact index files instead of repeatedly
+listing GitHub directories through the REST API. After changing apps or OTA
+binaries in the repository, run
+`python3 tools/generate_repository_indexes.py /path/to/fOS-repository` and
+commit the generated index files. Built-in indexes
+provide an offline fallback for the release shipped with this source archive.
+
 Check the Serial Monitor for `[OTA]` messages.
 
 ## GPIO38 button not working

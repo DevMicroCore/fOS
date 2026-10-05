@@ -1,4 +1,0 @@
-type=label;id=lbl_title;x=30;y=28;w=420;h=44;text=fScript Counter;fg=0xFFFFFF
-type=label;id=lbl_status;x=30;y=105;w=420;h=70;text=Wird gestartet...;fg=0xFFFFFF
-type=button;id=btn_add;x=80;y=205;w=320;h=85;text=Zaehler erhoehen;bg=theme;fg=0xFFFFFF
-type=button;id=btn_reset;x=80;y=315;w=320;h=70;text=Zuruecksetzen;bg=0x505050;fg=0xFFFFFF

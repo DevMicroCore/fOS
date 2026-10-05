@@ -74,57 +74,113 @@ void drawProgress(uint8_t percent) {
   gfx.printf("%3u%%", percent);
 }
 
-uint32_t readLittleEndian32(const uint8_t *data) {
-  return static_cast<uint32_t>(data[0]) |
-    (static_cast<uint32_t>(data[1]) << 8) |
-    (static_cast<uint32_t>(data[2]) << 16) |
-    (static_cast<uint32_t>(data[3]) << 24);
-}
-
 bool validateBinFile(File& bin, size_t maxPartitionSize) {
   if (!bin || bin.isDirectory()) {
+    Serial.println("[RECOVERY] Image validation: file is unavailable or is a directory");
     return false;
   }
 
   const size_t sz = static_cast<size_t>(bin.size());
   if (sz < RECOVERY_MIN_BIN_SIZE || sz > maxPartitionSize) {
+    Serial.printf("[RECOVERY] Image validation: invalid size=%u (allowed %u..%u)\n",
+      static_cast<unsigned int>(sz),
+      static_cast<unsigned int>(RECOVERY_MIN_BIN_SIZE),
+      static_cast<unsigned int>(maxPartitionSize));
     return false;
   }
 
   uint8_t hdr[24] = {0};
   if (!bin.seek(0)) {
+    Serial.println("[RECOVERY] Image validation: cannot seek to header");
     return false;
   }
   if (bin.read(hdr, sizeof(hdr)) != sizeof(hdr)) {
+    Serial.println("[RECOVERY] Image validation: cannot read complete header");
     return false;
   }
   if (!bin.seek(0)) {
+    Serial.println("[RECOVERY] Image validation: cannot rewind image");
     return false;
   }
 
   if (hdr[0] != 0xE9) {
+    Serial.printf("[RECOVERY] Image validation: invalid magic=0x%02x (expected 0xe9)\n",
+      hdr[0]);
     return false;
   }
   const uint8_t segmentCount = hdr[1];
   if (segmentCount == 0 || segmentCount > 16) {
+    Serial.printf("[RECOVERY] Image validation: invalid segment count=%u\n",
+      segmentCount);
     return false;
   }
+
+  Serial.printf("[RECOVERY] Image header OK: size=%u, magic=0x%02x, segments=%u, hash=%u\n",
+    static_cast<unsigned int>(sz), hdr[0], segmentCount, hdr[23]);
 
   size_t offset = sizeof(hdr);
   uint8_t segmentHeader[8];
   for (uint8_t segment = 0; segment < segmentCount; ++segment) {
-    if (offset > sz || sz - offset < sizeof(segmentHeader) || !bin.seek(offset)) return false;
-    if (bin.read(segmentHeader, sizeof(segmentHeader)) != sizeof(segmentHeader)) return false;
-    const uint32_t segmentLength = readLittleEndian32(segmentHeader + 4);
+    if (offset > sz || sz - offset < sizeof(segmentHeader) || !bin.seek(offset)) {
+      Serial.printf("[RECOVERY] Image validation: missing segment %u header at 0x%08x\n",
+        segment, static_cast<unsigned int>(offset));
+      return false;
+    }
+    if (bin.read(segmentHeader, sizeof(segmentHeader)) != sizeof(segmentHeader)) {
+      Serial.printf("[RECOVERY] Image validation: cannot read segment %u header\n", segment);
+      return false;
+    }
+
+    const uint32_t loadAddress =
+      static_cast<uint32_t>(segmentHeader[0]) |
+      (static_cast<uint32_t>(segmentHeader[1]) << 8) |
+      (static_cast<uint32_t>(segmentHeader[2]) << 16) |
+      (static_cast<uint32_t>(segmentHeader[3]) << 24);
+    const uint32_t segmentLength =
+      static_cast<uint32_t>(segmentHeader[4]) |
+      (static_cast<uint32_t>(segmentHeader[5]) << 8) |
+      (static_cast<uint32_t>(segmentHeader[6]) << 16) |
+      (static_cast<uint32_t>(segmentHeader[7]) << 24);
     offset += sizeof(segmentHeader);
-    if (segmentLength == 0 || segmentLength > sz - offset) return false;
+
+    Serial.printf("[RECOVERY] Segment %u: file=0x%08x, load=0x%08x, length=%u\n",
+      segment,
+      static_cast<unsigned int>(offset),
+      static_cast<unsigned int>(loadAddress),
+      static_cast<unsigned int>(segmentLength));
+
+    if (segmentLength == 0 || segmentLength > sz - offset) {
+      Serial.printf("[RECOVERY] Image validation: segment %u exceeds file (%u > %u)\n",
+        segment,
+        static_cast<unsigned int>(segmentLength),
+        static_cast<unsigned int>(sz - offset));
+      return false;
+    }
     offset += segmentLength;
   }
 
-  // ESP images end with checksum/alignment data and optionally a SHA-256 hash.
-  const size_t trailerLength = sz - offset;
-  if (trailerLength == 0 || trailerLength > 64U) return false;
-  return bin.seek(0);
+  // One checksum byte follows the segments, padded to a 16-byte boundary.
+  // A header flag of 1 adds the 32-byte SHA-256 digest.
+  if (offset >= sz) {
+    Serial.println("[RECOVERY] Image validation: checksum is missing");
+    return false;
+  }
+  const size_t paddedEnd = (offset + 1U + 15U) & ~static_cast<size_t>(15U);
+  const size_t requiredEnd = paddedEnd + (hdr[23] == 1U ? 32U : 0U);
+  if (requiredEnd > sz) {
+    Serial.printf("[RECOVERY] Image validation: trailer is incomplete (%u required, %u present)\n",
+      static_cast<unsigned int>(requiredEnd), static_cast<unsigned int>(sz));
+    return false;
+  }
+  if (requiredEnd != sz) {
+    Serial.printf("[RECOVERY] Image validation: %u trailing bytes after ESP image\n",
+      static_cast<unsigned int>(sz - requiredEnd));
+  }
+  if (!bin.seek(0)) {
+    Serial.println("[RECOVERY] Image validation: cannot rewind validated image");
+    return false;
+  }
+  return true;
 }
 
 bool verifyPartitionAgainstFile(
@@ -257,12 +313,6 @@ bool flashApp0FromSd() {
   }
 
   const size_t imageSize = static_cast<size_t>(updateBin.size());
-  if (!validateBinFile(updateBin, app0->size)) {
-    updateBin.close();
-    drawStatus("Invalid update.bin");
-    return false;
-  }
-
   const esp_partition_t *running = esp_ota_get_running_partition();
   Serial.printf("[RECOVERY] Running=%s, target=%s, offset=0x%08x, capacity=%u, image=%u\n",
     running != nullptr ? running->label : "unknown",
@@ -270,6 +320,12 @@ bool flashApp0FromSd() {
     static_cast<unsigned int>(app0->address),
     static_cast<unsigned int>(app0->size),
     static_cast<unsigned int>(imageSize));
+
+  if (!validateBinFile(updateBin, app0->size)) {
+    updateBin.close();
+    drawStatus("Invalid update.bin");
+    return false;
+  }
 
   const bool flashed = writePartitionFromFile(updateBin, app0, imageSize);
   updateBin.close();

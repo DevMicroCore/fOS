@@ -6843,7 +6843,7 @@ static void showAppContentForIndex(int appIndex)
 
   if (app.manifestPresent && !app.manifestValid) {
     lv_obj_t * errorLabel = lv_label_create(uic_AppContentArea);
-    String message = "The app cannot be launched:\n";
+    String message = "App kann nicht gestartet werden:\n";
     message += app.manifestError;
     lv_label_set_text(errorLabel, message.c_str());
     lv_obj_set_width(errorLabel, lv_pct(90));

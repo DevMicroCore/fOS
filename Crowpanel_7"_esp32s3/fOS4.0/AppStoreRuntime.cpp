@@ -10,6 +10,7 @@
 
 #include "ui.h"
 #include "ui_AppStore.h"
+#include "src/core/DefaultAppStoreIndex.h"
 #include "src/core/FOSVersion.h"
 #include "src/fapp/FAppManifest.h"
 
@@ -24,13 +25,22 @@ namespace {
 #define APPSTORE_APPS_DIRECTORY "/apps"
 #define APPSTORE_DEFAULT_STORE \
   "https://github.com/DevMicroCore/fOS/tree/main/apps"
+#define APPSTORE_DEFAULT_INDEX \
+  "https://raw.githubusercontent.com/DevMicroCore/fOS/main/apps/fos-appstore.index"
+#define APPSTORE_DEFAULT_API_FILE_BASE \
+  "https://api.github.com/repos/DevMicroCore/fOS/contents/apps/"
+#define APPSTORE_DEFAULT_API_REF "?ref=main"
 #define APPSTORE_LEGACY_DEFAULT_STORE \
   "https://github.com/DevMicroCore/fOS/tree/main/Crowpanel_7%22_esp32s3/example%20app/apps"
+#define APPSTORE_INDEX_FILE "fos-appstore.index"
+#define APPSTORE_INDEX_HEADER "FOS_APPSTORE_INDEX_V1"
+#define APPSTORE_INDEX_SOURCE_PREFIX "index:"
 #define APPSTORE_LAUNCHER_SLOT_COUNT 7U
 #define APPSTORE_MAX_REMOTE_APPS 40U
 #define APPSTORE_MAX_INSTALLED_APPS 40U
 #define APPSTORE_MAX_STORE_URLS 8U
 #define APPSTORE_MAX_DOWNLOAD_DEPTH 5U
+#define APPSTORE_HTTP_RETRIES 2U
 #define APPSTORE_REFRESH_TASK_STACK 8192U
 
 struct RemoteAppEntry {
@@ -96,6 +106,59 @@ bool isSafePathPart(const String& value)
     if (!isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' && c != '.') return false;
   }
   return value.indexOf("..") < 0;
+}
+
+bool isSafeRelativePath(const String& value)
+{
+  if (value.length() == 0 || value.startsWith("/") || value.endsWith("/")) return false;
+  int start = 0;
+  while (start < static_cast<int>(value.length())) {
+    const int slash = value.indexOf('/', start);
+    const int end = slash >= 0 ? slash : value.length();
+    if (!isSafePathPart(value.substring(start, end))) return false;
+    if (slash < 0) break;
+    start = slash + 1;
+  }
+  return true;
+}
+
+bool tabField(const String& line, uint8_t wanted, String * value)
+{
+  if (value == nullptr) return false;
+  int start = 0;
+  uint8_t field = 0;
+  while (start <= static_cast<int>(line.length())) {
+    const int tab = line.indexOf('\t', start);
+    const int end = tab >= 0 ? tab : line.length();
+    if (field == wanted) {
+      *value = line.substring(start, end);
+      return true;
+    }
+    if (tab < 0) break;
+    start = tab + 1;
+    ++field;
+  }
+  value->remove(0);
+  return false;
+}
+
+String encodeUrlPath(const String& path)
+{
+  static const char hex[] = "0123456789ABCDEF";
+  String encoded;
+  encoded.reserve(path.length() + 8U);
+  for (size_t i = 0; i < path.length(); ++i) {
+    const uint8_t value = static_cast<uint8_t>(path[i]);
+    if (isalnum(value) || value == '-' || value == '_' || value == '.' ||
+        value == '~' || value == '/') {
+      encoded += static_cast<char>(value);
+    } else {
+      encoded += '%';
+      encoded += hex[value >> 4];
+      encoded += hex[value & 0x0F];
+    }
+  }
+  return encoded;
 }
 
 String friendlyFolderName(String name)
@@ -255,26 +318,73 @@ bool nextJsonObject(const String& json, int * cursor, String * object)
   return false;
 }
 
-bool httpGetText(const String& url, String * payload)
+bool httpGetText(
+  const String& url,
+  String * payload,
+  bool githubRawContent = false,
+  int * lastStatus = nullptr)
 {
   if (payload == nullptr || WiFi.status() != WL_CONNECTED) return false;
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  http.setTimeout(18000);
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.setUserAgent("fOS-AppStore/1.0");
-  http.addHeader("Accept", "application/vnd.github+json");
-  if (!http.begin(client, url)) return false;
-  const int code = http.GET();
-  if (code != HTTP_CODE_OK) {
-    Serial.printf("[APPSTORE] GET failed (%d): %s\n", code, url.c_str());
+  payload->remove(0);
+  if (lastStatus != nullptr) *lastStatus = 0;
+  for (uint8_t attempt = 1; attempt <= APPSTORE_HTTP_RETRIES; ++attempt) {
+    if (WiFi.status() != WL_CONNECTED) return false;
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setHandshakeTimeout(20);
+    HTTPClient http;
+    http.setConnectTimeout(15000);
+    http.setTimeout(18000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.useHTTP10(true);
+    http.setUserAgent("fOS-AppStore/1.0");
+    if (!http.begin(client, url)) {
+      Serial.printf("[APPSTORE] HTTP begin failed (try %u): %s\n", attempt, url.c_str());
+      delay(120);
+      continue;
+    }
+    http.addHeader("Accept", githubRawContent
+      ? "application/vnd.github.raw+json"
+      : "application/vnd.github+json");
+    if (url.startsWith("https://api.github.com/")) {
+      http.addHeader("X-GitHub-Api-Version", "2022-11-28");
+    }
+    http.addHeader("Connection", "close");
+    const int code = http.GET();
+    if (lastStatus != nullptr) *lastStatus = code;
+    if (code == HTTP_CODE_OK) {
+      *payload = http.getString();
+      if (payload->length() > 0) {
+        http.end();
+        return true;
+      }
+    } else {
+      const String error = HTTPClient::errorToString(code);
+      Serial.printf("[APPSTORE] GET failed (%d, %s, try %u): %s\n",
+        code, error.c_str(), attempt, url.c_str());
+    }
     http.end();
-    return false;
+    // Permanent client errors and rate limits must not be retried immediately.
+    // GitHub explicitly warns that repeated 403/429 requests can prolong a
+    // block. Network errors, timeouts and server errors remain retryable.
+    if (code > 0 && code != 408 && code != 429 && code < 500) break;
+    if (code == 429) break;
+    delay(120);
   }
-  *payload = http.getString();
-  http.end();
-  return payload->length() > 0;
+  return false;
+}
+
+bool httpGetGithubFileText(
+  const String& downloadUrl,
+  const String& apiUrl,
+  String * payload)
+{
+  if (downloadUrl.length() > 0 && httpGetText(downloadUrl, payload)) return true;
+  if (apiUrl.length() > 0) {
+    Serial.println("[APPSTORE] RAW download failed, retrying through GitHub API.");
+    return httpGetText(apiUrl, payload, true);
+  }
+  return false;
 }
 
 String normalizeStoreUrl(String url)
@@ -303,6 +413,47 @@ String normalizeStoreUrl(String url)
   if (path.length() > 0) api += "/" + path;
   api += "?ref=" + branch;
   return api;
+}
+
+String storeIndexUrl(String url)
+{
+  url.trim();
+  url.replace(" ", "%20");
+  url.replace("\"", "%22");
+  while (url.endsWith("/")) url.remove(url.length() - 1);
+  if (!url.startsWith("https://github.com/")) return "";
+
+  String tail = url.substring(strlen("https://github.com/"));
+  const int firstSlash = tail.indexOf('/');
+  if (firstSlash <= 0) return "";
+  const int treeMarker = tail.indexOf("/tree/", firstSlash + 1);
+  if (treeMarker < 0) return "";
+  const String owner = tail.substring(0, firstSlash);
+  const String repository = tail.substring(firstSlash + 1, treeMarker);
+  String branchAndPath = tail.substring(treeMarker + 6);
+  const int pathSlash = branchAndPath.indexOf('/');
+  const String branch = pathSlash >= 0 ? branchAndPath.substring(0, pathSlash) : branchAndPath;
+  const String path = pathSlash >= 0 ? branchAndPath.substring(pathSlash + 1) : "";
+  if (owner.length() == 0 || repository.length() == 0 ||
+      branch.length() == 0 || path.length() == 0) return "";
+
+  return "https://raw.githubusercontent.com/" + owner + "/" + repository +
+    "/" + branch + "/" + path + "/" + APPSTORE_INDEX_FILE;
+}
+
+bool loadStoreIndex(const String& indexUrl, String * payload)
+{
+  if (payload == nullptr || indexUrl.length() == 0) return false;
+  int status = 0;
+  if (httpGetText(indexUrl, payload, false, &status) &&
+      payload->startsWith(APPSTORE_INDEX_HEADER)) return true;
+
+  if (indexUrl == APPSTORE_DEFAULT_INDEX) {
+    *payload = FOSDefaultIndexes::kAppStore;
+    Serial.printf("[APPSTORE] Online index unavailable (%d); using built-in catalog.\n", status);
+    return true;
+  }
+  return false;
 }
 
 void showStatus(const String& text, lv_color_t color = lv_color_hex(0xFFFFFF))
@@ -458,6 +609,62 @@ void addOrUpdateRemoteApp(const RemoteAppEntry& candidate)
   if (gRemoteAppCount < APPSTORE_MAX_REMOTE_APPS) gRemoteApps[gRemoteAppCount++] = candidate;
 }
 
+bool parseIndexedStore(const String& indexUrl, const String& payload)
+{
+  if (!payload.startsWith(APPSTORE_INDEX_HEADER)) return false;
+  bool found = false;
+  int cursor = 0;
+  while (cursor < static_cast<int>(payload.length())) {
+    int end = payload.indexOf('\n', cursor);
+    if (end < 0) end = payload.length();
+    String line = payload.substring(cursor, end);
+    if (line.endsWith("\r")) line.remove(line.length() - 1);
+    cursor = end + 1;
+    if (!line.startsWith("A\t")) continue;
+
+    String folder;
+    String version;
+    String minimumFos;
+    String displayName;
+    String sizeText;
+    String remoteDirectory;
+    if (!tabField(line, 1, &folder) || !isSafePathPart(folder) ||
+        !tabField(line, 2, &version) ||
+        !tabField(line, 3, &minimumFos) ||
+        !tabField(line, 4, &displayName) ||
+        !tabField(line, 5, &sizeText) ||
+        !tabField(line, 6, &remoteDirectory) ||
+        !isSafeRelativePath(remoteDirectory)) continue;
+
+    uint16_t major = 0;
+    uint16_t minor = 0;
+    uint16_t patch = 0;
+    if (!parseVersion(version, &major, &minor, &patch) ||
+        !compatibleWithCurrentFos(minimumFos)) continue;
+
+    RemoteAppEntry candidate;
+    candidate.folderName = folder;
+    candidate.displayName = displayName.length() > 0 ? displayName : friendlyFolderName(folder);
+    candidate.version = version;
+    candidate.apiUrl = String(APPSTORE_INDEX_SOURCE_PREFIX) + indexUrl + "\t" +
+      folder + "\t" + version + "\t" + remoteDirectory;
+    candidate.sizeBytes = static_cast<uint32_t>(strtoul(sizeText.c_str(), nullptr, 10));
+    const int installed = installedIndexForFolder(folder);
+    candidate.installed = installed >= 0;
+    candidate.installedVersion = installed >= 0 ? gInstalledApps[installed].version : "";
+    addOrUpdateRemoteApp(candidate);
+    found = true;
+  }
+
+  if (found) {
+    for (uint8_t i = 0; i < gRemoteAppCount; ++i) {
+      Serial.printf("[APPSTORE] %s: selected V%s for fOS %s (index).\n",
+        gRemoteApps[i].folderName.c_str(), gRemoteApps[i].version.c_str(), FOSVersion::kString);
+    }
+  }
+  return found;
+}
+
 bool inspectRemoteDirectory(
   const String& folderName,
   const String& apiUrl,
@@ -474,8 +681,10 @@ bool inspectRemoteDirectory(
   app->apiUrl = apiUrl;
   app->sizeBytes = 0;
 
-  String manifestUrl;
-  String configUrl;
+  String manifestDownloadUrl;
+  String manifestApiUrl;
+  String configDownloadUrl;
+  String configApiUrl;
   int cursor = 0;
   String object;
   while (nextJsonObject(payload, &cursor, &object)) {
@@ -488,29 +697,38 @@ bool inspectRemoteDirectory(
         const uint64_t sum = static_cast<uint64_t>(app->sizeBytes) + size;
         app->sizeBytes = sum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(sum);
       }
-      if (name == "app.json") extractJsonString(object, "download_url", &manifestUrl);
-      else if (name == "app.cfg") extractJsonString(object, "download_url", &configUrl);
+      if (name == "app.json") {
+        extractJsonString(object, "download_url", &manifestDownloadUrl);
+        extractJsonString(object, "url", &manifestApiUrl);
+      } else if (name == "app.cfg") {
+        extractJsonString(object, "download_url", &configDownloadUrl);
+        extractJsonString(object, "url", &configApiUrl);
+      }
     }
   }
 
-  String metadataUrl = manifestUrl.length() > 0 ? manifestUrl : configUrl;
-  if (metadataUrl.length() > 0) {
+  const bool useManifest = manifestDownloadUrl.length() > 0 || manifestApiUrl.length() > 0;
+  const String& metadataDownloadUrl = useManifest ? manifestDownloadUrl : configDownloadUrl;
+  const String& metadataApiUrl = useManifest ? manifestApiUrl : configApiUrl;
+  if (metadataDownloadUrl.length() > 0 || metadataApiUrl.length() > 0) {
     String metadata;
-    if (httpGetText(metadataUrl, &metadata)) {
-      String value;
-      if (manifestUrl.length() > 0) {
-        if (extractJsonString(metadata, "version", &value) && value.length() > 0) app->version = value;
-        if (extractJsonString(metadata, "name", &value) && value.length() > 0) app->displayName = value;
-        if (minimumFos != nullptr &&
-            extractJsonString(metadata, "min_fos", &value) && value.length() > 0) {
-          *minimumFos = value;
-        }
-      } else {
-        if (extractConfigString(metadata, "version", &value)) app->version = value;
-        if (extractConfigString(metadata, "name", &value)) app->displayName = value;
-        if (minimumFos != nullptr && extractConfigString(metadata, "min_fos", &value)) {
-          *minimumFos = value;
-        }
+    if (!httpGetGithubFileText(metadataDownloadUrl, metadataApiUrl, &metadata)) {
+      Serial.printf("[APPSTORE] Metadata unavailable: %s\n", folderName.c_str());
+      return false;
+    }
+    String value;
+    if (useManifest) {
+      if (extractJsonString(metadata, "version", &value) && value.length() > 0) app->version = value;
+      if (extractJsonString(metadata, "name", &value) && value.length() > 0) app->displayName = value;
+      if (minimumFos != nullptr &&
+          extractJsonString(metadata, "min_fos", &value) && value.length() > 0) {
+        *minimumFos = value;
+      }
+    } else {
+      if (extractConfigString(metadata, "version", &value)) app->version = value;
+      if (extractConfigString(metadata, "name", &value)) app->displayName = value;
+      if (minimumFos != nullptr && extractConfigString(metadata, "min_fos", &value)) {
+        *minimumFos = value;
       }
     }
   }
@@ -651,6 +869,16 @@ bool inspectRemoteAppRoot(const String& folderName, const String& apiUrl, Remote
 
 bool fetchStore(const String& configuredUrl)
 {
+  const String indexUrl = storeIndexUrl(configuredUrl);
+  if (indexUrl.length() > 0) {
+    String indexPayload;
+    if (loadStoreIndex(indexUrl, &indexPayload) &&
+        parseIndexedStore(indexUrl, indexPayload)) {
+      return true;
+    }
+    Serial.println("[APPSTORE] Store index unavailable; trying GitHub Contents API.");
+  }
+
   const String apiUrl = normalizeStoreUrl(configuredUrl);
   if (apiUrl.length() == 0) return false;
   String payload;
@@ -838,34 +1066,147 @@ bool removeRecursively(const String& path, uint8_t depth = 0)
   return SD.rmdir(path);
 }
 
-bool downloadFile(const String& url, const String& destination)
+bool downloadFileFromUrl(
+  const String& url,
+  const String& destination,
+  bool githubRawContent)
 {
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  http.setTimeout(25000);
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.setUserAgent("fOS-AppStore/1.0");
-  if (!http.begin(client, url)) return false;
-  const int code = http.GET();
-  if (code != HTTP_CODE_OK) {
+  for (uint8_t attempt = 1; attempt <= APPSTORE_HTTP_RETRIES; ++attempt) {
+    if (WiFi.status() != WL_CONNECTED) return false;
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setHandshakeTimeout(20);
+    HTTPClient http;
+    http.setConnectTimeout(15000);
+    http.setTimeout(25000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.useHTTP10(true);
+    http.setUserAgent("fOS-AppStore/1.0");
+    if (!http.begin(client, url)) {
+      Serial.printf("[APPSTORE] File HTTP begin failed (try %u): %s\n",
+        attempt, url.c_str());
+      delay(120);
+      continue;
+    }
+    if (githubRawContent) {
+      http.addHeader("Accept", "application/vnd.github.raw+json");
+      http.addHeader("X-GitHub-Api-Version", "2022-11-28");
+    }
+    http.addHeader("Connection", "close");
+    const int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+      const String error = HTTPClient::errorToString(code);
+      Serial.printf("[APPSTORE] File GET failed (%d, %s, try %u): %s\n",
+        code, error.c_str(), attempt, url.c_str());
+      http.end();
+      if (code > 0 && code != 408 && code != 429 && code < 500) break;
+      if (code == 429) break;
+      delay(120);
+      continue;
+    }
+    if (SD.exists(destination)) SD.remove(destination);
+    File file = SD.open(destination, FILE_WRITE);
+    if (!file) {
+      http.end();
+      return false;
+    }
+    const int expected = http.getSize();
+    const int written = http.writeToStream(&file);
+    file.close();
     http.end();
-    return false;
-  }
-  if (SD.exists(destination)) SD.remove(destination);
-  File file = SD.open(destination, FILE_WRITE);
-  if (!file) {
-    http.end();
-    return false;
-  }
-  const int expected = http.getSize();
-  const int written = http.writeToStream(&file);
-  file.close();
-  http.end();
-  if (written < 0 || (expected > 0 && written != expected)) {
+    if (written >= 0 && (expected <= 0 || written == expected)) return true;
+    Serial.printf("[APPSTORE] Incomplete file download (try %u): %s\n",
+      attempt, url.c_str());
     SD.remove(destination);
-    return false;
+    delay(120);
   }
+  return false;
+}
+
+bool ensureParentDirectories(const String& root, const String& relativeFile)
+{
+  if (!isSafeRelativePath(relativeFile)) return false;
+  int cursor = 0;
+  while (true) {
+    const int slash = relativeFile.indexOf('/', cursor);
+    if (slash < 0) break;
+    const String directory = root + "/" + relativeFile.substring(0, slash);
+    if (!SD.exists(directory) && !SD.mkdir(directory)) return false;
+    cursor = slash + 1;
+  }
+  return true;
+}
+
+bool downloadIndexedDirectory(const String& source, const String& destination)
+{
+  if (!source.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)) return false;
+  const String fields = source.substring(strlen(APPSTORE_INDEX_SOURCE_PREFIX));
+  String indexUrl;
+  String folder;
+  String version;
+  String remoteDirectory;
+  if (!tabField(fields, 0, &indexUrl) ||
+      !tabField(fields, 1, &folder) || !isSafePathPart(folder) ||
+      !tabField(fields, 2, &version) ||
+      !tabField(fields, 3, &remoteDirectory) || !isSafeRelativePath(remoteDirectory)) return false;
+
+  String payload;
+  if (!loadStoreIndex(indexUrl, &payload)) return false;
+  const int lastSlash = indexUrl.lastIndexOf('/');
+  if (lastSlash <= 8) return false;
+  const String rawBase = indexUrl.substring(0, lastSlash);
+  if (!SD.exists(destination) && !SD.mkdir(destination)) return false;
+
+  uint16_t downloaded = 0;
+  int cursor = 0;
+  while (cursor < static_cast<int>(payload.length())) {
+    int end = payload.indexOf('\n', cursor);
+    if (end < 0) end = payload.length();
+    String line = payload.substring(cursor, end);
+    if (line.endsWith("\r")) line.remove(line.length() - 1);
+    cursor = end + 1;
+    if (!line.startsWith("F\t")) continue;
+
+    String fileFolder;
+    String fileVersion;
+    String relativeFile;
+    if (!tabField(line, 1, &fileFolder) || fileFolder != folder ||
+        !tabField(line, 2, &fileVersion) || fileVersion != version ||
+        !tabField(line, 3, &relativeFile) || !isSafeRelativePath(relativeFile)) continue;
+    if (!ensureParentDirectories(destination, relativeFile)) return false;
+
+    const String remotePath = remoteDirectory + "/" + relativeFile;
+    const String remoteUrl = rawBase + "/" + encodeUrlPath(remotePath);
+    const String localPath = destination + "/" + relativeFile;
+    bool fileDownloaded = downloadFileFromUrl(remoteUrl, localPath, false);
+    if (!fileDownloaded && indexUrl == APPSTORE_DEFAULT_INDEX) {
+      Serial.println("[APPSTORE] RAW file download failed; trying GitHub API once.");
+      const String apiUrl = String(APPSTORE_DEFAULT_API_FILE_BASE) +
+        encodeUrlPath(remotePath) + APPSTORE_DEFAULT_API_REF;
+      fileDownloaded = downloadFileFromUrl(apiUrl, localPath, true);
+    }
+    if (!fileDownloaded) return false;
+    ++downloaded;
+    ++gDownloadedFileCount;
+    if ((gDownloadedFileCount % 2U) == 0U) {
+      showStatus(String("Downloading files: ") + gDownloadedFileCount);
+    }
+  }
+  return downloaded > 0;
+}
+
+bool downloadFile(
+  const String& downloadUrl,
+  const String& apiUrl,
+  const String& destination)
+{
+  bool downloaded = downloadUrl.length() > 0 &&
+    downloadFileFromUrl(downloadUrl, destination, false);
+  if (!downloaded && apiUrl.length() > 0) {
+    Serial.println("[APPSTORE] RAW file download failed, retrying through GitHub API.");
+    downloaded = downloadFileFromUrl(apiUrl, destination, true);
+  }
+  if (!downloaded) return false;
   ++gDownloadedFileCount;
   if ((gDownloadedFileCount % 2U) == 0U) showStatus(String("Downloading files: ") + gDownloadedFileCount);
   return true;
@@ -887,8 +1228,11 @@ bool downloadDirectory(const String& apiUrl, const String& destination, uint8_t 
     const String localPath = destination + "/" + name;
     if (type == "file") {
       String downloadUrl;
-      if (!extractJsonString(object, "download_url", &downloadUrl) || downloadUrl.length() == 0) return false;
-      if (!downloadFile(downloadUrl, localPath)) return false;
+      String fileApiUrl;
+      extractJsonString(object, "download_url", &downloadUrl);
+      extractJsonString(object, "url", &fileApiUrl);
+      if (downloadUrl.length() == 0 && fileApiUrl.length() == 0) return false;
+      if (!downloadFile(downloadUrl, fileApiUrl, localPath)) return false;
     } else if (type == "dir") {
       String childApiUrl;
       if (!extractJsonString(object, "url", &childApiUrl) || childApiUrl.length() == 0) return false;
@@ -1189,7 +1533,10 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
   }
   gDownloadedFileCount = 0;
   showStatus("Downloading " + app.displayName + " ...");
-  if (!downloadDirectory(app.apiUrl, temporary, 0)) {
+  const bool downloaded = app.apiUrl.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)
+    ? downloadIndexedDirectory(app.apiUrl, temporary)
+    : downloadDirectory(app.apiUrl, temporary, 0);
+  if (!downloaded) {
     removeRecursively(temporary);
     showStatus("Download failed", lv_color_hex(0xFF8080));
     return;
