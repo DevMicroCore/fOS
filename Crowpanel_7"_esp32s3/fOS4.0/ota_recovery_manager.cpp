@@ -419,14 +419,67 @@ bool writeAllWithRetries(File& out, const uint8_t *data, size_t len) {
   return true;
 }
 
+uint32_t updateCrc32(uint32_t crc, const uint8_t *data, size_t length) {
+  for (size_t i = 0; i < length; ++i) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; ++bit) {
+      crc = (crc >> 1) ^ ((crc & 1U) ? 0xEDB88320UL : 0U);
+    }
+  }
+  return crc;
+}
+
+// File::write() counts bytes accepted by the file handle. Only a closed,
+// reopened file tells us what Recovery will actually read after reboot.
+bool verifyStoredDownload(const char *path, size_t expectedSize,
+                          uint32_t expectedCrc, const char *phaseText) {
+  File check = SD.open(path, FILE_READ);
+  if (!check || check.isDirectory()) {
+    logLine(String(phaseText) + ": cannot reopen SD file " + path);
+    if (check) check.close();
+    return false;
+  }
+  const size_t actualSize = static_cast<size_t>(check.size());
+  if (actualSize != expectedSize) {
+    logLine(String(phaseText) + ": SD size mismatch for " + path +
+      ": received=" + String(expectedSize) + ", stored=" + String(actualSize));
+    check.close();
+    return false;
+  }
+
+  uint8_t buffer[1024];
+  uint32_t crc = 0xFFFFFFFFUL;
+  size_t readTotal = 0;
+  while (readTotal < expectedSize) {
+    const size_t needed = expectedSize - readTotal < sizeof(buffer)
+      ? expectedSize - readTotal : sizeof(buffer);
+    const size_t n = check.read(buffer, needed);
+    if (n == 0) break;
+    crc = updateCrc32(crc, buffer, n);
+    readTotal += n;
+  }
+  check.close();
+  if (readTotal != expectedSize || (crc ^ 0xFFFFFFFFUL) != expectedCrc) {
+    logLine(String(phaseText) + ": SD readback mismatch for " + path +
+      ": received=" + String(expectedSize) + ", read=" + String(readTotal) +
+      ", CRC expected=0x" + String(expectedCrc, HEX) +
+      ", actual=0x" + String(crc ^ 0xFFFFFFFFUL, HEX));
+    return false;
+  }
+  return true;
+}
+
+enum class DownloadFailure : uint8_t { Network, Index, Storage };
+
 bool downloadUrlToSdFile(const String& url,
                          const char *finalPath,
                          uint8_t progressStart,
                          uint8_t progressEnd,
                          const char *phaseText,
-                         int *lastHttpStatus = nullptr) {
+                         uint32_t indexSize = 0,
+                         DownloadFailure *failure = nullptr) {
   const String tempPath = String(finalPath) + OTA_SD_TEMP_SUFFIX;
-  if (lastHttpStatus != nullptr) *lastHttpStatus = 0;
+  if (failure) *failure = DownloadFailure::Network;
   removeIfExists(tempPath.c_str());
   removeIfExists(finalPath);
   logLine(String(phaseText) + ": source=" + url);
@@ -468,7 +521,6 @@ bool downloadUrlToSdFile(const String& url,
     }
     http.addHeader("Connection", "close");
     const int code = http.GET();
-    if (lastHttpStatus != nullptr) *lastHttpStatus = code;
     if (code != HTTP_CODE_OK) {
       setInstallError(
         String(phaseText) + ": HTTP code " + String(code) + " (" +
@@ -482,9 +534,18 @@ bool downloadUrlToSdFile(const String& url,
 
     WiFiClient *stream = http.getStreamPtr();
     const int contentLen = http.getSize();
+    if (indexSize != 0U && contentLen > 0 &&
+        static_cast<uint32_t>(contentLen) != indexSize) {
+      setInstallError(String(phaseText) + ": online index/HTTP size mismatch: index=" +
+        String(indexSize) + ", HTTP=" + String(contentLen));
+      if (failure) *failure = DownloadFailure::Index;
+      http.end();
+      return false;
+    }
     File out = SD.open(tempPath.c_str(), FILE_WRITE);
     if (!out) {
       setInstallError(String(phaseText) + ": SD open failed");
+      if (failure) *failure = DownloadFailure::Storage;
       http.end();
       return false;
     }
@@ -500,6 +561,7 @@ bool downloadUrlToSdFile(const String& url,
           out.close();
           http.end();
           setInstallError("Not enough SD free space for download");
+          if (failure) *failure = DownloadFailure::Storage;
           return false;
         }
       }
@@ -507,19 +569,28 @@ bool downloadUrlToSdFile(const String& url,
 
     uint8_t buffer[1024];
     size_t written = 0;
+    uint32_t receivedCrc = 0xFFFFFFFFUL;
     int remaining = contentLen;
     bool transferFailed = false;
+    uint32_t lastDataMs = millis();
     uint8_t lastProgress = progressStart;
     postProgress(progressStart);
 
     while (http.connected() && (remaining > 0 || remaining == -1)) {
       const size_t availableBytes = stream->available();
       if (availableBytes == 0) {
+        if (WiFi.status() != WL_CONNECTED ||
+            millis() - lastDataMs > OTA_HTTP_READ_TIMEOUT_MS) {
+          transferFailed = true;
+          setInstallError(String(phaseText) + ": transfer stalled (try " + String(attempt) + ")");
+          break;
+        }
         delay(2);
         continue;
       }
 
-      const size_t chunk = availableBytes > sizeof(buffer) ? sizeof(buffer) : availableBytes;
+      size_t chunk = availableBytes > sizeof(buffer) ? sizeof(buffer) : availableBytes;
+      if (remaining > 0 && chunk > static_cast<size_t>(remaining)) chunk = remaining;
       const int readLen = stream->readBytes(buffer, chunk);
       if (readLen <= 0) {
         break;
@@ -529,14 +600,16 @@ bool downloadUrlToSdFile(const String& url,
         out.close();
         http.end();
         setInstallError(String(phaseText) + ": SD write failed (try " + String(attempt) + ")");
+        if (failure) *failure = DownloadFailure::Storage;
         removeIfExists(tempPath.c_str());
-        SD.begin(OTA_SD_CS);
         delay(150);
         transferFailed = true;
         break;
       }
 
       written += static_cast<size_t>(readLen);
+      receivedCrc = updateCrc32(receivedCrc, buffer, static_cast<size_t>(readLen));
+      lastDataMs = millis();
       if (remaining > 0) {
         remaining -= readLen;
       }
@@ -557,13 +630,13 @@ bool downloadUrlToSdFile(const String& url,
     http.end();
 
     if (transferFailed) {
+      removeIfExists(tempPath.c_str());
       continue;
     }
 
     if (contentLen > 0 && written != static_cast<size_t>(contentLen)) {
       setInstallError(String(phaseText) + ": incomplete download (try " + String(attempt) + ")");
       removeIfExists(tempPath.c_str());
-      SD.begin(OTA_SD_CS);
       delay(150);
       continue;
     }
@@ -571,15 +644,42 @@ bool downloadUrlToSdFile(const String& url,
     if (!SD.exists(tempPath) || written == 0) {
       setInstallError(String(phaseText) + ": no data (try " + String(attempt) + ")");
       removeIfExists(tempPath.c_str());
-      SD.begin(OTA_SD_CS);
+      delay(150);
+      continue;
+    }
+
+    if (indexSize != 0U && written != indexSize) {
+      setInstallError(String(phaseText) + ": online index/transfer size mismatch: index=" +
+        String(indexSize) + ", received=" + String(written));
+      if (failure) *failure = DownloadFailure::Index;
+      removeIfExists(tempPath.c_str());
+      return false;
+    }
+
+    receivedCrc ^= 0xFFFFFFFFUL;
+    if (!verifyStoredDownload(tempPath.c_str(), written, receivedCrc, phaseText)) {
+      setInstallError(String(phaseText) + ": SD file differs from received bytes (try " +
+        String(attempt) + ")");
+      if (failure) *failure = DownloadFailure::Storage;
+      removeIfExists(tempPath.c_str());
       delay(150);
       continue;
     }
 
     if (!SD.rename(tempPath.c_str(), finalPath)) {
       setInstallError(String(phaseText) + ": SD rename failed");
+      if (failure) *failure = DownloadFailure::Storage;
       removeIfExists(tempPath.c_str());
       return false;
+    }
+
+    if (!verifyStoredDownload(finalPath, written, receivedCrc, phaseText)) {
+      setInstallError(String(phaseText) + ": SD file changed after rename (try " +
+        String(attempt) + ")");
+      if (failure) *failure = DownloadFailure::Storage;
+      removeIfExists(finalPath);
+      delay(150);
+      continue;
     }
 
     postProgress(progressEnd);
@@ -597,17 +697,22 @@ bool downloadGithubFileWithFallback(
   const char *finalPath,
   uint8_t progressStart,
   uint8_t progressEnd,
-  const char *phaseText) {
+  const char *phaseText,
+  uint32_t indexSize = 0) {
   const String rawUrl = githubRawFileUrl(rawBase, filename);
+  DownloadFailure failure = DownloadFailure::Network;
   if (downloadUrlToSdFile(
-        rawUrl, finalPath, progressStart, progressEnd, phaseText)) return true;
+        rawUrl, finalPath, progressStart, progressEnd, phaseText, indexSize, &failure)) return true;
+
+  // A different URL cannot repair a truncated SD file or an outdated index.
+  if (failure != DownloadFailure::Network) return false;
 
   // The Contents API is only a fallback for an individual binary. Directory
   // discovery never consumes the unauthenticated GitHub API quota anymore.
   logLine(String(phaseText) + ": raw download failed; trying GitHub API once");
   const String apiUrl = githubContentsFileUrl(apiBase, filename);
   return downloadUrlToSdFile(
-    apiUrl, finalPath, progressStart, progressEnd, phaseText);
+    apiUrl, finalPath, progressStart, progressEnd, phaseText, indexSize, &failure);
 }
 
 class ProgressFileStream : public Stream {
@@ -1017,7 +1122,7 @@ bool executeInstallFlow() {
 
   if (!downloadGithubFileWithFallback(
         selectedName, OTA_RAW_FILE_BASE, OTA_API_FILE_BASE,
-        OTA_SD_UPDATE_FILE, 1, 70, "Download app0 update")) {
+        OTA_SD_UPDATE_FILE, 1, 70, "Download app0 update", selectedExpectedSize)) {
     return false;
   }
 
@@ -1035,8 +1140,8 @@ bool executeInstallFlow() {
     const uint32_t downloadedSize = static_cast<uint32_t>(appUpdate.size());
     if (selectedExpectedSize != 0U && downloadedSize != selectedExpectedSize) {
       appUpdate.close();
-      setInstallError("OTA index size mismatch: expected " + String(selectedExpectedSize) +
-        ", downloaded " + String(downloadedSize) + ". Regenerate fos-ota.index");
+      setInstallError("SD update.bin changed after verified download: index=" + String(selectedExpectedSize) +
+        ", stored=" + String(downloadedSize) + ". Check SD card/filesystem access");
       return false;
     }
     const bool validAppImage = validateBinHeader(appUpdate, app0->size);

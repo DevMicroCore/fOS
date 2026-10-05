@@ -8215,7 +8215,9 @@ void loop()
   if (now - last_tick >= 5) {
     lv_tick_inc(now - last_tick);
     last_tick = now;
-    if (!gDisplaySuspended) {
+    // UI timers can open the SD card. Pause them while the OTA worker owns
+    // the update file; OTARecovery_Tick below still updates progress state.
+    if (!gDisplaySuspended && !OTARecovery_IsBusy()) {
       lv_timer_handler();
     }
   }
@@ -8226,8 +8228,14 @@ void loop()
   const bool otaBusy = OTARecovery_IsBusy();
 
   if (otaBusy) {
-    // While OTA/Recovery preparation is running, avoid additional UI redraw
-    // and network/audio work to keep the RGB panel output stable.
+    // LVGL's regular timer handler can run callbacks that access SD. Keep it
+    // paused during OTA, but redraw the progress bar explicitly. lv_refr_now
+    // refreshes invalidated areas without invoking the other LVGL timers.
+    static uint32_t lastOtaRedrawMs = 0;
+    if (!gDisplaySuspended && (uint32_t)(millis() - lastOtaRedrawMs) >= 80U) {
+      lv_refr_now(nullptr);
+      lastOtaRedrawMs = millis();
+    }
     delay(5);
     return;
   }
