@@ -227,7 +227,7 @@ bool writePartitionFromFile(
     ~(static_cast<size_t>(RECOVERY_FLASH_SECTOR_SIZE) - 1U);
   if (eraseSize > partition->size) return false;
 
-  drawStatus("Erase app0...");
+  drawStatus("Deleting old fOS ...");
   const esp_err_t eraseResult = esp_partition_erase_range(partition, 0, eraseSize);
   if (eraseResult != ESP_OK) {
     Serial.printf("[RECOVERY] Partition erase failed: %d\n", static_cast<int>(eraseResult));
@@ -238,7 +238,7 @@ bool writePartitionFromFile(
   if (!source.seek(0) || source.read(bootGuard, sizeof(bootGuard)) != sizeof(bootGuard)) return false;
   if (!source.seek(RECOVERY_BOOT_GUARD_SIZE)) return false;
 
-  drawStatus("Write app0...");
+  drawStatus("Installing fOS..");
   drawProgress(0);
   uint8_t buffer[RECOVERY_IO_BUFFER_SIZE];
   size_t offset = RECOVERY_BOOT_GUARD_SIZE;
@@ -268,7 +268,7 @@ bool writePartitionFromFile(
     return false;
   }
 
-  drawStatus("Verify app0...");
+  drawStatus("Verifying fOS ...");
   return verifyPartitionAgainstFile(source, partition, imageSize);
 }
 
@@ -302,7 +302,7 @@ bool flashApp0FromSd() {
     RECOVERY_TARGET_LABEL
   );
   if (app0 == nullptr) {
-    drawStatus("Partition app0 not found");
+    drawStatus("fOS partition not found");
     return false;
   }
 
@@ -347,7 +347,7 @@ bool flashApp0FromSd() {
   const esp_err_t setErr = esp_ota_set_boot_partition(app0);
   if (setErr != ESP_OK) {
     invalidatePartitionHeader(app0);
-    drawStatus("Set boot app0 failed");
+    drawStatus("Set boot to fOS failed");
     Serial.printf("[RECOVERY] esp_ota_set_boot_partition err=%d\n", static_cast<int>(setErr));
     return false;
   }
