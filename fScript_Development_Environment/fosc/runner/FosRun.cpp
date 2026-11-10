@@ -1,3 +1,4 @@
+#include "src/fapp/FAppLayoutUnits.h"
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -7,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -26,8 +28,33 @@
 #include "src/fapp/FAppLoader.h"
 #include "src/fapp/FAppNativeApi.h"
 #include "src/fapp/FAppRuntime.h"
+#include "src/fapp/FAppManifest.h"
+#include "src/fapp/FAppFilePairs.h"
 
 namespace {
+
+std::string mountedPath(const std::string& root, const char * path) {
+  if (root.empty() || path == nullptr || path[0] != '/') return "";
+  std::error_code ec;
+  const auto base = std::filesystem::weakly_canonical(root, ec);
+  if (ec) return "";
+  const auto file = std::filesystem::weakly_canonical(base / std::string(path + 1), ec);
+  if (ec) return "";
+  auto bi = base.begin(), fi = file.begin();
+  for (; bi != base.end(); ++bi, ++fi) if (fi == file.end() || *bi != *fi) return "";
+  return file.string();
+}
+bool mountedPairs(const std::string& root, const char * path, char separator, std::string * names, int row, std::string * selected) {
+  const auto host = mountedPath(root, path);
+  std::ifstream input(host, std::ios::binary);
+  if (!input) return false;
+  input.seekg(0, std::ios::end);const auto size = input.tellg();
+  if (size < 0 || size > static_cast<std::streamoff>(FAppFilePairs::kMaximumBytes)) return false;
+  input.seekg(0);
+  std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)), {});
+  fs::FS fs; fs.addFile(path, bytes);
+  return FAppFilePairs::read(fs, path, separator, names, row, selected);
+}
 
 struct UiObjectState {
   std::uint16_t id = 0;
@@ -44,11 +71,15 @@ struct UiObjectState {
   std::vector<std::string> drawCommands;
   int x = 0;
   int y = 0;
+  int tabHeight = 50;
   int w = 120;
   int h = 40;
   int font = 20;
   int radius = 6;
   int value = 0;
+  int minimum = 0;
+  int maximum = 100;
+  bool pressed = false;
   bool checked = false;
   bool hidden = false;
   bool enabled = true;
@@ -254,6 +285,7 @@ FAppValue parseValue(const std::string& text)
 
 class RunnerUi : public FAppUiApi {
  public:
+  void setScreenSize(int width, int height) { screenWidth_ = width; screenHeight_ = height; }
   bool loadLayout(const std::string& path)
   {
     std::string source;
@@ -286,12 +318,29 @@ class RunnerUi : public FAppUiApi {
       if (const auto bgIt = fields.find("bg"); bgIt != fields.end()) object.bg = bgIt->second;
       if (const auto fgIt = fields.find("fg"); fgIt != fields.end()) object.fg = fgIt->second;
       if (const auto alignIt = fields.find("align"); alignIt != fields.end()) object.align = lower(alignIt->second);
-      object.x = parseIntField(fields, "x", object.x);
-      object.y = parseIntField(fields, "y", object.y);
-      object.w = parseIntField(fields, "w", object.w);
-      object.h = parseIntField(fields, "h", object.h);
+      const UiObjectState *parent = nullptr;
+      const auto parentId = idsByName_.find(object.parent);
+      if (parentId != idsByName_.end()) parent = &objectsById_.at(parentId->second);
+      const int inset = parent && parent->type == "tab" ? 32 : 0;
+      const int parentWidth = parent ? parent->w - inset : screenWidth_;
+      const int parentHeight = parent ? parent->h - inset : screenHeight_;
+      const auto dimension = [&](const char *key, int base, int fallback) {
+        const auto field = fields.find(key);
+        return field == fields.end() ? fallback : fos_layout_pixels(field->second.c_str(), base, fallback);
+      };
+      object.x = dimension("x", parentWidth, object.x);
+      object.y = dimension("y", parentHeight, object.y);
+      object.w = dimension("w", parentWidth, object.w);
+      object.h = dimension("h", parentHeight, object.h);
+      object.tabHeight = dimension("tab_height", object.h, 50);
+      if (object.type == "tab" && parent) {
+        object.x = object.y = 0; object.w = parent->w;
+        object.h = parent->h - parent->tabHeight;
+      }
       object.font = parseIntField(fields, "font", object.font);
       object.radius = parseIntField(fields, "radius", object.radius);
+      object.minimum = parseIntField(fields, "min", 0);
+      object.maximum = parseIntField(fields, "max", 100);
       object.clickable = parseBoolField(fields, "clickable", object.clickable);
       if (object.type == "roller" || object.type == "dropdown") object.options = splitLines(object.text);
       if (const auto valueIt = fields.find("value"); valueIt != fields.end()) object.value = parseValue(valueIt->second).asInteger();
@@ -320,6 +369,8 @@ class RunnerUi : public FAppUiApi {
         if (object->second.type == "textarea") *result = FAppValue::string(object->second.text.c_str());
         else *result = FAppValue::integer(object->second.value);
         return true;
+      case fosc::fapp::UiProperty::Pressed:
+        *result = FAppValue::boolean(object->second.pressed); return true;
       case fosc::fapp::UiProperty::Checked:
         *result = FAppValue::boolean(object->second.checked);
         return true;
@@ -350,6 +401,8 @@ class RunnerUi : public FAppUiApi {
         if (object->second.type == "textarea") object->second.text = text;
         else object->second.value = value.asInteger();
         return true;
+      case fosc::fapp::UiProperty::Pressed:
+        return false;
       case fosc::fapp::UiProperty::Checked:
         object->second.checked = value.truthy();
         return true;
@@ -373,10 +426,61 @@ class RunnerUi : public FAppUiApi {
     auto object = objectsById_.find(objectId);
     if (object == objectsById_.end() || result == nullptr) return false;
     const auto parsedMethod = static_cast<fosc::fapp::UiMethod>(method);
+    if (parsedMethod == fosc::fapp::UiMethod::SetRange) {
+      if (argumentCount != 2 || object->second.type != "slider" || arguments[0].asInteger() >= arguments[1].asInteger()) return false;
+      object->second.minimum = arguments[0].asInteger(); object->second.maximum = arguments[1].asInteger();
+      *result = FAppValue::boolean(true); return true;
+    }
+    if (parsedMethod == fosc::fapp::UiMethod::LoadPairs) {
+      if (argumentCount != 2 || object->second.type != "roller" || strlen(arguments[1].asString()) != 1) return false;
+      char path[256]; std::string names;
+      const bool loaded = FAppPath::resolve("/apps/run", arguments[0].asString(), path, sizeof(path)) == FAppPath::Status::Ready &&
+        storagePolicy_.allows(path, "/apps/run", false) && mountedPairs(sdRoot_, path, arguments[1].asString()[0], &names, -1, nullptr);
+      object->second.text = loaded ? names : "Keine Eintraege";
+      object->second.options = splitLines(object->second.text); object->second.value = 0;
+      *result = FAppValue::boolean(loaded); return true;
+    }
+    if (parsedMethod == fosc::fapp::UiMethod::LoadDir || parsedMethod == fosc::fapp::UiMethod::LoadDirFiltered) {
+      if (argumentCount != (parsedMethod == fosc::fapp::UiMethod::LoadDirFiltered ? 3 : 2) || arguments == nullptr || object->second.type != "roller" ||
+          arguments[0].type() != FAppValueType::String || arguments[1].type() != FAppValueType::String) return false;
+      char path[256], root[256];
+      const bool allowed = FAppPath::resolve("/apps/run", arguments[0].asString(), path, sizeof(path)) == FAppPath::Status::Ready &&
+        FAppPath::resolve("/apps/run", arguments[1].asString(), root, sizeof(root)) == FAppPath::Status::Ready &&
+        storagePolicy_.allows(path, "/apps/run", false);
+      if (allowed) {
+        const std::string requested(path), browserRoot(root);
+        if (requested != browserRoot && !(browserRoot == "/" || requested.compare(0, browserRoot.size() + 1, browserRoot + "/") == 0)) { *result = FAppValue::boolean(false); return true; }
+        if (sdRoot_.empty() && parsedMethod == fosc::fapp::UiMethod::LoadDir) {
+          object->second.text = requested == browserRoot ? "Welcome.txt" : "..\nWelcome.txt";
+        } else {
+          std::string folders = requested == browserRoot ? "" : "..\n", files;
+          std::error_code ec;
+          const auto host = mountedPath(sdRoot_, path);
+          if (host.empty() || !std::filesystem::is_directory(host, ec)) { *result = FAppValue::boolean(false); return true; }
+          for (const auto& entry : std::filesystem::directory_iterator(host, ec)) {
+            const std::string name = entry.path().filename().string();
+            if (name.empty() || name[0] == '.' || entry.is_symlink()) continue;
+            if (entry.is_directory()) folders += name + "/\n";
+            else if (parsedMethod == fosc::fapp::UiMethod::LoadDir || FAppFilePairs::matchesExtension(name, arguments[2].asString())) files += name + "\n";
+          }
+          object->second.text = folders + files;
+          if (object->second.text.empty()) object->second.text = "Keine Dateien";
+          else object->second.text.pop_back();
+        }
+        object->second.options = splitLines(object->second.text);
+        object->second.value = 0;
+      }
+      *result = FAppValue::boolean(allowed);
+      return true;
+    }
     if (parsedMethod == fosc::fapp::UiMethod::LoadFile ||
         parsedMethod == fosc::fapp::UiMethod::SaveFile) {
-      if (argumentCount != 1 || object->second.type != "textarea") return false;
-      *result = FAppValue::boolean(true);
+      if (argumentCount != 1 || arguments == nullptr || object->second.type != "textarea" ||
+          arguments[0].type() != FAppValueType::String) return false;
+      char path[256];
+      *result = FAppValue::boolean(
+        FAppPath::resolve("/apps/run", arguments[0].asString(), path, sizeof(path)) == FAppPath::Status::Ready &&
+        storagePolicy_.allows(path, "/apps/run", parsedMethod == fosc::fapp::UiMethod::SaveFile));
       return true;
     }
     if (object->second.type == "canvas") {
@@ -448,6 +552,10 @@ class RunnerUi : public FAppUiApi {
       case fosc::fapp::UiMethod::Rect:
       case fosc::fapp::UiMethod::Circle:
       case fosc::fapp::UiMethod::DrawText:
+      case fosc::fapp::UiMethod::LoadDir:
+      case fosc::fapp::UiMethod::SetRange:
+      case fosc::fapp::UiMethod::LoadDirFiltered:
+      case fosc::fapp::UiMethod::LoadPairs:
         break;
     }
     *result = FAppValue::nil();
@@ -534,7 +642,7 @@ class RunnerUi : public FAppUiApi {
     });
 
     std::ostringstream output;
-    output << "{\"objects\":[";
+    output << "{\"width\":" << screenWidth_ << ",\"height\":" << screenHeight_ << ",\"objects\":[";
     for (std::size_t index = 0; index < objects.size(); ++index) {
       const UiObjectState * object = objects[index];
       if (index > 0) output << ',';
@@ -552,8 +660,11 @@ class RunnerUi : public FAppUiApi {
              << ",\"y\":" << object->y
              << ",\"w\":" << object->w
              << ",\"h\":" << object->h
+             << ",\"tab_height\":" << object->tabHeight
              << ",\"font\":" << object->font
              << ",\"radius\":" << object->radius
+             << ",\"min\":" << object->minimum
+             << ",\"max\":" << object->maximum
              << ",\"value\":" << object->value
              << ",\"checked\":" << (object->checked ? "true" : "false")
              << ",\"hidden\":" << (object->hidden ? "true" : "false")
@@ -595,7 +706,13 @@ class RunnerUi : public FAppUiApi {
     }
   }
 
+  void setStoragePolicy(const FAppStoragePolicy& policy) { storagePolicy_ = policy; }
+  void setSdRoot(const std::string& root) { sdRoot_ = root; }
+
  private:
+  int screenWidth_ = 800, screenHeight_ = 480;
+  FAppStoragePolicy storagePolicy_;
+  std::string sdRoot_;
   void clearFocus()
   {
     for (auto& item : objectsById_) item.second.focused = false;
@@ -739,19 +856,56 @@ class RunnerNative : public FAppNativeApi {
         *result = FAppValue::string(weekday(textArgument(0)).c_str());
         return true;
       case FAppNativeFunction::FileRead:
-        *result = FAppValue::string(files_[textArgument(0)].c_str());
-        return true;
       case FAppNativeFunction::FileWrite:
-        files_[textArgument(0)] = textArgument(1);
-        *result = FAppValue::boolean(true);
-        return true;
       case FAppNativeFunction::FileList:
-        *result = FAppValue::string("Welcome.txt");
+      case FAppNativeFunction::AudioPlay: {
+        const bool write = function == FAppNativeFunction::FileWrite;
+        char path[256];
+        const std::string requested = textArgument(0);
+        if (FAppPath::resolve("/apps/run", requested.c_str(), path, sizeof(path)) != FAppPath::Status::Ready ||
+            !storagePolicy_.allows(path, "/apps/run", write, function == FAppNativeFunction::AudioPlay)) {
+          lastError_ = "SD folder permission denied or protected path";
+          return false;
+        }
+        if (function == FAppNativeFunction::FileRead) *result = FAppValue::string(files_[path].c_str());
+        else if (write) { files_[path] = textArgument(1); *result = FAppValue::boolean(true); }
+        else if (function == FAppNativeFunction::FileList) *result = FAppValue::string("Welcome.txt");
+        else {
+          const auto host = mountedPath(sdRoot_, path);
+          const bool exists = sdRoot_.empty() || (!host.empty() && std::filesystem::is_regular_file(host));
+          audioPlaying_ = exists; audioLocal_ = exists; audioPosition_ = 0;
+          log("audio_play", path); *result = FAppValue::boolean(exists);
+        }
         return true;
-      case FAppNativeFunction::AudioPlay:
-        log("audio_play", textArgument(0));
-        *result = FAppValue::boolean(true);
-        return true;
+      }
+      case FAppNativeFunction::FilePairValue: {
+        if (argumentCount != 3 || strlen(arguments[1].asString()) != 1 || arguments[2].asInteger() < 0) return false;
+        char path[256]; std::string value;
+        if (FAppPath::resolve("/apps/run", arguments[0].asString(), path, sizeof(path)) != FAppPath::Status::Ready || !storagePolicy_.allows(path, "/apps/run", false)) return false;
+        mountedPairs(sdRoot_, path, arguments[1].asString()[0], nullptr, arguments[2].asInteger(), &value);
+        *result = FAppValue::string(value.c_str()); return true;
+      }
+      case FAppNativeFunction::AudioStream:
+        audioPlaying_ = wifiOnline_ && (textArgument(0).find("http://") == 0 || textArgument(0).find("https://") == 0);
+        audioLocal_ = false; audioPosition_ = 0;
+        log("audio_stream", textArgument(0)); *result = FAppValue::boolean(audioPlaying_); return true;
+      case FAppNativeFunction::AudioStop:
+        audioPlaying_ = false; audioLocal_ = false; *result = FAppValue::boolean(true); return true;
+      case FAppNativeFunction::AudioSetVolume:
+        if (arguments[0].asInteger() < 0 || arguments[0].asInteger() > 21) return false;
+        audioVolume_ = arguments[0].asInteger(); *result = FAppValue::boolean(true); return true;
+      case FAppNativeFunction::AudioVolume:
+        *result = FAppValue::integer(audioVolume_); return true;
+      case FAppNativeFunction::AudioPlaying:
+        *result = FAppValue::boolean(audioPlaying_); return true;
+      case FAppNativeFunction::AudioPosition:
+        *result = FAppValue::integer(audioLocal_ ? audioPosition_ : 0); return true;
+      case FAppNativeFunction::AudioDuration:
+        *result = FAppValue::integer(audioLocal_ ? 180 : 0); return true;
+      case FAppNativeFunction::AudioSeek:
+        if (arguments[0].asInteger() < 0 || arguments[0].asInteger() > 65535) return false;
+        if (audioLocal_ && audioPlaying_) audioPosition_ = arguments[0].asInteger();
+        *result = FAppValue::boolean(audioLocal_ && audioPlaying_); return true;
       case FAppNativeFunction::WifiStatus:
         *result = FAppValue::boolean(wifiOnline_);
         return true;
@@ -827,8 +981,12 @@ class RunnerNative : public FAppNativeApi {
   void setJson(const std::string& key, const std::string& value) { json_[key] = value; }
   void setWifiOnline(bool online) { wifiOnline_ = online; }
   void setTrace(bool enabled) { trace_ = enabled; }
+  void setStoragePolicy(const FAppStoragePolicy& policy) { storagePolicy_ = policy; }
+  void setSdRoot(const std::string& root) { sdRoot_ = root; }
 
  private:
+  FAppStoragePolicy storagePolicy_;
+  std::string sdRoot_;
   void log(const std::string& name, const std::string& value) const
   {
     if (!trace_) return;
@@ -837,6 +995,10 @@ class RunnerNative : public FAppNativeApi {
     std::cout << '\n';
   }
 
+  bool audioPlaying_ = false;
+  bool audioLocal_ = false;
+  int audioVolume_ = 15;
+  int audioPosition_ = 0;
   static std::string urlEncode(const std::string& input)
   {
     std::ostringstream output;
@@ -907,8 +1069,10 @@ void printUsage()
             << "  fosrun <main.fapp> --ui layout.ui [options]\n\n"
             << "Options:\n"
             << "  --serve                   Start a local browser UI at http://127.0.0.1:8765\n"
+            << "  --size WIDTHxHEIGHT        Preview/resolve percentages, default 800x480\n"
             << "  --port number             Port for --serve, default 8765\n"
             << "  --open                    Open the browser UI automatically when possible\n"
+            << "  --sd-root directory       Read music/config from a local SD image; audio is simulated\n"
             << "  --event object.event       Queue an event, e.g. btn_7.click or app.timer\n"
             << "  --set object.property=val  Set a simulated UI property before events\n"
             << "  --json path=value          Override http_json(path) result\n"
@@ -1174,6 +1338,14 @@ std::string renderHtml()
           el.placeholder = object.placeholder || '';
           el.onchange = async () => { await sendSet(object.name, 'text', el.value); await sendEvent(object.name + '.value_changed', false); };
         }
+      } else if (object.type === 'slider') {
+        el = document.createElement('input'); el.type = 'range'; el.min = object.min; el.max = object.max; el.value = object.value;
+        el.disabled = !object.enabled;
+        el.onchange = async () => { await sendSet(object.name, 'value', el.value); await sendEvent(object.name + '.value_changed', false); await sendEvent(object.name + '.released', false); };
+      } else if (object.type === 'tabview') {
+        el = document.createElement('div');
+        const tabs = model.objects.filter(o => o.type === 'tab' && o.parent === object.name);
+        tabs.forEach((tab, index) => { const b = document.createElement('button'); b.textContent = tab.text; b.style.height = object.tab_height + 'px'; b.onclick = async () => { await sendSet(object.name, 'value', index); await sendEvent(object.name + '.value_changed', false); }; el.appendChild(b); });
       } else if (object.type === 'dropdown' || object.type === 'roller') {
         el = document.createElement('select');
         if (object.type === 'roller') el.size = Math.max(2, Math.min(6, object.options.length || 2));
@@ -1193,7 +1365,7 @@ std::string renderHtml()
         el.onchange = async () => { await sendSet(object.name, 'checked', el.checked ? 'true' : 'false'); await sendEvent(object.name + '.changed', false); };
       } else if (object.type === 'keyboard') {
         return createKeyboard(object);
-      } else if (object.type === 'panel') {
+      } else if (object.type === 'panel' || object.type === 'tab') {
         el = document.createElement('div');
       } else {
         el = document.createElement('div');
@@ -1209,8 +1381,8 @@ std::string renderHtml()
     function render() {
       const screen = document.getElementById('screen');
       screen.textContent = '';
-      const maxX = Math.max(800, ...model.objects.map(o => o.x + o.w));
-      const maxY = Math.max(480, ...model.objects.map(o => o.y + o.h));
+      const maxX = model.width;
+      const maxY = model.height;
       document.documentElement.style.setProperty('--screen-width', maxX + 'px');
       document.documentElement.style.setProperty('--screen-height', maxY + 'px');
       document.documentElement.style.setProperty('--screen-ratio', String(maxX / maxY));
@@ -1219,6 +1391,12 @@ std::string renderHtml()
       for (const object of model.objects) {
         const node = nodes.get(object.name);
         const parent = object.parent ? nodes.get(object.parent) : null;
+        if (object.type === 'tab') {
+          const tabview = model.objects.find(o => o.name === object.parent);
+          const tabs = model.objects.filter(o => o.type === 'tab' && o.parent === object.parent);
+          node.style.left = '0px'; node.style.top = tabview.tab_height + 'px'; node.style.width = '100%'; node.style.height = 'calc(100% - ' + tabview.tab_height + 'px)';
+          node.style.display = tabs.indexOf(object) === tabview.value ? 'block' : 'none';
+        }
         (parent || screen).appendChild(node);
       }
       document.getElementById('summary').textContent = model.objects.length + ' UI objects loaded';
@@ -1356,6 +1534,7 @@ int main(int argc, char ** argv)
 
   const std::string fappPath = argv[1];
   std::string uiPath;
+  std::string sdRoot;
   std::vector<std::string> events;
   std::vector<std::string> assignments;
   std::vector<std::string> jsonAssignments;
@@ -1366,10 +1545,20 @@ int main(int argc, char ** argv)
   bool serve = false;
   bool openBrowser = false;
   int port = 8765;
+  int screenWidth = 800, screenHeight = 480;
 
   for (int index = 2; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--ui" && index + 1 < argc) uiPath = argv[++index];
+    else if (argument == "--sd-root" && index + 1 < argc) sdRoot = argv[++index];
+    else if (argument == "--size" && index + 1 < argc) {
+      const std::string size = argv[++index];
+      char extra;
+      if (std::sscanf(size.c_str(), "%dx%d%c", &screenWidth, &screenHeight, &extra) != 2 ||
+          screenWidth < 64 || screenWidth > 4096 || screenHeight < 64 || screenHeight > 4096) {
+        std::cerr << "Error FS700: --size requires WIDTHxHEIGHT, e.g. 1024x600.\n"; return 2;
+      }
+    }
     else if (argument == "--serve") serve = true;
     else if (argument == "--port" && index + 1 < argc) port = std::atoi(argv[++index]);
     else if (argument == "--open") openBrowser = true;
@@ -1406,6 +1595,8 @@ int main(int argc, char ** argv)
   }
 
   RunnerUi ui;
+  ui.setScreenSize(screenWidth, screenHeight);
+  ui.setSdRoot(sdRoot);
   if (!ui.loadLayout(uiPath)) {
     std::cerr << "Error FS701: Cannot parse UI symbols.\nFile: " << uiPath << '\n';
     return 1;
@@ -1430,6 +1621,7 @@ int main(int argc, char ** argv)
   }
 
   RunnerNative native;
+  native.setSdRoot(sdRoot);
   native.setTrace(traceNative);
   native.setWifiOnline(wifiOnline);
   for (const std::string& assignment : jsonAssignments) {
@@ -1441,13 +1633,29 @@ int main(int argc, char ** argv)
     native.setJson(assignment.substr(0, equals), assignment.substr(equals + 1));
   }
 
-  const FAppPermissions permissions =
+  FAppPermissions permissions =
     static_cast<FAppPermissions>(FAppPermission::Ui) |
     static_cast<FAppPermissions>(FAppPermission::Network) |
     static_cast<FAppPermissions>(FAppPermission::StorageRead) |
     static_cast<FAppPermissions>(FAppPermission::StorageWrite) |
     static_cast<FAppPermissions>(FAppPermission::Audio) |
     static_cast<FAppPermissions>(FAppPermission::SystemRestart);
+  // Keep the host simulation's storage grants consistent with app.json.
+  const std::size_t slash = uiPath.find_last_of("/\\");
+  const std::string manifestPath = (slash == std::string::npos ? "" : uiPath.substr(0, slash + 1)) + "app.json";
+  std::string manifestSource;
+  if (readTextFile(manifestPath, &manifestSource)) {
+    filesystem.addFile("/apps/run/app.json", std::vector<std::uint8_t>(manifestSource.begin(), manifestSource.end()));
+    FAppManifest manifest;
+    if (manifest.load(filesystem, "/apps/run/app.json") != FAppManifestStatus::Ready) {
+      std::cerr << "Error FS707: " << manifest.errorMessage() << '\n';
+      return 1;
+    }
+    permissions = manifest.permissions();
+    ui.setStoragePolicy(manifest.storagePolicy());
+    native.setStoragePolicy(manifest.storagePolicy());
+  }
+
 
   FAppRuntime runtime;
   if (!runtime.begin(filesystem, loader, ui, permissions, &native)) {

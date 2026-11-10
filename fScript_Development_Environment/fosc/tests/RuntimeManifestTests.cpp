@@ -65,6 +65,9 @@ class FakeNative : public FAppNativeApi {
     else if (function == FAppNativeFunction::FileRead && argumentCount == 1) *result = FAppValue::string("data");
     else if (function == FAppNativeFunction::FileWrite && argumentCount == 2) *result = FAppValue::boolean(true);
     else if (function == FAppNativeFunction::AudioPlay && argumentCount == 1) *result = FAppValue::boolean(true);
+    else if (function == FAppNativeFunction::AudioStream || function == FAppNativeFunction::AudioStop || function == FAppNativeFunction::AudioSetVolume || function == FAppNativeFunction::AudioSeek || function == FAppNativeFunction::AudioPlaying) *result = FAppValue::boolean(true);
+    else if (function == FAppNativeFunction::AudioVolume || function == FAppNativeFunction::AudioPosition || function == FAppNativeFunction::AudioDuration) *result = FAppValue::integer(15);
+    else if (function == FAppNativeFunction::FilePairValue) *result = FAppValue::string("https://example.test");
     else if (function == FAppNativeFunction::WifiStatus && argumentCount == 0) *result = FAppValue::boolean(true);
     else if (function == FAppNativeFunction::DateWeekday && argumentCount == 1) *result = FAppValue::string("Tue");
     else if (function == FAppNativeFunction::SystemRestart && argumentCount == 0) *result = FAppValue::nil();
@@ -285,6 +288,15 @@ void testNativePermissionMapping()
     {"var value = file_read(\"state.txt\")\n", FAppPermission::StorageRead},
     {"var value = file_write(\"state.txt\", \"x\")\n", FAppPermission::StorageWrite},
     {"var value = audio_play(\"tone.mp3\")\n", FAppPermission::Audio},
+    {"var value = audio_stream(\"https://example.test\")\n", static_cast<FAppPermission>(static_cast<uint8_t>(FAppPermission::Audio)|static_cast<uint8_t>(FAppPermission::Network))},
+    {"var value = audio_stop()\n", FAppPermission::Audio},
+    {"var value = audio_set_volume(15)\n", FAppPermission::Audio},
+    {"var value = audio_volume()\n", FAppPermission::Audio},
+    {"var value = audio_playing()\n", FAppPermission::Audio},
+    {"var value = audio_position()\n", FAppPermission::Audio},
+    {"var value = audio_duration()\n", FAppPermission::Audio},
+    {"var value = audio_seek(60)\n", FAppPermission::Audio},
+    {"var value = file_pair_value(\"stations.txt\", \"|\", 0)\n", FAppPermission::StorageRead},
     {"var value = wifi_status()\n", FAppPermission::Network},
     {"system.restart()\n", FAppPermission::SystemRestart}
   };
@@ -305,6 +317,12 @@ void testNativePermissionMapping()
     require(allowed.state() == FAppRuntimeState::Ready && native.calls == 1,
             "matching native permission should allow exactly one call");
 
+    if (std::string(test.source).find("audio_stream") != std::string::npos) {
+      for(auto only : {FAppPermission::Audio,FAppPermission::Network}) {
+        FAppRuntime partial;require(partial.begin(filesystem,loader,ui,static_cast<FAppPermissions>(only),&native),"partial stream load");partial.start();runUntilIdle(&partial);
+        require(partial.error()==FAppRuntimeError::PermissionDenied,"stream requires both audio and network");
+      }
+    }
     FAppRuntime denied;
     require(denied.begin(filesystem, loader, ui, 0, &native), "denied permission runtime should load");
     denied.start();

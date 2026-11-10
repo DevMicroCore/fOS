@@ -1,0 +1,27 @@
+{
+  "version": "fosc-0.14.0-fosrun-fOS4.0.1",
+  "root": "fScript_Development_Environment/fosc",
+  "common": [
+    "ast/AstPrinter.cpp",
+    "bytecode/Bytecode.cpp",
+    "compiler/CodeGenerator.cpp",
+    "compiler/UiSymbols.cpp",
+    "diagnostics/Diagnostic.cpp",
+    "format/Disassembler.cpp",
+    "format/FAppFile.cpp",
+    "lexer/Lexer.cpp",
+    "lexer/Token.cpp",
+    "optimizer/ConstantFolder.cpp",
+    "parser/Parser.cpp",
+    "semantic/SemanticAnalyzer.cpp",
+    "semantic/Type.cpp",
+    "verifier/BytecodeVerifier.cpp"
+  ],
+  "compiler": "main.cpp",
+  "runner": "runner/FosRun.cpp",
+  "runtime": [
+    "../../fOS4.0/src/fapp/FAppLoader.cpp",
+    "../../fOS4.0/src/fapp/FAppRuntime.cpp",
+    "../../fOS4.0/src/fapp/FAppManifest.cpp"
+  ]
+}

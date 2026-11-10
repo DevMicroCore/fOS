@@ -69,6 +69,7 @@ const char * uiPropertyName(UiProperty property)
     case UiProperty::Checked: return "checked";
     case UiProperty::Hidden: return "hidden";
     case UiProperty::Enabled: return "enabled";
+    case UiProperty::Pressed: return "pressed";
   }
   return "unknown";
 }
@@ -88,6 +89,10 @@ const char * uiMethodName(UiMethod method)
     case UiMethod::Rect: return "rect";
     case UiMethod::Circle: return "circle";
     case UiMethod::DrawText: return "draw_text";
+    case UiMethod::LoadDir: return "load_dir";
+    case UiMethod::SetRange: return "set_range";
+    case UiMethod::LoadDirFiltered: return "load_dir_filtered";
+    case UiMethod::LoadPairs: return "load_pairs";
   }
   return "unknown";
 }
@@ -121,6 +126,7 @@ bool parseUiProperty(const std::string& name, UiProperty * property)
   else if (value == "checked") *property = UiProperty::Checked;
   else if (value == "hidden") *property = UiProperty::Hidden;
   else if (value == "enabled") *property = UiProperty::Enabled;
+  else if (value == "pressed") *property = UiProperty::Pressed;
   else return false;
   return true;
 }
@@ -140,6 +146,10 @@ bool parseUiMethod(const std::string& name, UiMethod * method)
   else if (value == "rect") *method = UiMethod::Rect;
   else if (value == "circle") *method = UiMethod::Circle;
   else if (value == "draw_text") *method = UiMethod::DrawText;
+  else if (value == "load_dir") *method = UiMethod::LoadDir;
+  else if (value == "set_range") *method = UiMethod::SetRange;
+  else if (value == "load_dir_filtered") *method = UiMethod::LoadDirFiltered;
+  else if (value == "load_pairs") *method = UiMethod::LoadPairs;
   else return false;
   return true;
 }
@@ -191,6 +201,15 @@ const char * nativeFunctionName(NativeFunction function)
     case NativeFunction::FileRead: return "file_read";
     case NativeFunction::FileWrite: return "file_write";
     case NativeFunction::AudioPlay: return "audio_play";
+    case NativeFunction::AudioStream: return "audio_stream";
+    case NativeFunction::AudioStop: return "audio_stop";
+    case NativeFunction::AudioSetVolume: return "audio_set_volume";
+    case NativeFunction::AudioVolume: return "audio_volume";
+    case NativeFunction::AudioPlaying: return "audio_playing";
+    case NativeFunction::AudioPosition: return "audio_position";
+    case NativeFunction::AudioDuration: return "audio_duration";
+    case NativeFunction::AudioSeek: return "audio_seek";
+    case NativeFunction::FilePairValue: return "file_pair_value";
     case NativeFunction::WifiStatus: return "wifi_status";
     case NativeFunction::SystemRestart: return "system.restart";
     case NativeFunction::TimerStart: return "timer.start";
@@ -228,6 +247,15 @@ bool parseNativeFunction(
   else if (value == "file_read") { *function = NativeFunction::FileRead; *arity = 1; }
   else if (value == "file_write") { *function = NativeFunction::FileWrite; *arity = 2; }
   else if (value == "audio_play") { *function = NativeFunction::AudioPlay; *arity = 1; }
+  else if (value == "audio_stream") { *function = NativeFunction::AudioStream; *arity = 1; }
+  else if (value == "audio_stop") { *function = NativeFunction::AudioStop; *arity = 0; }
+  else if (value == "audio_set_volume") { *function = NativeFunction::AudioSetVolume; *arity = 1; }
+  else if (value == "audio_volume") { *function = NativeFunction::AudioVolume; *arity = 0; }
+  else if (value == "audio_playing") { *function = NativeFunction::AudioPlaying; *arity = 0; }
+  else if (value == "audio_position") { *function = NativeFunction::AudioPosition; *arity = 0; }
+  else if (value == "audio_duration") { *function = NativeFunction::AudioDuration; *arity = 0; }
+  else if (value == "audio_seek") { *function = NativeFunction::AudioSeek; *arity = 1; }
+  else if (value == "file_pair_value") { *function = NativeFunction::FilePairValue; *arity = 3; }
   else if (value == "wifi_status") { *function = NativeFunction::WifiStatus; *arity = 0; }
   else if (value == "system.restart") { *function = NativeFunction::SystemRestart; *arity = 0; }
   else if (value == "timer.start") { *function = NativeFunction::TimerStart; *arity = 1; }

@@ -1,0 +1,21 @@
+# Relative geometry: x/w = % of parent content width; y/h = % of parent content height.
+# Same layout for 800x480 (CrowPanel) and 1024x600 (Waveshare P4).
+type=textarea;id=txt_display;x=7.5%;y=14.583333%;w=85%;h=13.333333%;text=0;bg=0x2A2A39;fg=0xFFFFFF;font=24;one_line=true;clickable=false;scrollable=false;radius=4
+type=button;id=btn_clear;x=7.5%;y=29.166667%;w=20%;h=12.083333%;text=C;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_back;x=28.75%;y=29.166667%;w=20%;h=12.083333%;text=<;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_divide;x=50%;y=29.166667%;w=20%;h=12.083333%;text=/;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_multiply;x=71.25%;y=29.166667%;w=20%;h=12.083333%;text=*;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_7;x=7.5%;y=43.333333%;w=20%;h=12.083333%;text=7;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_8;x=28.75%;y=43.333333%;w=20%;h=12.083333%;text=8;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_9;x=50%;y=43.333333%;w=20%;h=12.083333%;text=9;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_minus;x=71.25%;y=43.333333%;w=20%;h=12.083333%;text=-;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_4;x=7.5%;y=57.5%;w=20%;h=12.083333%;text=4;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_5;x=28.75%;y=57.5%;w=20%;h=12.083333%;text=5;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_6;x=50%;y=57.5%;w=20%;h=12.083333%;text=6;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_plus;x=71.25%;y=57.5%;w=20%;h=12.083333%;text=+;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_1;x=7.5%;y=71.666667%;w=20%;h=12.083333%;text=1;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_2;x=28.75%;y=71.666667%;w=20%;h=12.083333%;text=2;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_3;x=50%;y=71.666667%;w=20%;h=12.083333%;text=3;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_equals;x=71.25%;y=71.666667%;w=20%;h=12.083333%;text==;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_0;x=7.5%;y=85.833333%;w=41.25%;h=12.083333%;text=0;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false
+type=button;id=btn_comma;x=50%;y=85.833333%;w=20%;h=12.083333%;text=,;bg=theme;fg=0xFFFFFF;font=24;radius=10;scrollable=false

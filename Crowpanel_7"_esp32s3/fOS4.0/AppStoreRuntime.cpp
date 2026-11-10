@@ -23,6 +23,7 @@ namespace {
 #define APPSTORE_SLOTS_FILE "/system/apps/slots.txt"
 #define APPSTORE_SLOTS_TEMP_FILE "/system/apps/slots.tmp"
 #define APPSTORE_APPS_DIRECTORY "/apps"
+#define APPSTORE_APPDATA_DIRECTORY "appdata"
 #define APPSTORE_DEFAULT_STORE \
   "https://github.com/DevMicroCore/fOS/tree/main/apps"
 #define APPSTORE_DEFAULT_INDEX \
@@ -120,6 +121,14 @@ bool isSafeRelativePath(const String& value)
     start = slash + 1;
   }
   return true;
+}
+
+bool isAppDataPath(const String& relativePath)
+{
+  const int slash = relativePath.indexOf('/');
+  const String firstPart = slash < 0 ? relativePath : relativePath.substring(0, slash);
+  // SD uses FAT, whose directory names are case-insensitive.
+  return firstPart.equalsIgnoreCase(APPSTORE_APPDATA_DIRECTORY);
 }
 
 bool tabField(const String& line, uint8_t wanted, String * value)
@@ -1137,7 +1146,7 @@ bool ensureParentDirectories(const String& root, const String& relativeFile)
   return true;
 }
 
-bool downloadIndexedDirectory(const String& source, const String& destination)
+bool downloadIndexedDirectory(const String& source, const String& destination, bool updating)
 {
   if (!source.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)) return false;
   const String fields = source.substring(strlen(APPSTORE_INDEX_SOURCE_PREFIX));
@@ -1173,6 +1182,7 @@ bool downloadIndexedDirectory(const String& source, const String& destination)
     if (!tabField(line, 1, &fileFolder) || fileFolder != folder ||
         !tabField(line, 2, &fileVersion) || fileVersion != version ||
         !tabField(line, 3, &relativeFile) || !isSafeRelativePath(relativeFile)) continue;
+    if (updating && isAppDataPath(relativeFile)) continue;
     if (!ensureParentDirectories(destination, relativeFile)) return false;
 
     const String remotePath = remoteDirectory + "/" + relativeFile;
@@ -1212,7 +1222,7 @@ bool downloadFile(
   return true;
 }
 
-bool downloadDirectory(const String& apiUrl, const String& destination, uint8_t depth)
+bool downloadDirectory(const String& apiUrl, const String& destination, uint8_t depth, bool updating)
 {
   if (depth > APPSTORE_MAX_DOWNLOAD_DEPTH) return false;
   if (!SD.exists(destination) && !SD.mkdir(destination)) return false;
@@ -1225,6 +1235,7 @@ bool downloadDirectory(const String& apiUrl, const String& destination, uint8_t 
     String name;
     if (!extractJsonString(object, "type", &type) || !extractJsonString(object, "name", &name)) continue;
     if (!isSafePathPart(name)) return false;
+    if (updating && depth == 0 && isAppDataPath(name)) continue;
     const String localPath = destination + "/" + name;
     if (type == "file") {
       String downloadUrl;
@@ -1236,8 +1247,50 @@ bool downloadDirectory(const String& apiUrl, const String& destination, uint8_t 
     } else if (type == "dir") {
       String childApiUrl;
       if (!extractJsonString(object, "url", &childApiUrl) || childApiUrl.length() == 0) return false;
-      if (!downloadDirectory(childApiUrl, localPath, depth + 1)) return false;
+      if (!downloadDirectory(childApiUrl, localPath, depth + 1, updating)) return false;
     }
+  }
+  return true;
+}
+
+bool installDownloadedApp(const String& temporary, const String& target, const String& backup)
+{
+  const String targetData = target + "/" + APPSTORE_APPDATA_DIRECTORY;
+  const String backupData = backup + "/" + APPSTORE_APPDATA_DIRECTORY;
+  const bool hadExisting = SD.exists(target);
+  const bool preserveData = hadExisting && SD.exists(targetData);
+
+  // Never erase data left in a backup after an interrupted/failed update.
+  if (SD.exists(backup) &&
+      (SD.exists(backupData) || !removeRecursively(backup))) return false;
+
+  const String temporaryData = temporary + "/" + APPSTORE_APPDATA_DIRECTORY;
+  if (preserveData) {
+    // Update downloads must not contain defaults that replace saved data.
+    if (SD.exists(temporaryData)) return false;
+  } else if (!SD.exists(temporaryData) && !SD.mkdir(temporaryData)) {
+    return false;
+  }
+
+  if (hadExisting && !SD.rename(target, backup)) return false;
+  if (!SD.rename(temporary, target)) {
+    if (hadExisting && !SD.rename(backup, target)) {
+      Serial.println("[APPSTORE] Restore failed; old app and data retained in backup.");
+    }
+    return false;
+  }
+
+  if (preserveData && !SD.rename(backupData, targetData)) {
+    // All saved data still lives in backup. Delete only the new app files,
+    // then restore the complete previous app. Keep backup if rollback fails.
+    if (!removeRecursively(target) || !SD.rename(backup, target)) {
+      Serial.println("[APPSTORE] Restore failed; old app and data retained in backup.");
+    }
+    return false;
+  }
+
+  if (hadExisting && !removeRecursively(backup)) {
+    Serial.println("[APPSTORE] Updated app installed; old app files retained in backup.");
   }
   return true;
 }
@@ -1527,6 +1580,11 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
   const String target = String(APPSTORE_APPS_DIRECTORY) + "/" + app.folderName;
   const String temporary = String(APPSTORE_APPS_DIRECTORY) + "/.store_tmp_" + app.folderName;
   const String backup = String(APPSTORE_APPS_DIRECTORY) + "/.store_backup_" + app.folderName;
+  const bool updating = SD.exists(target);
+  if (SD.exists(backup + "/" + APPSTORE_APPDATA_DIRECTORY)) {
+    showStatus("Previous app/data backup needs recovery", lv_color_hex(0xFF8080));
+    return;
+  }
   if (SD.exists(temporary) && !removeRecursively(temporary)) {
     showStatus("Temporary folder could not be cleared", lv_color_hex(0xFF8080));
     return;
@@ -1534,8 +1592,8 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
   gDownloadedFileCount = 0;
   showStatus("Downloading " + app.displayName + " ...");
   const bool downloaded = app.apiUrl.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)
-    ? downloadIndexedDirectory(app.apiUrl, temporary)
-    : downloadDirectory(app.apiUrl, temporary, 0);
+    ? downloadIndexedDirectory(app.apiUrl, temporary, updating)
+    : downloadDirectory(app.apiUrl, temporary, 0, updating);
   if (!downloaded) {
     removeRecursively(temporary);
     showStatus("Download failed", lv_color_hex(0xFF8080));
@@ -1545,20 +1603,11 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
   // Freeze the current launcher layout before changing /apps. This prevents a
   // newly downloaded directory from displacing an existing Home-screen app.
   preserveCurrentLauncherAssignments();
-  if (SD.exists(backup)) removeRecursively(backup);
-  bool hadExisting = SD.exists(target);
-  if (hadExisting && !SD.rename(target, backup)) {
+  if (!installDownloadedApp(temporary, target, backup)) {
     removeRecursively(temporary);
-    showStatus("Installed app could not be backed up", lv_color_hex(0xFF8080));
+    showStatus("App update failed; previous data preserved", lv_color_hex(0xFF8080));
     return;
   }
-  if (!SD.rename(temporary, target)) {
-    if (hadExisting) SD.rename(backup, target);
-    removeRecursively(temporary);
-    showStatus("App could not be installed", lv_color_hex(0xFF8080));
-    return;
-  }
-  if (hadExisting) removeRecursively(backup);
   if (!app.installed) assignNewAppToFirstFreeSlot(app.folderName);
   StartAppLauncher_Data(nullptr);
   refreshInstalledStateForRemoteEntries();

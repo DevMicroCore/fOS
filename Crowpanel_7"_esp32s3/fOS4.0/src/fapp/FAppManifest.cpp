@@ -45,6 +45,7 @@ void FAppManifest::reset()
   snprintf(executable_, sizeof(executable_), "main.fapp");
   scrollable_ = false;
   permissions_ = static_cast<FAppPermissions>(FAppPermission::Ui);
+  storagePolicy_.clear();
 }
 
 FAppManifestStatus FAppManifest::load(fs::FS& filesystem, const char * path)
@@ -137,19 +138,39 @@ bool FAppManifest::readPermissions(const char * json)
     while (isspace(static_cast<unsigned char>(*cursor)) || *cursor == ',') ++cursor;
     if (*cursor == ']') return true;
     if (*cursor++ != '"') return false;
-    char permission[24];
+    char permission[272];
     size_t length = 0;
     while (*cursor != '\0' && *cursor != '"') {
       if (length + 1 >= sizeof(permission)) return false;
-      permission[length++] = *cursor++;
+      char value = *cursor++;
+      if (value == '\\') {
+        value = *cursor++;
+        if (value != '/' && value != '\\' && value != '"') return false;
+      }
+      if (static_cast<unsigned char>(value) < 0x20) return false;
+      permission[length++] = value;
     }
     if (*cursor++ != '"') return false;
     permission[length] = '\0';
     if (strcmp(permission, "ui") == 0) permissions_ |= static_cast<FAppPermissions>(FAppPermission::Ui);
-    else if (strcmp(permission, "storage.read") == 0) permissions_ |= static_cast<FAppPermissions>(FAppPermission::StorageRead);
-    else if (strcmp(permission, "storage.write") == 0) permissions_ |= static_cast<FAppPermissions>(FAppPermission::StorageWrite);
+    else if (strcmp(permission, "storage.read") == 0) {
+      permissions_ |= static_cast<FAppPermissions>(FAppPermission::StorageRead);
+      storagePolicy_.allowLocalRead();
+    } else if (strcmp(permission, "storage.write") == 0) {
+      permissions_ |= static_cast<FAppPermissions>(FAppPermission::StorageWrite);
+      storagePolicy_.allowLocalWrite();
+    } else if (strncmp(permission, "storage.read:", 13) == 0) {
+      if (!storagePolicy_.add(permission + 13, false)) return false;
+      permissions_ |= static_cast<FAppPermissions>(FAppPermission::StorageRead);
+    } else if (strncmp(permission, "storage.write:", 14) == 0) {
+      if (!storagePolicy_.add(permission + 14, true)) return false;
+      permissions_ |= static_cast<FAppPermissions>(FAppPermission::StorageWrite);
+    }
     else if (strcmp(permission, "network") == 0) permissions_ |= static_cast<FAppPermissions>(FAppPermission::Network);
-    else if (strcmp(permission, "audio") == 0) permissions_ |= static_cast<FAppPermissions>(FAppPermission::Audio);
+    else if (strcmp(permission, "audio") == 0) {
+      permissions_ |= static_cast<FAppPermissions>(FAppPermission::Audio);
+      storagePolicy_.allowLocalAudio();
+    }
     else if (strcmp(permission, "system.restart") == 0) permissions_ |= static_cast<FAppPermissions>(FAppPermission::SystemRestart);
     else return false;
   }

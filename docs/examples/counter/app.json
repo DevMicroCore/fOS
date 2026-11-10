@@ -1,0 +1,14 @@
+{
+  "id": "org.example.counter",
+  "name": "Counter",
+  "version": "1.0.0",
+  "min_fos": "4.1.0",
+  "type": "ui",
+  "icon": "+1",
+  "layout": "layout.ui",
+  "executable": "main.fapp",
+  "scrollable": false,
+  "permissions": [
+    "ui"
+  ]
+}

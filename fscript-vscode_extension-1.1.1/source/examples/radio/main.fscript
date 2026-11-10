@@ -1,0 +1,134 @@
+-- Radio: the same shared music directory/configuration as the native app.
+var current_dir = "/music/files"
+var local_source = false
+var stations_loaded = false
+
+function refresh_files()
+  var loaded = roller_files.load_dir_filtered(current_dir, "/music/files", ".mp3,.wav,.ogg,.aac,.m4a")
+  if loaded == false then
+    roller_files.text = "No files"
+  end
+end
+
+function refresh_playback()
+  var playing = audio_playing()
+  if playing then
+    btn_play.text = "||"
+  else
+    btn_play.text = ">"
+    local_source = false
+  end
+  slider_progress.enabled = playing and local_source
+  if slider_progress.pressed == false then
+    if playing and local_source then
+      var duration = audio_duration()
+      var position = audio_position()
+      if duration <= 0 then
+        duration = position + 1
+      end
+      var progress = round(position * 1000.0 / duration)
+      if progress > 1000 then
+        progress = 1000
+      end
+      if progress < 0 then
+        progress = 0
+      end
+      slider_progress.value = progress
+    else
+      slider_progress.value = 0
+    end
+  end
+end
+
+function seek_file()
+  if local_source and audio_playing() then
+    var duration = audio_duration()
+    if duration <= 0 then
+      duration = audio_position() + 1
+    end
+    var seconds = round(slider_progress.value * duration / 1000.0)
+    if seconds > 65535 then
+      seconds = 65535
+    end
+    audio_seek(seconds)
+  end
+end
+
+function toggle_playback()
+  if audio_playing() then
+    audio_stop()
+    local_source = false
+    refresh_playback()
+    return
+  end
+  if tabs_music.value == 0 then
+    var selected = roller_files.text
+    if selected == "" or selected == "No files" or selected == "SD error" then
+      return
+    end
+    if selected == ".." then
+      var slash = string_last_index(current_dir, "/")
+      if slash <= 12 then
+        current_dir = "/music/files"
+      else
+        current_dir = string_slice(current_dir, 0, slash)
+      end
+      refresh_files()
+      return
+    end
+    var length = string_length(selected)
+    if string_slice(selected, length - 1, 1) == "/" then
+      current_dir = current_dir + "/" + string_slice(selected, 0, length - 1)
+      refresh_files()
+      return
+    end
+    local_source = audio_play(current_dir + "/" + selected)
+  else
+    if stations_loaded then
+      var url = file_pair_value("/music/webradio/webradio.txt", "|", roller_web.value)
+      if url != "" then
+        audio_stream(url)
+        local_source = false
+      end
+    end
+  end
+  refresh_playback()
+end
+
+on app.start
+  slider_volume.set_range(0, 21)
+  slider_progress.set_range(0, 1000)
+  refresh_files()
+  stations_loaded = roller_web.load_pairs("/music/webradio/webradio.txt", "|")
+  if stations_loaded == false then
+    roller_web.text = "No stations"
+  end
+  slider_volume.value = audio_volume()
+  refresh_playback()
+  timer.start(200)
+end
+
+on btn_play.click
+  toggle_playback()
+end
+
+on slider_volume.value_changed
+  audio_set_volume(slider_volume.value)
+end
+
+-- Seek once when the handle is released; the timer never overwrites a drag.
+on slider_progress.released
+  seek_file()
+end
+
+on tabs_music.value_changed
+  refresh_playback()
+end
+
+on app.timer
+  refresh_playback()
+end
+
+on app.close
+  audio_stop()
+end

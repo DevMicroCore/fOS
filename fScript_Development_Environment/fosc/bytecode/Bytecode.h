@@ -12,7 +12,7 @@ namespace fapp {
 constexpr std::uint8_t kFormatMajor = 1;
 constexpr std::uint8_t kFormatMinor = 0;
 constexpr std::uint8_t kBytecodeMajor = 1;
-constexpr std::uint8_t kBytecodeMinor = 6;
+constexpr std::uint8_t kBytecodeMinor = 8;
 constexpr std::uint16_t kHeaderSize = 80;
 constexpr std::size_t kMaximumUiObjects = 64;
 constexpr std::size_t kMaximumRuntimeConstants = 128;
@@ -83,7 +83,16 @@ enum class NativeFunction : std::uint8_t {
   EventY = 23,
   EventScreenX = 24,
   EventScreenY = 25,
-  EventPressed = 26
+  EventPressed = 26,
+  AudioStream = 27,
+  AudioStop = 28,
+  AudioSetVolume = 29,
+  AudioVolume = 30,
+  AudioPlaying = 31,
+  AudioPosition = 32,
+  AudioDuration = 33,
+  AudioSeek = 34,
+  FilePairValue = 35
 };
 
 enum class ConstantKind : std::uint8_t {
@@ -95,7 +104,8 @@ enum class UiProperty : std::uint8_t {
   Value = 2,
   Checked = 3,
   Hidden = 4,
-  Enabled = 5
+  Enabled = 5,
+  Pressed = 6
 };
 
 enum class UiMethod : std::uint8_t {
@@ -110,7 +120,11 @@ enum class UiMethod : std::uint8_t {
   Line = 9,
   Rect = 10,
   Circle = 11,
-  DrawText = 12
+  DrawText = 12,
+  LoadDir = 13,
+  SetRange = 14,
+  LoadDirFiltered = 15,
+  LoadPairs = 16
 };
 
 enum class UiEvent : std::uint8_t {
@@ -177,7 +191,7 @@ struct FAppHeader {
   std::uint32_t codeSize = 0;
   std::uint32_t sourceHash = 0;
   std::uint16_t minimumFosMajor = 4;
-  std::uint16_t minimumFosMinor = 0;
+  std::uint16_t minimumFosMinor = 1;
   std::uint16_t minimumFosPatch = 0;
 };
 

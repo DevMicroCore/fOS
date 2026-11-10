@@ -245,6 +245,21 @@ void testFosApiCompilation()
           "disassembly should expose string_last_index");
 }
 
+void testDirectoryCompilation()
+{
+  const auto generated = compile("var ok = files.load_dir(\"/text/sub\", \"/text\")\n", "type=roller;id=files\n");
+  require(generated.generated.success(), "directory UI method should compile");
+  const auto written = fosc::FAppFile::write(generated.generated.module);
+  require(written.success(), "directory bytecode should serialize");
+  const auto read = fosc::FAppFile::read(written.image);
+  require(read.success(), "directory bytecode should round trip");
+  if (read.success()) {
+    const auto output = fosc::Disassembler::disassemble(read.file);
+    require(output.find("CALL_UI_METHOD object #1.load_dir argc=2") != std::string::npos,
+            "directory method ID and argument count should be visible");
+  }
+}
+
 }  // namespace
 
 int main()
@@ -256,6 +271,7 @@ int main()
   testControlFlowCompilation();
   testNativeHttpCompilation();
   testFosApiCompilation();
+  testDirectoryCompilation();
   if (failures != 0) {
     std::cerr << failures << " compiler test(s) failed.\n";
     return EXIT_FAILURE;

@@ -162,7 +162,7 @@ FAppWriteResult FAppFile::write(const fapp::BytecodeModule& module)
   fapp::patchU32(&result.image, 60, static_cast<std::uint32_t>(code.size()));
   fapp::patchU32(&result.image, 64, module.sourceHash);
   patchU16(&result.image, 68, 4);
-  patchU16(&result.image, 70, 0);
+  patchU16(&result.image, 70, 1);
   patchU16(&result.image, 72, 0);
   fapp::patchU32(&result.image, 16, fapp::crc32(result.image, 16, 4));
   return result;

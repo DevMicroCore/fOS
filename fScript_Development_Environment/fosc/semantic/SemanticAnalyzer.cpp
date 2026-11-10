@@ -448,6 +448,7 @@ class AnalyzerImpl {
     }
 
     const auto& member = static_cast<const MemberExpression&>(*assignment.target);
+    if (member.member == "pressed") error(assignment.location, "FS514", "UI pressed is read-only.");
     ValueType propertyType = ValueType::Any;
     if (resolveProperty(member, &propertyType)) {
       if (value == ValueType::Nil || !isAssignableType(propertyType, value)) {
@@ -528,7 +529,9 @@ class AnalyzerImpl {
       }
       const bool fileMethod =
         method == fapp::UiMethod::LoadFile || method == fapp::UiMethod::SaveFile;
-      std::size_t expectedArguments = fileMethod ? 1 : 0;
+      const bool directoryMethod = method == fapp::UiMethod::LoadDir || method == fapp::UiMethod::LoadDirFiltered || method == fapp::UiMethod::LoadPairs;
+      const bool rangeMethod = method == fapp::UiMethod::SetRange;
+      std::size_t expectedArguments = method == fapp::UiMethod::LoadDirFiltered ? 3 : (directoryMethod || rangeMethod) ? 2 : fileMethod ? 1 : 0;
       if (object->type == "canvas") {
         if (method == fapp::UiMethod::Clear) expectedArguments = 1;
         else if (method == fapp::UiMethod::Pixel) expectedArguments = 3;
@@ -543,6 +546,15 @@ class AnalyzerImpl {
           argumentTypes[0] != ValueType::String) {
         error(call.arguments[0]->location, "FS520", "The file path must be a string.");
       }
+      if (directoryMethod) {
+        for (std::size_t index = 0; index < argumentTypes.size(); ++index) {
+          if (!isDynamic(argumentTypes[index]) && argumentTypes[index] != ValueType::String)
+            error(call.arguments[index]->location, "FS520", "Directory paths must be strings.");
+        }
+      }
+      if (rangeMethod) {
+        for (auto type : argumentTypes) if (!isDynamic(type) && type != ValueType::Integer) error(call.location, "FS520", "Slider range needs integers.");
+      }
       if (object->type == "canvas") {
         for (std::size_t index = 0; index < argumentTypes.size(); ++index) {
           const bool textArgument = method == fapp::UiMethod::DrawText && index == 2;
@@ -556,7 +568,7 @@ class AnalyzerImpl {
         }
         return ValueType::Boolean;
       }
-      return fileMethod ? ValueType::Boolean : ValueType::Nil;
+      return fileMethod || directoryMethod || rangeMethod ? ValueType::Boolean : ValueType::Nil;
     }
 
     error(call.location, "FS505", "Unsupported call target.");
@@ -584,7 +596,10 @@ class AnalyzerImpl {
   static ValueType nativeArgumentType(fapp::NativeFunction function, std::size_t index)
   {
     if (function == fapp::NativeFunction::HttpText ||
-        function == fapp::NativeFunction::TimerStart) return ValueType::Integer;
+        function == fapp::NativeFunction::TimerStart ||
+        function == fapp::NativeFunction::AudioSetVolume ||
+        function == fapp::NativeFunction::AudioSeek) return ValueType::Integer;
+    if (function == fapp::NativeFunction::FilePairValue) return index == 2 ? ValueType::Integer : ValueType::String;
     if (function == fapp::NativeFunction::Text) return ValueType::Any;
     if (function == fapp::NativeFunction::Round) return ValueType::Float;
     if (function == fapp::NativeFunction::StringSlice) {
@@ -600,9 +615,17 @@ class AnalyzerImpl {
       case fapp::NativeFunction::HttpGet:
       case fapp::NativeFunction::FileWrite:
       case fapp::NativeFunction::AudioPlay:
+      case fapp::NativeFunction::AudioStream:
+      case fapp::NativeFunction::AudioStop:
+      case fapp::NativeFunction::AudioSetVolume:
+      case fapp::NativeFunction::AudioSeek:
+      case fapp::NativeFunction::AudioPlaying:
       case fapp::NativeFunction::WifiStatus:
       case fapp::NativeFunction::TimerStart:
         return ValueType::Boolean;
+      case fapp::NativeFunction::AudioVolume:
+      case fapp::NativeFunction::AudioPosition:
+      case fapp::NativeFunction::AudioDuration:
       case fapp::NativeFunction::HttpStatus:
       case fapp::NativeFunction::StringLength:
       case fapp::NativeFunction::Round:
@@ -661,7 +684,7 @@ class AnalyzerImpl {
     fapp::UiProperty property,
     ValueType * type)
   {
-    if (property == fapp::UiProperty::Hidden || property == fapp::UiProperty::Enabled) {
+    if (property == fapp::UiProperty::Hidden || property == fapp::UiProperty::Enabled || property == fapp::UiProperty::Pressed) {
       *type = ValueType::Boolean;
       return true;
     }
@@ -682,7 +705,7 @@ class AnalyzerImpl {
         *type = ValueType::Boolean;
         return true;
       }
-      if (objectType == "roller" || objectType == "dropdown") {
+      if (objectType == "roller" || objectType == "dropdown" || objectType == "slider" || objectType == "tabview") {
         *type = ValueType::Integer;
         return true;
       }
@@ -698,6 +721,8 @@ class AnalyzerImpl {
 
   static bool supportsMethod(const std::string& objectType, fapp::UiMethod method)
   {
+    if (method == fapp::UiMethod::LoadDir || method == fapp::UiMethod::LoadDirFiltered || method == fapp::UiMethod::LoadPairs) return objectType == "roller";
+    if (method == fapp::UiMethod::SetRange) return objectType == "slider";
     if (method == fapp::UiMethod::Clear) return objectType == "textarea" || objectType == "canvas";
     if (method == fapp::UiMethod::Pixel || method == fapp::UiMethod::Line ||
         method == fapp::UiMethod::Rect || method == fapp::UiMethod::Circle ||
@@ -705,7 +730,7 @@ class AnalyzerImpl {
     if (method == fapp::UiMethod::Focus || method == fapp::UiMethod::Blur) {
       return objectType == "button" || objectType == "textarea" ||
              objectType == "switch" || objectType == "checkbox" ||
-             objectType == "roller" || objectType == "dropdown";
+             objectType == "roller" || objectType == "dropdown" || objectType == "slider" || objectType == "tabview";
     }
     if (method == fapp::UiMethod::ScrollToTop || method == fapp::UiMethod::ScrollToBottom) {
       return objectType == "textarea" || objectType == "panel" || objectType == "roller";
@@ -721,10 +746,10 @@ class AnalyzerImpl {
     if (event == fapp::UiEvent::Click) return true;
     if (event == fapp::UiEvent::Changed || event == fapp::UiEvent::ValueChanged) {
       return objectType == "textarea" || objectType == "switch" || objectType == "checkbox" ||
-             objectType == "roller" || objectType == "dropdown";
+             objectType == "roller" || objectType == "dropdown" || objectType == "slider" || objectType == "tabview";
     }
     if (event == fapp::UiEvent::Pressed || event == fapp::UiEvent::Released) {
-      return objectType == "button" || objectType == "switch" || objectType == "checkbox";
+      return objectType == "button" || objectType == "switch" || objectType == "checkbox" || objectType == "slider";
     }
     if (event == fapp::UiEvent::Ready || event == fapp::UiEvent::Cancel) {
       return objectType == "keyboard";

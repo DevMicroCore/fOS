@@ -18,6 +18,7 @@
 
 #include "ui_Update.h"
 #include "src/core/DefaultOtaIndexes.h"
+#include "src/core/FOSVersion.h"
 
 namespace {
 
@@ -225,7 +226,7 @@ bool fetchIndexedListing(
       delay(120);
       continue;
     }
-    http.addHeader("User-Agent", "fOS/4.0.0 OTA");
+    http.addHeader("User-Agent", String("fOS/") + FOSVersion::kString + " OTA");
     http.addHeader("Connection", "close");
     const int code = http.GET();
     if (code == HTTP_CODE_OK) {
@@ -514,7 +515,7 @@ bool downloadUrlToSdFile(const String& url,
       continue;
     }
 
-    http.addHeader("User-Agent", "fOS/4.0.0 OTA");
+    http.addHeader("User-Agent", String("fOS/") + FOSVersion::kString + " OTA");
     if (url.startsWith("https://api.github.com/")) {
       http.addHeader("Accept", "application/vnd.github.raw+json");
       http.addHeader("X-GitHub-Api-Version", "2022-11-28");

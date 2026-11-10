@@ -1,0 +1,16 @@
+{
+  "id": "devmicro.fscript-text",
+  "name": "Text",
+  "version": "2.0.0",
+  "min_fos": "4.1.0",
+  "type": "ui",
+  "icon": "TXT",
+  "layout": "layout.ui",
+  "executable": "main.fapp",
+  "scrollable": false,
+  "permissions": [
+    "ui",
+    "storage.read:/text",
+    "storage.write:/text"
+  ]
+}

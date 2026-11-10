@@ -1,0 +1,209 @@
+-- fScript counterpart of the native fOS text editor. All files stay in /text.
+var current_dir = "/text"
+
+function trim_name(value)
+  var first = 0
+  var last = string_length(value)
+  while first < last then
+    var c = string_slice(value, first, 1)
+    if c != " " and c != "\t" and c != "\n" and c != "\r" then
+      break
+    end
+    first = first + 1
+  end
+  while last > first then
+    var last_c = string_slice(value, last - 1, 1)
+    if last_c != " " and last_c != "\t" and last_c != "\n" and last_c != "\r" then
+      break
+    end
+    last = last - 1
+  end
+  return string_slice(value, first, last - first)
+end
+
+function normalize_name(value)
+  var input = trim_name(value)
+  var output = ""
+  var previous = ""
+  var index = 0
+  while index < string_length(input) then
+    var c = string_slice(input, index, 1)
+    if c == "\\" then
+      c = "/"
+    end
+    if c != "/" or (output != "" and previous != "/") then
+      output = output + c
+      previous = c
+    end
+    index = index + 1
+  end
+  if previous == "/" then
+    output = string_slice(output, 0, string_length(output) - 1)
+  end
+  return output
+end
+
+function valid_name(value)
+  var segment = ""
+  var index = 0
+  while index <= string_length(value) then
+    var c = "/"
+    if index < string_length(value) then
+      c = string_slice(value, index, 1)
+    end
+    if c == "/" then
+      segment = trim_name(segment)
+      if segment == "." or segment == ".." or segment == "" then
+        return false
+      end
+      segment = ""
+    else
+      segment = segment + c
+    end
+    index = index + 1
+  end
+  return true
+end
+
+function has_text_extension(value)
+  var length = string_length(value)
+  if length < 4 then
+    return false
+  end
+  var dot = string_slice(value, length - 4, 1)
+  var a = string_slice(value, length - 3, 1)
+  var b = string_slice(value, length - 2, 1)
+  var c = string_slice(value, length - 1, 1)
+  return dot == "." and (a == "t" or a == "T") and (b == "x" or b == "X") and (c == "t" or c == "T")
+end
+
+function refresh_files()
+  var loaded = roller_files.load_dir(current_dir, "/text")
+  if loaded == false then
+    Serial.printf("Text: Verzeichnis konnte nicht geladen werden\n")
+  end
+end
+
+function edit_text()
+  keyboard_filename.hidden = true
+  keyboard_editor.hidden = false
+end
+
+function edit_filename()
+  keyboard_editor.hidden = true
+  keyboard_filename.hidden = false
+end
+
+function close_save_dialog()
+  keyboard_filename.hidden = true
+  panel_save.hidden = true
+  keyboard_editor.hidden = false
+end
+
+function save_current_file()
+  var name = normalize_name(txt_filename.text)
+  if name == "" then
+    Serial.printf("Text: Dateiname leer\n")
+    return false
+  end
+  if valid_name(name) == false then
+    Serial.printf("Text: Ungueltiger Pfad (.. nicht erlaubt)\n")
+    return false
+  end
+  if has_text_extension(name) == false then
+    name = name + ".txt"
+  end
+  var saved = txt_editor.save_file("/text/" + name)
+  if saved then
+    txt_filename.text = name
+    refresh_files()
+  else
+    Serial.printf("Text: Datei konnte nicht gespeichert werden\n")
+  end
+  return saved
+end
+
+function open_selected_file()
+  var selected = roller_files.text
+  if selected == "" or selected == "Keine Dateien" or selected == "No file found" then
+    txt_editor.text = "Keine Datei ausgewaehlt"
+    return
+  end
+  if selected == ".." then
+    var slash = string_last_index(current_dir, "/")
+    if slash <= 5 then
+      current_dir = "/text"
+    else
+      current_dir = string_slice(current_dir, 0, slash)
+    end
+    refresh_files()
+    return
+  end
+  var length = string_length(selected)
+  if string_slice(selected, length - 1, 1) == "/" then
+    current_dir = current_dir + "/" + string_slice(selected, 0, length - 1)
+    refresh_files()
+    return
+  end
+  var loaded = txt_editor.load_file(current_dir + "/" + selected)
+  if loaded then
+    panel_open.hidden = true
+  else
+    txt_editor.text = "Datei konnte nicht geoeffnet werden"
+  end
+end
+
+on app.start
+  refresh_files()
+end
+
+on btn_new.click
+  txt_editor.clear()
+end
+
+on btn_save_as.click
+  panel_open.hidden = true
+  panel_save.hidden = false
+  edit_filename()
+  txt_filename.focus()
+end
+
+on txt_editor.click
+  edit_text()
+end
+
+on txt_filename.click
+  edit_filename()
+end
+
+on btn_save_confirm.click
+  save_current_file()
+  close_save_dialog()
+end
+
+on btn_save_cancel.click
+  close_save_dialog()
+end
+
+on keyboard_filename.ready
+  save_current_file()
+  close_save_dialog()
+end
+
+on keyboard_filename.cancel
+  close_save_dialog()
+end
+
+on btn_open.click
+  close_save_dialog()
+  refresh_files()
+  panel_open.hidden = false
+end
+
+on btn_open_confirm.click
+  open_selected_file()
+end
+
+on btn_open_cancel.click
+  panel_open.hidden = true
+end

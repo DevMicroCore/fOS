@@ -1,0 +1,3 @@
+type=label;id=lbl_status;x=20%;y=18%;w=75%;h=12%;text=Count: 0;font=24;fg=0xFFFFFF
+type=button;id=btn_add;x=20%;y=40%;w=30%;h=15%;text=+1;bg=theme
+type=button;id=btn_reset;x=60%;y=40%;w=30%;h=15%;text=Reset;bg=theme

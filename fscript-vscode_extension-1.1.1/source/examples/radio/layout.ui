@@ -1,0 +1,10 @@
+# ui_Screen1.c converted from center alignment to top-left AppContent coordinates.
+# fOS provides the app container/menu; all widgets use the system LVGL theme.
+type=button;id=btn_play;x=339;y=8;w=122;h=45;text=>;font=24;bg=theme;fg=0x000000;radius=7;native_style=true;scrollable=false
+type=slider;id=slider_volume;x=30;y=77;w=740;h=18;min=0;max=21;value=15;native_style=true;scrollable=false
+type=slider;id=slider_progress;x=30;y=131;w=740;h=18;min=0;max=1000;value=0;native_style=true;scrollable=false
+type=tabview;id=tabs_music;x=0;y=179;w=800;h=295;tab_height=50;font=24;scrollable=false
+type=tab;id=tab_files;parent=tabs_music;text=File Player;scrollable=false
+type=roller;id=roller_files;parent=tab_files;x=4;y=4;w=760;h=200;text=No files;font=20;native_style=true;scrollable=false
+type=tab;id=tab_web;parent=tabs_music;text=Web Radio;scrollable=false
+type=roller;id=roller_web;parent=tab_web;x=4;y=4;w=760;h=200;text=No stations;font=20;native_style=true;scrollable=false

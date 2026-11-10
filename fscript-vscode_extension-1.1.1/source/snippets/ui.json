@@ -1,0 +1,67 @@
+{
+  "button": {
+    "prefix": "ui-button",
+    "body": "type=button;id=${1:btn_button};x=0;y=0;w=220;h=50;text=Button;bg=theme;fg=contrast;font=24;native_style=true;scrollable=false",
+    "description": "fOS button widget"
+  },
+  "label": {
+    "prefix": "ui-label",
+    "body": "type=label;id=${1:lbl_label};x=0;y=0;w=220;h=50;text=Label;font=20;fg=0xFFFFFF",
+    "description": "fOS label widget"
+  },
+  "textarea": {
+    "prefix": "ui-textarea",
+    "body": "type=textarea;id=${1:txt_editor};x=0;y=0;w=220;h=50;text=;placeholder=Text ...;font=20;native_style=true",
+    "description": "fOS textarea widget"
+  },
+  "keyboard": {
+    "prefix": "ui-keyboard",
+    "body": "type=keyboard;id=${1:keyboard_editor};x=0;y=0;w=793;h=197;target=${2:txt_editor};font=20",
+    "description": "fOS keyboard widget"
+  },
+  "roller": {
+    "prefix": "ui-roller",
+    "body": "type=roller;id=${1:roller_files};x=0;y=0;w=220;h=50;text=No files;font=20;native_style=true",
+    "description": "fOS roller widget"
+  },
+  "slider": {
+    "prefix": "ui-slider",
+    "body": "type=slider;id=${1:slider_volume};x=0;y=0;w=740;h=18;min=0;max=21;value=15;scrollable=false",
+    "description": "fOS slider widget"
+  },
+  "tabview": {
+    "prefix": "ui-tabview",
+    "body": "type=tabview;id=${1:tabs_music};x=0;y=0;w=800;h=295;tab_height=50;font=24;scrollable=false",
+    "description": "fOS tabview widget"
+  },
+  "tab": {
+    "prefix": "ui-tab",
+    "body": "type=tab;id=${1:tab_files};parent=${2:tabs_music};text=File Player;scrollable=false",
+    "description": "fOS tab widget"
+  },
+  "panel": {
+    "prefix": "ui-panel",
+    "body": "type=panel;id=${1:panel_main};x=0;y=0;w=220;h=50;bg=surface;scrollable=false",
+    "description": "fOS panel widget"
+  },
+  "canvas": {
+    "prefix": "ui-canvas",
+    "body": "type=canvas;id=${1:canvas_draw};x=0;y=0;w=220;h=50;bg=0x000000;scrollable=false",
+    "description": "fOS canvas widget"
+  },
+  "dropdown": {
+    "prefix": "ui-dropdown",
+    "body": "type=dropdown;id=${1:dropdown_choice};x=0;y=0;w=220;h=50;text=Option 1\\nOption 2;font=20",
+    "description": "fOS dropdown widget"
+  },
+  "switch": {
+    "prefix": "ui-switch",
+    "body": "type=switch;id=${1:switch_option};x=0;y=0;w=220;h=50;value=false",
+    "description": "fOS switch widget"
+  },
+  "checkbox": {
+    "prefix": "ui-checkbox",
+    "body": "type=checkbox;id=${1:checkbox_option};x=0;y=0;w=220;h=50;text=Option;value=false",
+    "description": "fOS checkbox widget"
+  }
+}

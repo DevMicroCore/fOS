@@ -1,13 +1,17 @@
 #include "LvglFAppUiApi.h"
+#include "FAppPath.h"
+#include "FAppFilePairs.h"
 
 #include <new>
+#include <string>
+#include <ctype.h>
 
 namespace {
-enum UiProperty : uint8_t { Text = 1, Value = 2, Checked = 3, Hidden = 4, Enabled = 5 };
+enum UiProperty : uint8_t { Text = 1, Value = 2, Checked = 3, Hidden = 4, Enabled = 5, Pressed = 6 };
 enum UiMethod : uint8_t {
   Clear = 1, Focus = 2, Blur = 3, ScrollToTop = 4, ScrollToBottom = 5,
   LoadFile = 6, SaveFile = 7, Pixel = 8, Line = 9, Rect = 10, Circle = 11,
-  DrawText = 12
+  DrawText = 12, LoadDir = 13, SetRange = 14, LoadDirFiltered = 15, LoadPairs = 16
 };
 
 bool integerArgument(const FAppValue * arguments, uint8_t index, int32_t * value)
@@ -36,8 +40,10 @@ const lv_font_t * canvasFont(int32_t size)
 }
 }
 
-void LvglFAppUiApi::configureFileContext(fs::FS& filesystem, const char * appDirectory)
+void LvglFAppUiApi::configureFileContext(fs::FS& filesystem, const char * appDirectory,
+  const FAppStoragePolicy * storagePolicy)
 {
+  storagePolicy_ = storagePolicy == nullptr ? FAppStoragePolicy() : *storagePolicy;
   filesystem_ = &filesystem;
   snprintf(appDirectory_, sizeof(appDirectory_), "%s", appDirectory == nullptr ? "" : appDirectory);
 }
@@ -49,25 +55,11 @@ void LvglFAppUiApi::clearFileContext()
 }
 
 bool LvglFAppUiApi::resolveAppPath(
-  const char * relativePath, char * output, size_t capacity) const
+  const char * requestedPath, char * output, size_t capacity, bool write) const
 {
-  if (filesystem_ == nullptr || appDirectory_[0] == '\0' || relativePath == nullptr ||
-      relativePath[0] == '\0' || output == nullptr || capacity == 0) return false;
-  if (relativePath[0] == '/' || relativePath[0] == '\\') return false;
-  const char * segment = relativePath;
-  for (const char * cursor = relativePath; ; ++cursor) {
-    const unsigned char character = static_cast<unsigned char>(*cursor);
-    if ((character != 0 && character < 0x20) || *cursor == '\\') return false;
-    if (*cursor == '/' || *cursor == '\0') {
-      const size_t length = static_cast<size_t>(cursor - segment);
-      if (length == 0 || (length == 1 && segment[0] == '.') ||
-          (length == 2 && segment[0] == '.' && segment[1] == '.')) return false;
-      if (*cursor == '\0') break;
-      segment = cursor + 1;
-    }
-  }
-  const int written = snprintf(output, capacity, "%s/%s", appDirectory_, relativePath);
-  return written >= 0 && static_cast<size_t>(written) < capacity;
+  return filesystem_ != nullptr && appDirectory_[0] != '\0' &&
+    FAppPath::resolve(appDirectory_, requestedPath, output, capacity) == FAppPath::Status::Ready &&
+    storagePolicy_.allows(output, appDirectory_, write);
 }
 
 bool LvglFAppUiApi::ensureParentDirectories(const char * fullPath)
@@ -76,11 +68,12 @@ bool LvglFAppUiApi::ensureParentDirectories(const char * fullPath)
   char path[256];
   const int copied = snprintf(path, sizeof(path), "%s", fullPath);
   if (copied < 0 || static_cast<size_t>(copied) >= sizeof(path)) return false;
-  const size_t rootLength = strlen(appDirectory_);
-  for (size_t index = rootLength + 1; path[index] != '\0'; ++index) {
+  for (size_t index = 1; path[index] != '\0'; ++index) {
     if (path[index] != '/') continue;
     path[index] = '\0';
-    if (!filesystem_->exists(path) && !filesystem_->mkdir(path)) return false;
+    if (!filesystem_->exists(path)) {
+      if (!storagePolicy_.allows(path, appDirectory_, true) || !filesystem_->mkdir(path)) return false;
+    }
     fs::File check = filesystem_->open(path, FILE_READ);
     const bool valid = check && check.isDirectory();
     if (check) check.close();
@@ -124,7 +117,12 @@ bool LvglFAppUiApi::getProperty(uint16_t objectId, uint8_t property, FAppValue *
       else *result = FAppValue::string(lv_label_get_text(target));
       return true;
     }
+    case Pressed:
+      *result = FAppValue::boolean(lv_obj_has_state(object, LV_STATE_PRESSED));
+      return true;
     case Value:
+      if (type == FAppUiObjectType::Slider) { *result = FAppValue::integer(lv_slider_get_value(object)); return true; }
+      if (type == FAppUiObjectType::TabView) { *result = FAppValue::integer(lv_tabview_get_tab_act(object)); return true; }
       if (type == FAppUiObjectType::Switch || type == FAppUiObjectType::CheckBox) {
         *result = FAppValue::boolean(lv_obj_has_state(object, LV_STATE_CHECKED));
         return true;
@@ -143,7 +141,8 @@ bool LvglFAppUiApi::getProperty(uint16_t objectId, uint8_t property, FAppValue *
       *result = FAppValue::boolean(lv_obj_has_state(object, LV_STATE_CHECKED));
       return true;
     case Hidden:
-      *result = FAppValue::boolean(lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN));
+      *result = FAppValue::boolean(keyboards_ != nullptr && keyboards_->owns(object)
+        ? keyboards_->requestedHidden(object) : lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN));
       return true;
     case Enabled:
       *result = FAppValue::boolean(!lv_obj_has_state(object, LV_STATE_DISABLED));
@@ -174,6 +173,14 @@ bool LvglFAppUiApi::setProperty(uint16_t objectId, uint8_t property, const FAppV
       return true;
     }
     case Value:
+      if (type == FAppUiObjectType::Slider) {
+        if (!value.isNumber() || value.asInteger() < -32768 || value.asInteger() > 32767) return false;
+        lv_slider_set_value(object, value.asInteger(), LV_ANIM_OFF); return true;
+      }
+      if (type == FAppUiObjectType::TabView) {
+        if (!value.isNumber() || value.asInteger() < 0 || value.asInteger() >= lv_obj_get_child_cnt(lv_tabview_get_content(object))) return false;
+        lv_tabview_set_act(object, value.asInteger(), LV_ANIM_OFF); return true;
+      }
       if (type == FAppUiObjectType::Roller || type == FAppUiObjectType::DropDown) {
         if (!value.isNumber() || value.asInteger() < 0) return false;
         const uint16_t selected = static_cast<uint16_t>(value.asInteger());
@@ -191,6 +198,9 @@ bool LvglFAppUiApi::setProperty(uint16_t objectId, uint8_t property, const FAppV
       else lv_obj_clear_state(object, LV_STATE_CHECKED);
       return true;
     case Hidden:
+      if (keyboards_ != nullptr && keyboards_->owns(object)) {
+        return keyboards_->setHidden(object, value.truthy());
+      }
       if (value.truthy()) {
         lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
       } else {
@@ -217,11 +227,92 @@ bool LvglFAppUiApi::callMethod(
   lv_obj_t * object = registry_.resolve(objectId);
   const FAppUiObjectType type = registry_.objectType(objectId);
   if (object == nullptr) return false;
+  if (method == SetRange) {
+    if (type != FAppUiObjectType::Slider || argumentCount != 2 || arguments == nullptr ||
+        arguments[0].type() != FAppValueType::Integer || arguments[1].type() != FAppValueType::Integer ||
+        arguments[0].asInteger() < -32768 || arguments[1].asInteger() > 32767 || arguments[0].asInteger() >= arguments[1].asInteger()) return false;
+    lv_slider_set_range(object, arguments[0].asInteger(), arguments[1].asInteger());
+    *result = FAppValue::boolean(true); return true;
+  }
+  if (method == LoadPairs) {
+    if (type != FAppUiObjectType::Roller || argumentCount != 2 || arguments == nullptr ||
+        arguments[0].type() != FAppValueType::String || arguments[1].type() != FAppValueType::String || strlen(arguments[1].asString()) != 1) return false;
+    char path[256];
+    std::string names;
+    const bool loaded = resolveAppPath(arguments[0].asString(), path, sizeof(path), false) &&
+      FAppFilePairs::read(*filesystem_, path, arguments[1].asString()[0], &names, -1, nullptr);
+    lv_roller_set_options(object, loaded ? names.c_str() : "Keine Eintraege", LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_selected(object, 0, LV_ANIM_OFF);
+    *result = FAppValue::boolean(loaded); return true;
+  }
+  if (method == LoadDir || method == LoadDirFiltered) {
+    if (type != FAppUiObjectType::Roller || argumentCount != (method == LoadDirFiltered ? 3 : 2) || arguments == nullptr ||
+        arguments[0].type() != FAppValueType::String || arguments[1].type() != FAppValueType::String ||
+        (method == LoadDirFiltered && arguments[2].type() != FAppValueType::String)) return false;
+    char path[256], browserRoot[256];
+    if (!resolveAppPath(arguments[0].asString(), path, sizeof(path), false) ||
+        FAppPath::resolve(appDirectory_, arguments[1].asString(), browserRoot, sizeof(browserRoot)) != FAppPath::Status::Ready) {
+      *result = FAppValue::boolean(false);
+      return true;
+    }
+    size_t rootLength = strlen(browserRoot);
+    bool inside = strlen(path) >= rootLength;
+    for (size_t i = 0; inside && i < rootLength; ++i) {
+      if (tolower(static_cast<unsigned char>(browserRoot[i])) != tolower(static_cast<unsigned char>(path[i]))) { inside = false; break; }
+    }
+    if (!inside || (rootLength > 1 && path[rootLength] != '\0' && path[rootLength] != '/')) {
+      *result = FAppValue::boolean(false);
+      return true;
+    }
+    fs::File directory = filesystem_->open(path, FILE_READ);
+    if (!directory || !directory.isDirectory()) {
+      if (directory) directory.close();
+      lv_roller_set_options(object, "Keine Dateien", LV_ROLLER_MODE_NORMAL);
+      lv_roller_set_selected(object, 0, LV_ANIM_OFF);
+      *result = FAppValue::boolean(false);
+      return true;
+    }
+    constexpr size_t kMaximumDirectoryBytes = 16384;
+    std::string folders = strlen(path) != rootLength ? "..\n" : "";
+    std::string files;
+    fs::File entry = directory.openNextFile();
+    bool complete = true;
+    while (entry) {
+      const char * name = entry.name();
+      const char * slash = name == nullptr ? nullptr : strrchr(name, '/');
+      if (slash != nullptr) name = slash + 1;
+      if (name != nullptr) {
+        while (*name != '\0' && isspace(static_cast<unsigned char>(*name))) ++name;
+        size_t length = strlen(name);
+        while (length > 0 && isspace(static_cast<unsigned char>(name[length - 1]))) --length;
+        if (length > 0 && !(strcmp(path, "/") == 0 && FAppPath::isSystemName(name, length)) &&
+            (method != LoadDirFiltered || (name[0] != '.' && (entry.isDirectory() || FAppFilePairs::matchesExtension(std::string(name, length), arguments[2].asString()))))) {
+          if (folders.size() + files.size() + length + 2 > kMaximumDirectoryBytes) { complete = false; entry.close(); break; }
+          std::string& listing = entry.isDirectory() ? folders : files;
+          listing.append(name, length);
+          if (entry.isDirectory()) listing += '/';
+          listing += '\n';
+        }
+      }
+      entry.close();
+      entry = directory.openNextFile();
+    }
+    directory.close();
+    if (complete) {
+      folders += files;
+      if (folders.empty()) folders = "Keine Dateien";
+      else if (folders.back() == '\n') folders.pop_back();
+      lv_roller_set_options(object, folders.c_str(), LV_ROLLER_MODE_NORMAL);
+      lv_roller_set_selected(object, 0, LV_ANIM_OFF);
+    }
+    *result = FAppValue::boolean(complete);
+    return true;
+  }
   if (method == LoadFile || method == SaveFile) {
     if (type != FAppUiObjectType::TextArea || argumentCount != 1 || arguments == nullptr ||
         arguments[0].type() != FAppValueType::String) return false;
     char path[256];
-    if (!resolveAppPath(arguments[0].asString(), path, sizeof(path))) {
+    if (!resolveAppPath(arguments[0].asString(), path, sizeof(path), method == SaveFile)) {
       *result = FAppValue::boolean(false);
       return true;
     }
@@ -376,12 +467,22 @@ bool LvglFAppUiApi::callMethod(
       else if (type == FAppUiObjectType::Label) lv_label_set_text(object, "");
       else return false;
       break;
-    case Focus:
+    case Focus: {
       lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
-      lv_obj_add_state(object, LV_STATE_FOCUSED);
-      lv_group_focus_obj(object);
       lv_obj_move_foreground(object);
+      lv_group_t * group = static_cast<lv_group_t *>(lv_obj_get_group(object));
+      if (group != nullptr && lv_group_get_focused(group) != object) {
+        // LVGL sends FOCUSED when switching objects inside a group.
+        lv_group_focus_obj(object);
+      } else {
+        // Touch-only textareas have no group. Adding the visual state alone
+        // does not send FOCUSED, so their bound keyboard would stay hidden.
+        // Also notify when refocusing the same object after hiding its keyboard.
+        lv_obj_add_state(object, LV_STATE_FOCUSED);
+        lv_event_send(object, LV_EVENT_FOCUSED, nullptr);
+      }
       break;
+    }
     case Blur: lv_obj_clear_state(object, LV_STATE_FOCUSED); break;
     case ScrollToTop: lv_obj_scroll_to_y(object, 0, LV_ANIM_OFF); break;
     case ScrollToBottom: lv_obj_scroll_to_y(object, LV_COORD_MAX, LV_ANIM_OFF); break;

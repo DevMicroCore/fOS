@@ -8,7 +8,7 @@ namespace FAppFormat {
 constexpr uint8_t kFormatMajor = 1;
 constexpr uint8_t kFormatMinor = 0;
 constexpr uint8_t kBytecodeMajor = 1;
-constexpr uint8_t kBytecodeMinor = 6;
+constexpr uint8_t kBytecodeMinor = 8;
 constexpr uint16_t kHeaderSize = 80;
 constexpr size_t kCrcOffset = 16;
 constexpr size_t kCrcSize = 4;

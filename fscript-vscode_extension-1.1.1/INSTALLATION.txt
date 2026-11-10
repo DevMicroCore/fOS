@@ -1,0 +1,20 @@
+fScript & fOS UI 1.1.1 — English edition
+
+INSTALL / UPDATE
+1. Extract this ZIP.
+2. In VS Code, open Extensions, click the … menu, and choose Install from VSIX….
+3. Select fscript-fos-ui-1.1.1.vsix from this folder.
+4. Reload the VS Code window if prompted. This updates the existing extension.
+5. Open your app folder and run fScript: Prepare Tools (fosc + fosrun).
+6. Open main.fscript and click the play button, or run fScript: Run App (fosrun).
+
+macOS: If no C++ compiler is installed, run xcode-select --install in Terminal,
+then repeat Prepare Tools. Intel and Apple Silicon use local builds.
+
+All extension commands, settings, hover help, diagnostics, snippet descriptions,
+runner messages, example labels, and documentation are in English.
+Full source code and the detailed README are included in source/.
+
+Validated: 30 automated tests passed; real compiler/runner and English radio
+preview checked on Linux x64. Graphical VS Code and macOS/Windows builds have
+not been tested in this environment.

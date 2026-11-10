@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "FAppUiApi.h"
+#include "FAppStoragePolicy.h"
 
 enum class FAppManifestStatus : uint8_t {
   NotFound = 0,
@@ -36,6 +37,7 @@ class FAppManifest {
   const char * executable() const { return executable_; }
   bool scrollable() const { return scrollable_; }
   FAppPermissions permissions() const { return permissions_; }
+  const FAppStoragePolicy& storagePolicy() const { return storagePolicy_; }
   const char * errorMessage() const;
 
   static bool isSafeFilename(const char * value);
@@ -57,4 +59,5 @@ class FAppManifest {
   char executable_[65];
   bool scrollable_;
   FAppPermissions permissions_;
+  FAppStoragePolicy storagePolicy_;
 };

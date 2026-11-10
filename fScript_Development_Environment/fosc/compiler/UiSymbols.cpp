@@ -60,7 +60,7 @@ bool isSupportedObjectType(const std::string& type)
 {
   static const std::unordered_set<std::string> supported = {
     "label", "button", "textarea", "switch", "checkbox", "panel",
-    "roller", "dropdown", "keyboard", "canvas"
+    "roller", "dropdown", "keyboard", "canvas", "slider", "tabview", "tab"
   };
   return supported.find(type) != supported.end();
 }

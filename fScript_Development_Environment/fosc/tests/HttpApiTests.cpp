@@ -15,6 +15,13 @@ bool playAudio(const char * path) { gAudioPath = path == nullptr ? "" : path; re
 void requestRestart() { gRestartRequested = true; }
 bool startTimer(std::uint32_t interval) { gTimerInterval = interval; return true; }
 
+static int audioControls = 0;
+static bool audioControl(FAppNativeFunction fn, const FAppValue *, uint8_t, FAppValue * result) {
+  ++audioControls;
+  *result = fn == FAppNativeFunction::AudioVolume ? FAppValue::integer(15) : FAppValue::boolean(true);
+  return true;
+}
+
 namespace {
 int failures = 0;
 void require(bool condition, const char * message)
@@ -147,6 +154,25 @@ int main()
   require(call(&api, FAppNativeFunction::EventX, nullptr, 0).asInteger() == 0 &&
           !call(&api, FAppNativeFunction::EventPressed, nullptr, 0).truthy(),
           "clearing an event should reset its pointer data");
+  api.setAudioControl(audioControl);
+  require(call(&api,FAppNativeFunction::AudioVolume,nullptr,0).asInteger()==15,"audio callback queries");
+  for(int volume : {-1,22}) {FAppValue arg=FAppValue::integer(volume),result;int before=audioControls;require(!api.call(FAppNativeFunction::AudioSetVolume,&arg,1,&result)&&audioControls==before,"reject invalid volume before backend");}
+  FAppValue arg=FAppValue::integer(21);
+  require(call(&api,FAppNativeFunction::AudioSetVolume,&arg,1).truthy(),"allow volume 21");
+  arg=FAppValue::integer(65535);require(call(&api,FAppNativeFunction::AudioSeek,&arg,1).truthy(),"allow seek limit");
+  arg=FAppValue::integer(65536);FAppValue output;require(!api.call(FAppNativeFunction::AudioSeek,&arg,1,&output),"reject seek overflow");
+  arg=FAppValue::string("ftp://example.test");int before=audioControls;
+  require(!call(&api,FAppNativeFunction::AudioStream,&arg,1).truthy()&&before==audioControls,"invalid stream scheme returns false");
+  arg=FAppValue::string("https://example.test/stream");require(call(&api,FAppNativeFunction::AudioStream,&arg,1).truthy(),"allow https stream");
+  for(auto fn : {FAppNativeFunction::AudioStop,FAppNativeFunction::AudioPlaying,FAppNativeFunction::AudioPosition,FAppNativeFunction::AudioDuration}) require(api.call(fn,nullptr,0,&output),"dispatch audio controls");
+  std::string pairs="bad\n|url\nName|\n";
+  for(int i=0;i<45;++i)pairs+=" Station "+std::to_string(i)+" | https://example.test/"+std::to_string(i)+"\r\n";
+  filesystem.addFile("/apps/test/stations.txt",std::vector<uint8_t>(pairs.begin(),pairs.end()));
+  FAppValue pairArgs[]={FAppValue::string("stations.txt"),FAppValue::string("|"),FAppValue::integer(39)};
+  require(std::string(call(&api,FAppNativeFunction::FilePairValue,pairArgs,3).asString())=="https://example.test/39","pair reader indexes valid trimmed rows in long config");
+  pairArgs[2]=FAppValue::integer(40);require(std::string(call(&api,FAppNativeFunction::FilePairValue,pairArgs,3).asString()).empty(),"pair row limit agrees with UI");
+  pairArgs[0]=FAppValue::string("/system/stations.txt");before=filesystem.openCount();require(!api.call(FAppNativeFunction::FilePairValue,pairArgs,3,&output)&&filesystem.openCount()==before,"pair access protects system before IO");
+  pairArgs[0]=FAppValue::string("/other/stations.txt");require(!api.call(FAppNativeFunction::FilePairValue,pairArgs,3,&output),"pair access honors scope");
   if (failures != 0) return EXIT_FAILURE;
   std::cout << "All native fOS API tests passed.\n";
   return EXIT_SUCCESS;

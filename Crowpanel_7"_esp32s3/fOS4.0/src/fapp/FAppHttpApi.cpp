@@ -1,4 +1,6 @@
 #include "FAppHttpApi.h"
+#include "FAppPath.h"
+#include "FAppFilePairs.h"
 
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -32,8 +34,10 @@ void FAppHttpApi::configure(
   const char * appDirectory,
   AudioPlayCallback audioPlay,
   RestartCallback restart,
-  TimerStartCallback timerStart)
+  TimerStartCallback timerStart,
+  const FAppStoragePolicy * storagePolicy)
 {
+  storagePolicy_ = storagePolicy == nullptr ? FAppStoragePolicy() : *storagePolicy;
   filesystem_ = &filesystem;
   audioPlayCallback_ = audioPlay;
   restartCallback_ = restart;
@@ -48,6 +52,7 @@ void FAppHttpApi::reset()
   lastStatus_ = 0;
   filesystem_ = nullptr;
   audioPlayCallback_ = nullptr;
+  audioControlCallback_ = nullptr;
   restartCallback_ = nullptr;
   timerStartCallback_ = nullptr;
   appDirectory_[0] = '\0';
@@ -119,6 +124,41 @@ bool FAppHttpApi::call(
         setError("audio_play expects one path string"); return false;
       }
       return audioPlay(arguments[0].asString(), result);
+    case FAppNativeFunction::FilePairValue: {
+      if (argumentCount != 3 || arguments[0].type() != FAppValueType::String || arguments[1].type() != FAppValueType::String || arguments[2].type() != FAppValueType::Integer || arguments[2].asInteger() < 0 || strlen(arguments[1].asString()) != 1) {
+        setError("file_pair_value expects path, one-character separator and nonnegative row"); return false;
+      }
+      char path[256];
+      if (!resolveAppPath(arguments[0].asString(), path, sizeof(path))) return false;
+      std::string value;
+      FAppFilePairs::read(*filesystem_, path, arguments[1].asString()[0], nullptr, arguments[2].asInteger(), &value);
+      *result = FAppValue::string(value.c_str());
+      return true;
+    }
+    case FAppNativeFunction::AudioStream:
+    case FAppNativeFunction::AudioStop:
+    case FAppNativeFunction::AudioSetVolume:
+    case FAppNativeFunction::AudioVolume:
+    case FAppNativeFunction::AudioPlaying:
+    case FAppNativeFunction::AudioPosition:
+    case FAppNativeFunction::AudioDuration:
+    case FAppNativeFunction::AudioSeek: {
+      const bool stream = function == FAppNativeFunction::AudioStream;
+      const bool numeric = function == FAppNativeFunction::AudioSetVolume || function == FAppNativeFunction::AudioSeek;
+      if (argumentCount != (stream || numeric ? 1 : 0) ||
+          (stream && arguments[0].type() != FAppValueType::String) ||
+          (numeric && arguments[0].type() != FAppValueType::Integer)) {
+        setError("invalid audio arguments"); return false;
+      }
+      if (numeric && (arguments[0].asInteger() < 0 || arguments[0].asInteger() > (function == FAppNativeFunction::AudioSetVolume ? 21 : 65535))) {
+        setError("audio volume must be 0..21; seek seconds must be 0..65535"); return false;
+      }
+      if (stream && strncmp(arguments[0].asString(), "http://", 7) != 0 && strncmp(arguments[0].asString(), "https://", 8) != 0) {
+        *result = FAppValue::boolean(false); return true;
+      }
+      if (audioControlCallback_ == nullptr) { setError("audio control unavailable"); return false; }
+      return audioControlCallback_(function, arguments, argumentCount, result);
+    }
     case FAppNativeFunction::WifiStatus:
       if (argumentCount != 0) { setError("wifi_status expects no arguments"); return false; }
       *result = FAppValue::boolean(WiFi.status() == WL_CONNECTED);
@@ -211,45 +251,21 @@ bool FAppHttpApi::call(
 }
 
 bool FAppHttpApi::resolveAppPath(
-  const char * relativePath, char * output, size_t capacity) const
+  const char * requestedPath, char * output, size_t capacity, bool write, bool audio) const
 {
-  if (filesystem_ == nullptr || appDirectory_[0] == '\0' || relativePath == nullptr ||
-      relativePath[0] == '\0' || output == nullptr || capacity == 0) {
+  if (filesystem_ == nullptr || appDirectory_[0] == '\0') {
     setError("app file context is unavailable");
     return false;
   }
-  if (relativePath[0] == '/' || relativePath[0] == '\\') {
-    setError("app paths must be relative");
+  const FAppPath::Status status = FAppPath::resolve(appDirectory_, requestedPath, output, capacity);
+  if (status == FAppPath::Status::Ready) {
+    if (storagePolicy_.allows(output, appDirectory_, write, audio)) return true;
+    setError("SD folder permission denied");
     return false;
   }
-  const char * segment = relativePath;
-  for (const char * cursor = relativePath; ; ++cursor) {
-    const unsigned char character = static_cast<unsigned char>(*cursor);
-    if (character != 0 && character < 0x20) {
-      setError("app path contains a control character");
-      return false;
-    }
-    if (*cursor == '\\') {
-      setError("app paths must use forward slashes");
-      return false;
-    }
-    if (*cursor == '/' || *cursor == '\0') {
-      const size_t length = static_cast<size_t>(cursor - segment);
-      if (length == 0 || (length == 1 && segment[0] == '.') ||
-          (length == 2 && segment[0] == '.' && segment[1] == '.')) {
-        setError("app path contains an unsafe segment");
-        return false;
-      }
-      if (*cursor == '\0') break;
-      segment = cursor + 1;
-    }
-  }
-  const int written = snprintf(output, capacity, "%s/%s", appDirectory_, relativePath);
-  if (written < 0 || static_cast<size_t>(written) >= capacity) {
-    setError("app path is too long");
-    return false;
-  }
-  return true;
+  setError(status == FAppPath::Status::Protected ? "/system is protected" :
+    status == FAppPath::Status::TooLong ? "SD path is too long" : "invalid SD path");
+  return false;
 }
 
 bool FAppHttpApi::toTextValue(const FAppValue& value, FAppValue * result)
@@ -469,7 +485,7 @@ bool FAppHttpApi::fileWrite(
   const char * relativePath, const char * data, FAppValue * result)
 {
   char path[256];
-  if (!resolveAppPath(relativePath, path, sizeof(path))) return false;
+  if (!resolveAppPath(relativePath, path, sizeof(path), true)) return false;
   fs::File file = filesystem_->open(path, FILE_WRITE);
   if (!file) {
     *result = FAppValue::boolean(false);
@@ -501,7 +517,8 @@ bool FAppHttpApi::fileList(const char * relativePath, FAppValue * result)
     const int slash = name.lastIndexOf('/');
     if (slash >= 0) name = name.substring(slash + 1);
     name.trim();
-    if (name.length() > 0 && !name.startsWith(".")) {
+    if (name.length() > 0 && !name.startsWith(".") &&
+        !(strcmp(path, "/") == 0 && FAppPath::isSystemName(name.c_str(), name.length()))) {
       String& target = entry.isDirectory() ? folders : files;
       if (target.length() > 0) target += "\n";
       target += name;
@@ -527,7 +544,7 @@ bool FAppHttpApi::fileList(const char * relativePath, FAppValue * result)
 bool FAppHttpApi::audioPlay(const char * relativePath, FAppValue * result)
 {
   char path[256];
-  if (!resolveAppPath(relativePath, path, sizeof(path))) return false;
+  if (!resolveAppPath(relativePath, path, sizeof(path), false, true)) return false;
   if (!filesystem_->exists(path) || audioPlayCallback_ == nullptr) {
     *result = FAppValue::boolean(false);
     return true;

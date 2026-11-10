@@ -1,0 +1,14 @@
+{
+  "id": "devmicro.fscript-drawing",
+  "name": "fScript Zeichnen",
+  "version": "1.0.1",
+  "min_fos": "4.1.0",
+  "type": "ui",
+  "icon": "Draw",
+  "layout": "layout.ui",
+  "executable": "main.fapp",
+  "scrollable": false,
+  "permissions": [
+    "ui"
+  ]
+}

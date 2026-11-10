@@ -4,6 +4,7 @@
 #include <FS.h>
 
 #include "FAppNativeApi.h"
+#include "FAppStoragePolicy.h"
 
 class FAppHttpApi : public FAppNativeApi {
  public:
@@ -12,6 +13,8 @@ class FAppHttpApi : public FAppNativeApi {
   static constexpr uint32_t kMaximumTimerIntervalMs = 86400000;
 
   using AudioPlayCallback = bool (*)(const char * path);
+  using AudioControlCallback = bool (*)(FAppNativeFunction, const FAppValue *, uint8_t, FAppValue *);
+  void setAudioControl(AudioControlCallback callback) { audioControlCallback_ = callback; }
   using RestartCallback = void (*)();
   using TimerStartCallback = bool (*)(uint32_t intervalMs);
 
@@ -21,7 +24,8 @@ class FAppHttpApi : public FAppNativeApi {
     const char * appDirectory,
     AudioPlayCallback audioPlay,
     RestartCallback restart,
-    TimerStartCallback timerStart);
+    TimerStartCallback timerStart,
+    const FAppStoragePolicy * storagePolicy = nullptr);
   bool call(
     FAppNativeFunction function,
     const FAppValue * arguments,
@@ -33,6 +37,7 @@ class FAppHttpApi : public FAppNativeApi {
   void clearEventContext() override { eventContext_ = FAppEventContext{}; }
 
  private:
+  AudioControlCallback audioControlCallback_ = nullptr;
   bool get(const char * url, FAppValue * result);
   bool json(const char * path, FAppValue * result);
   bool text(int32_t offset, FAppValue * result);
@@ -49,7 +54,7 @@ class FAppHttpApi : public FAppNativeApi {
   bool fileWrite(const char * relativePath, const char * data, FAppValue * result);
   bool fileList(const char * relativePath, FAppValue * result);
   bool audioPlay(const char * relativePath, FAppValue * result);
-  bool resolveAppPath(const char * relativePath, char * output, size_t capacity) const;
+  bool resolveAppPath(const char * relativePath, char * output, size_t capacity, bool write = false, bool audio = false) const;
   bool navigateJson(const char * path, size_t * valueStart) const;
   bool findObjectKey(size_t objectStart, const char * key, size_t * valueStart) const;
   bool findArrayIndex(size_t arrayStart, int index, size_t * valueStart) const;
@@ -66,6 +71,7 @@ class FAppHttpApi : public FAppNativeApi {
   RestartCallback restartCallback_;
   TimerStartCallback timerStartCallback_;
   char appDirectory_[160];
+  FAppStoragePolicy storagePolicy_;
   mutable char error_[96];
   FAppEventContext eventContext_;
 };

@@ -37,13 +37,13 @@ void issue(
 bool validProperty(std::uint8_t value)
 {
   return value >= static_cast<std::uint8_t>(fapp::UiProperty::Text) &&
-         value <= static_cast<std::uint8_t>(fapp::UiProperty::Enabled);
+         value <= static_cast<std::uint8_t>(fapp::UiProperty::Pressed);
 }
 
 bool validMethod(std::uint8_t value)
 {
   return value >= static_cast<std::uint8_t>(fapp::UiMethod::Clear) &&
-         value <= static_cast<std::uint8_t>(fapp::UiMethod::DrawText);
+         value <= static_cast<std::uint8_t>(fapp::UiMethod::LoadPairs);
 }
 
 bool validNative(std::uint8_t value, std::uint8_t arity)
@@ -60,6 +60,15 @@ bool validNative(std::uint8_t value, std::uint8_t arity)
     case fapp::NativeFunction::FileRead: expected = 1; break;
     case fapp::NativeFunction::FileWrite: expected = 2; break;
     case fapp::NativeFunction::AudioPlay: expected = 1; break;
+    case fapp::NativeFunction::AudioStream: expected = 1; break;
+    case fapp::NativeFunction::AudioStop: expected = 0; break;
+    case fapp::NativeFunction::AudioSetVolume: expected = 1; break;
+    case fapp::NativeFunction::AudioVolume: expected = 0; break;
+    case fapp::NativeFunction::AudioPlaying: expected = 0; break;
+    case fapp::NativeFunction::AudioPosition: expected = 0; break;
+    case fapp::NativeFunction::AudioDuration: expected = 0; break;
+    case fapp::NativeFunction::AudioSeek: expected = 1; break;
+    case fapp::NativeFunction::FilePairValue: expected = 3; break;
     case fapp::NativeFunction::WifiStatus: expected = 0; break;
     case fapp::NativeFunction::SystemRestart: expected = 0; break;
     case fapp::NativeFunction::TimerStart: expected = 1; break;
@@ -208,6 +217,10 @@ bool decodeFunction(
         std::uint8_t expectedArguments = 0;
         if (method == static_cast<std::uint8_t>(fapp::UiMethod::LoadFile) ||
             method == static_cast<std::uint8_t>(fapp::UiMethod::SaveFile)) expectedArguments = 1;
+        else if (method == static_cast<std::uint8_t>(fapp::UiMethod::LoadDir) ||
+                 method == static_cast<std::uint8_t>(fapp::UiMethod::SetRange) ||
+                 method == static_cast<std::uint8_t>(fapp::UiMethod::LoadPairs)) expectedArguments = 2;
+        else if (method == static_cast<std::uint8_t>(fapp::UiMethod::LoadDirFiltered)) expectedArguments = 3;
         else if (method == static_cast<std::uint8_t>(fapp::UiMethod::Pixel)) expectedArguments = 3;
         else if (method == static_cast<std::uint8_t>(fapp::UiMethod::Line)) expectedArguments = 6;
         else if (method == static_cast<std::uint8_t>(fapp::UiMethod::Rect)) expectedArguments = 6;

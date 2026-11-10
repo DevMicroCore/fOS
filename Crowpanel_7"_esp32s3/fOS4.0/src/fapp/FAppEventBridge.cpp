@@ -77,6 +77,7 @@ void FAppEventBridge::eventCallback(lv_event_t * event)
       queuePointer(bridge->runtime_, objectId, FAPP_EVENT_POINTER_UP, lv_event_get_target(event), false);
       break;
     case LV_EVENT_PRESS_LOST:
+      bridge->runtime_->queueEvent(objectId, FAPP_EVENT_RELEASED);
       queuePointer(bridge->runtime_, objectId, FAPP_EVENT_POINTER_UP, lv_event_get_target(event), false);
       break;
     case LV_EVENT_READY: bridge->runtime_->queueEvent(objectId, FAPP_EVENT_READY); break;

@@ -65,10 +65,20 @@ bool nativePermissionGranted(FAppPermissions permissions, FAppNativeFunction fun
     case FAppNativeFunction::WifiStatus:
       return fappHasPermission(permissions, FAppPermission::Network);
     case FAppNativeFunction::FileRead:
+    case FAppNativeFunction::FilePairValue:
     case FAppNativeFunction::FileList:
       return fappHasPermission(permissions, FAppPermission::StorageRead);
     case FAppNativeFunction::FileWrite:
       return fappHasPermission(permissions, FAppPermission::StorageWrite);
+    case FAppNativeFunction::AudioStream:
+      return fappHasPermission(permissions, FAppPermission::Audio) && fappHasPermission(permissions, FAppPermission::Network);
+    case FAppNativeFunction::AudioStop:
+    case FAppNativeFunction::AudioSetVolume:
+    case FAppNativeFunction::AudioVolume:
+    case FAppNativeFunction::AudioPlaying:
+    case FAppNativeFunction::AudioPosition:
+    case FAppNativeFunction::AudioDuration:
+    case FAppNativeFunction::AudioSeek:
     case FAppNativeFunction::AudioPlay:
       return fappHasPermission(permissions, FAppPermission::Audio);
     case FAppNativeFunction::SystemRestart:
@@ -615,7 +625,7 @@ bool FAppRuntime::executeInstruction()
       const uint8_t count = bytes[3];
       if (count > stackSize_) { fault(FAppRuntimeError::StackUnderflow); return false; }
       if (!fappHasPermission(permissions_, FAppPermission::Ui)) { fault(FAppRuntimeError::PermissionDenied); return false; }
-      if (bytes[2] == 6 && !fappHasPermission(permissions_, FAppPermission::StorageRead)) {
+      if ((bytes[2] == 6 || bytes[2] == 13 || bytes[2] == 15 || bytes[2] == 16) && !fappHasPermission(permissions_, FAppPermission::StorageRead)) {
         fault(FAppRuntimeError::PermissionDenied); return false;
       }
       if (bytes[2] == 7 && !fappHasPermission(permissions_, FAppPermission::StorageWrite)) {

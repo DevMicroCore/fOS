@@ -1,0 +1,191 @@
+{
+  "name": "fscript-fos-ui",
+  "displayName": "fScript & fOS UI",
+  "description": "Syntax highlighting, IntelliSense, bundled fosc compiler, and fosrun previews for fScript and fOS UI.",
+  "version": "1.1.1",
+  "publisher": "devmicrocore",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "fScript",
+    "fOS",
+    "ESP32",
+    "LVGL"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:fscript",
+    "onLanguage:fscript-ui"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Syntax highlighting and language assistance are available; compiler and runner commands require a trusted workspace."
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "package": "python3 scripts/build_vsix.py"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "fscript",
+        "aliases": [
+          "fScript",
+          "fscript"
+        ],
+        "extensions": [
+          ".fscript"
+        ],
+        "configuration": "./fscript-language-configuration.json"
+      },
+      {
+        "id": "fscript-ui",
+        "aliases": [
+          "fOS UI",
+          "fScript UI"
+        ],
+        "extensions": [
+          ".ui",
+          ".fui"
+        ],
+        "configuration": "./ui-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fscript",
+        "scopeName": "source.fscript",
+        "path": "./syntaxes/fscript.tmLanguage.json"
+      },
+      {
+        "language": "fscript-ui",
+        "scopeName": "source.fscript-ui",
+        "path": "./syntaxes/ui.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "fscript",
+        "path": "./snippets/fscript.json"
+      },
+      {
+        "language": "fscript-ui",
+        "path": "./snippets/ui.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "fscript.check",
+        "title": "fScript: Check Current App (fosc)"
+      },
+      {
+        "command": "fscript.build",
+        "title": "fScript: Compile Current App (fosc)",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "fscript.openLayout",
+        "title": "fScript: Open Associated UI"
+      },
+      {
+        "command": "fscript.prepareTools",
+        "title": "fScript: Prepare Tools (fosc + fosrun)"
+      },
+      {
+        "command": "fscript.rebuildTools",
+        "title": "fScript: Rebuild Bundled Tools"
+      },
+      {
+        "command": "fscript.run",
+        "title": "fScript: Run App (fosrun)",
+        "icon": "$(play)"
+      },
+      {
+        "command": "fscript.stop",
+        "title": "fScript: Stop Preview",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "fscript.showOutput",
+        "title": "fScript: Show Compiler / Runner Output"
+      }
+    ],
+    "configuration": {
+      "title": "fScript & fOS UI",
+      "properties": {
+        "fscript.compilerPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Optional custom fosc executable. Leave empty to use the bundled toolchain automatically. The legacy value \"fosc\" still supports an existing executable on PATH."
+        },
+        "fscript.checkOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Check with fosc after saving. Requires a trusted workspace and tools that have already been prepared."
+        },
+        "fscript.runnerPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Optional custom fosrun executable. Leave empty to use the bundled toolchain."
+        },
+        "fscript.cxxPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Optional C++17 compiler for local toolchain builds. Leave empty to find c++, g++, or clang++ (macOS: Xcode Command Line Tools; Windows: MinGW-w64)."
+        },
+        "fscript.sdRoot": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Local SD card image folder for fosrun. Relative paths are resolved against the workspace, or the app folder if no workspace is open. Access follows the storage permissions in app.json."
+        },
+        "fscript.wifiOff": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Simulate disconnected Wi-Fi when testing."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[fscript]": {
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true
+      },
+      "[fscript-ui]": {
+        "editor.tabSize": 2
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "fscript.run",
+          "when": "editorLangId == fscript || editorLangId == fscript-ui",
+          "group": "navigation@1"
+        },
+        {
+          "command": "fscript.build",
+          "when": "editorLangId == fscript || editorLangId == fscript-ui",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  }
+}

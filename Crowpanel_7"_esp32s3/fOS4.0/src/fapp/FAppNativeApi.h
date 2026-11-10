@@ -30,7 +30,16 @@ enum class FAppNativeFunction : uint8_t {
   EventY = 23,
   EventScreenX = 24,
   EventScreenY = 25,
-  EventPressed = 26
+  EventPressed = 26,
+  AudioStream = 27,
+  AudioStop = 28,
+  AudioSetVolume = 29,
+  AudioVolume = 30,
+  AudioPlaying = 31,
+  AudioPosition = 32,
+  AudioDuration = 33,
+  AudioSeek = 34,
+  FilePairValue = 35
 };
 
 struct FAppEventContext {

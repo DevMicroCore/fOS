@@ -204,6 +204,19 @@ void testCanvasAndPointerRules()
           "drawing methods should be canvas-only");
 }
 
+void testDirectoryMethod()
+{
+  const std::string ui = "type=roller;id=files\ntype=textarea;id=editor\n";
+  require(analyze("var ok = files.load_dir(\"/text\", \"/text\")\n", ui).success(),
+          "directory loading must accept a roller and two path strings");
+  require(hasCode(analyze("editor.load_dir(\"/text\", \"/text\")\n", ui), "FS515"),
+          "directory loading must reject non-roller objects");
+  require(hasCode(analyze("files.load_dir(\"/text\")\n", ui), "FS516"),
+          "directory loading must require the browser root");
+  require(hasCode(analyze("files.load_dir(1, \"/text\")\n", ui), "FS520"),
+          "directory paths must be strings");
+}
+
 }  // namespace
 
 int main()
@@ -215,6 +228,7 @@ int main()
   testUiRules();
   testFosApiRules();
   testCanvasAndPointerRules();
+  testDirectoryMethod();
   if (failures != 0) {
     std::cerr << failures << " semantic test(s) failed.\n";
     return EXIT_FAILURE;

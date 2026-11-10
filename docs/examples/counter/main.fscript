@@ -1,0 +1,24 @@
+var counter = 0
+
+function show_counter()
+  lbl_status.text = "Count: " + counter
+end
+
+on app.start
+  show_counter()
+  timer.start(10000)
+end
+
+on btn_add.click
+  counter = counter + 1
+  show_counter()
+end
+
+on btn_reset.click
+  counter = 0
+  show_counter()
+end
+
+on app.timer
+  Serial.printf("Count: " + counter + "\n")
+end

@@ -1,0 +1,89 @@
+{
+  "name": "fOS UI",
+  "scopeName": "source.fscript-ui",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.fscript-ui",
+      "match": "^\\s*#.*$"
+    },
+    {
+      "begin": "(?:^|(?<=;))\\s*(type)(=)",
+      "end": "(?=;|$)",
+      "beginCaptures": {
+        "1": {
+          "name": "support.type.property-name.fscript-ui"
+        },
+        "2": {
+          "name": "keyword.operator.assignment.fscript-ui"
+        }
+      },
+      "patterns": [
+        {
+          "name": "entity.name.type.fscript-ui",
+          "match": "\\b[A-Za-z_]\\w*\\b"
+        }
+      ]
+    },
+    {
+      "begin": "(?:^|(?<=;))\\s*(id|parent|target)(=)",
+      "end": "(?=;|$)",
+      "beginCaptures": {
+        "1": {
+          "name": "support.type.property-name.fscript-ui"
+        },
+        "2": {
+          "name": "keyword.operator.assignment.fscript-ui"
+        }
+      },
+      "patterns": [
+        {
+          "name": "variable.other.object.fscript-ui",
+          "match": "\\b[A-Za-z_]\\w*\\b"
+        }
+      ]
+    },
+    {
+      "begin": "(?:^|(?<=;))\\s*(text|placeholder)(=)",
+      "end": "(?=;|$)",
+      "contentName": "string.unquoted.fscript-ui",
+      "beginCaptures": {
+        "1": {
+          "name": "support.type.property-name.fscript-ui"
+        },
+        "2": {
+          "name": "keyword.operator.assignment.fscript-ui"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.fscript-ui",
+          "match": "\\\\[nt\\\\]"
+        }
+      ]
+    },
+    {
+      "name": "support.type.property-name.fscript-ui",
+      "match": "\\b[A-Za-z_]\\w*(?=\\s*=)"
+    },
+    {
+      "name": "constant.language.fscript-ui",
+      "match": "\\b(?:true|false|theme|accent|surface|contrast)\\b"
+    },
+    {
+      "name": "constant.numeric.hex.fscript-ui",
+      "match": "\\b0[xX][0-9a-fA-F]{6}\\b"
+    },
+    {
+      "name": "constant.numeric.fscript-ui",
+      "match": "-?\\b\\d+\\b"
+    },
+    {
+      "name": "keyword.operator.assignment.fscript-ui",
+      "match": "="
+    },
+    {
+      "name": "punctuation.separator.fscript-ui",
+      "match": ";"
+    }
+  ]
+}

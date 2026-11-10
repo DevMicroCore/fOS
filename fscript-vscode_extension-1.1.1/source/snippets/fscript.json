@@ -1,0 +1,75 @@
+{
+  "App start": {
+    "prefix": "appstart",
+    "body": [
+      "on app.start",
+      "  ${0}",
+      "end"
+    ],
+    "description": "App startup event"
+  },
+  "App timer": {
+    "prefix": "apptimer",
+    "body": [
+      "on app.timer",
+      "  ${0}",
+      "end"
+    ],
+    "description": "Recurring app event"
+  },
+  "Event handler": {
+    "prefix": "event",
+    "body": [
+      "on ${1:btn_play}.${2:click}",
+      "  ${0}",
+      "end"
+    ],
+    "description": "UI event handler"
+  },
+  "Function": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2})",
+      "  ${0}",
+      "end"
+    ]
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} then",
+      "  ${0}",
+      "end"
+    ]
+  },
+  "If else": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} then",
+      "  ${2}",
+      "else",
+      "  ${0}",
+      "end"
+    ]
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} then",
+      "  ${0}",
+      "end"
+    ]
+  },
+  "For": {
+    "prefix": "for",
+    "body": [
+      "for var ${1:i} = ${2:0} to ${3:10} then",
+      "  ${0}",
+      "end"
+    ]
+  },
+  "Variable": {
+    "prefix": "var",
+    "body": "var ${1:name} = ${0:0}"
+  }
+}

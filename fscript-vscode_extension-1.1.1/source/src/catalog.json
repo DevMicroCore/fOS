@@ -1,0 +1,1146 @@
+{
+  "version": "fOS 4.0.1 / fosc 0.14.0",
+  "builtins": [
+    {
+      "name": "http_get",
+      "params": [
+        {
+          "name": "url",
+          "type": "String",
+          "default": "\"https://example.com\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Fetches an HTTP/HTTPS resource. Read the response with http_json or http_text.",
+      "permission": "network"
+    },
+    {
+      "name": "http_status",
+      "params": [],
+      "result": "Integer",
+      "doc": "HTTP status code of the last request.",
+      "permission": "network"
+    },
+    {
+      "name": "http_json",
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"results[0].name\""
+        }
+      ],
+      "result": "String",
+      "doc": "Reads a scalar value using a JSON path.",
+      "permission": "network"
+    },
+    {
+      "name": "http_text",
+      "params": [
+        {
+          "name": "offset",
+          "type": "Integer",
+          "default": "0"
+        }
+      ],
+      "result": "String",
+      "doc": "Reads up to 255 bytes from the last HTTP response, starting at offset.",
+      "permission": "network"
+    },
+    {
+      "name": "url_encode",
+      "params": [
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"Berlin\""
+        }
+      ],
+      "result": "String",
+      "doc": "Encodes text for use in a URL.",
+      "permission": "network"
+    },
+    {
+      "name": "date_weekday",
+      "params": [
+        {
+          "name": "iso_date",
+          "type": "String",
+          "default": "\"2026-10-14\""
+        }
+      ],
+      "result": "String",
+      "doc": "Returns the weekday for YYYY-MM-DD, from Mon to Sun.",
+      "permission": ""
+    },
+    {
+      "name": "file_read",
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"appdata/state.txt\""
+        }
+      ],
+      "result": "String",
+      "doc": "Reads up to 255 bytes. Returns an empty string if the file is missing or too large.",
+      "permission": "storage.read:<folder>"
+    },
+    {
+      "name": "file_write",
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"appdata/state.txt\""
+        },
+        {
+          "name": "data",
+          "type": "String",
+          "default": "\"\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Replaces a file with the supplied content.",
+      "permission": "storage.write:<folder>"
+    },
+    {
+      "name": "file_list",
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/music/files\""
+        }
+      ],
+      "result": "String",
+      "doc": "Returns a limited directory listing; folder names end with /. Use roller.load_dir for longer lists.",
+      "permission": "storage.read:<folder>"
+    },
+    {
+      "name": "file_pair_value",
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/music/webradio/webradio.txt\""
+        },
+        {
+          "name": "separator",
+          "type": "String",
+          "default": "\"|\""
+        },
+        {
+          "name": "index",
+          "type": "Integer",
+          "default": "0"
+        }
+      ],
+      "result": "String",
+      "doc": "Returns the value of a valid name/value row using a zero-based index. Uses the same indices as roller.load_pairs.",
+      "permission": "storage.read:<folder>"
+    },
+    {
+      "name": "audio_play",
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/music/files/song.mp3\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Starts playback of a local file allowed by the storage scope.",
+      "permission": "audio, readable storage path"
+    },
+    {
+      "name": "audio_stream",
+      "params": [
+        {
+          "name": "url",
+          "type": "String",
+          "default": "\"https://example.com/stream\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Starts an HTTP/HTTPS audio stream. Returns false if Wi-Fi is unavailable, OTA is active, or playback cannot start.",
+      "permission": "audio, network"
+    },
+    {
+      "name": "audio_stop",
+      "params": [],
+      "result": "Boolean",
+      "doc": "Stops playback owned by the active fApp.",
+      "permission": "audio"
+    },
+    {
+      "name": "audio_set_volume",
+      "params": [
+        {
+          "name": "value",
+          "type": "Integer",
+          "default": "15"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Sets the volume to an integer from 0 to 21.",
+      "permission": "audio"
+    },
+    {
+      "name": "audio_volume",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the current volume (0–21).",
+      "permission": "audio"
+    },
+    {
+      "name": "audio_playing",
+      "params": [],
+      "result": "Boolean",
+      "doc": "Returns whether audio owned by the fApp is playing. Returns false at the end of a file.",
+      "permission": "audio"
+    },
+    {
+      "name": "audio_position",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the current local file position in seconds, or 0 for other sources.",
+      "permission": "audio"
+    },
+    {
+      "name": "audio_duration",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the local file duration in seconds; 0 for streams or an unknown duration.",
+      "permission": "audio"
+    },
+    {
+      "name": "audio_seek",
+      "params": [
+        {
+          "name": "seconds",
+          "type": "Integer",
+          "default": "0"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Seeks an active local file to a position from 0 to 65535 seconds.",
+      "permission": "audio"
+    },
+    {
+      "name": "wifi_status",
+      "params": [],
+      "result": "Boolean",
+      "doc": "Returns whether Wi-Fi is connected.",
+      "permission": "network"
+    },
+    {
+      "name": "system.restart",
+      "params": [],
+      "result": "nil",
+      "doc": "Requests a controlled system restart.",
+      "permission": "system.restart"
+    },
+    {
+      "name": "timer.start",
+      "params": [
+        {
+          "name": "milliseconds",
+          "type": "Integer",
+          "default": "200"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Changes the recurring app.timer interval (100–86400000 ms).",
+      "permission": ""
+    },
+    {
+      "name": "Serial.printf",
+      "params": [
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"Hello fOS\\n\""
+        }
+      ],
+      "result": "nil",
+      "doc": "Prints one composed string; printf format arguments are not supported.",
+      "permission": ""
+    },
+    {
+      "name": "text",
+      "params": [
+        {
+          "name": "value",
+          "type": "Any",
+          "default": "value"
+        }
+      ],
+      "result": "String",
+      "doc": "Converts a value to text.",
+      "permission": ""
+    },
+    {
+      "name": "number_parse",
+      "params": [
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"12,5\""
+        }
+      ],
+      "result": "Float",
+      "doc": "Converts numeric text to a number; also accepts a decimal comma.",
+      "permission": ""
+    },
+    {
+      "name": "round",
+      "params": [
+        {
+          "name": "number",
+          "type": "Number",
+          "default": "12.5"
+        }
+      ],
+      "result": "Integer",
+      "doc": "Rounds to the nearest integer.",
+      "permission": ""
+    },
+    {
+      "name": "string_length",
+      "params": [
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"Hello\""
+        }
+      ],
+      "result": "Integer",
+      "doc": "Returns the length of a string in bytes.",
+      "permission": ""
+    },
+    {
+      "name": "string_slice",
+      "params": [
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"Hello\""
+        },
+        {
+          "name": "start",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "length",
+          "type": "Integer",
+          "default": "5"
+        }
+      ],
+      "result": "String",
+      "doc": "Returns a substring starting at a byte index; negative start values count from the end.",
+      "permission": ""
+    },
+    {
+      "name": "string_last_index",
+      "params": [
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"/music/files/song.mp3\""
+        },
+        {
+          "name": "needle",
+          "type": "String",
+          "default": "\"/\""
+        }
+      ],
+      "result": "Integer",
+      "doc": "Returns the zero-based index of the last match, or -1 if not found.",
+      "permission": ""
+    },
+    {
+      "name": "math_eval",
+      "params": [
+        {
+          "name": "expression",
+          "type": "String",
+          "default": "\"2+3*4\""
+        }
+      ],
+      "result": "String",
+      "doc": "Evaluates a mathematical expression; reports errors as Math Error.",
+      "permission": ""
+    },
+    {
+      "name": "event_x",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the local X coordinate of the current pointer event.",
+      "permission": ""
+    },
+    {
+      "name": "event_y",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the local Y coordinate of the current pointer event.",
+      "permission": ""
+    },
+    {
+      "name": "event_screen_x",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the absolute screen X coordinate of the pointer event.",
+      "permission": ""
+    },
+    {
+      "name": "event_screen_y",
+      "params": [],
+      "result": "Integer",
+      "doc": "Returns the absolute screen Y coordinate of the pointer event.",
+      "permission": ""
+    },
+    {
+      "name": "event_pressed",
+      "params": [],
+      "result": "Boolean",
+      "doc": "Returns whether the pointer is pressed in the current pointer event.",
+      "permission": ""
+    }
+  ],
+  "methods": [
+    {
+      "name": "clear",
+      "types": [
+        "textarea"
+      ],
+      "params": [],
+      "result": "nil",
+      "doc": "Clears the text area.",
+      "permission": "ui"
+    },
+    {
+      "name": "clear",
+      "types": [
+        "canvas"
+      ],
+      "params": [
+        {
+          "name": "color",
+          "type": "Integer",
+          "default": "0"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Fills the canvas with the RGB color.",
+      "permission": "ui"
+    },
+    {
+      "name": "focus",
+      "types": [
+        "button",
+        "textarea",
+        "switch",
+        "checkbox",
+        "roller",
+        "dropdown",
+        "slider",
+        "tabview"
+      ],
+      "params": [],
+      "result": "nil",
+      "doc": "Focuses the widget.",
+      "permission": "ui"
+    },
+    {
+      "name": "blur",
+      "types": [
+        "button",
+        "textarea",
+        "switch",
+        "checkbox",
+        "roller",
+        "dropdown",
+        "slider",
+        "tabview"
+      ],
+      "params": [],
+      "result": "nil",
+      "doc": "Removes focus from the widget.",
+      "permission": "ui"
+    },
+    {
+      "name": "scroll_to_top",
+      "types": [
+        "textarea",
+        "panel",
+        "roller"
+      ],
+      "params": [],
+      "result": "nil",
+      "doc": "Scrolls to the beginning.",
+      "permission": "ui"
+    },
+    {
+      "name": "scroll_to_bottom",
+      "types": [
+        "textarea",
+        "panel",
+        "roller"
+      ],
+      "params": [],
+      "result": "nil",
+      "doc": "Scrolls to the end.",
+      "permission": "ui"
+    },
+    {
+      "name": "load_file",
+      "types": [
+        "textarea"
+      ],
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/text/note.txt\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Loads text directly into the text area, bypassing the short VM string limit.",
+      "permission": "ui, storage.read:<folder>"
+    },
+    {
+      "name": "save_file",
+      "types": [
+        "textarea"
+      ],
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/text/note.txt\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Saves the text area content and creates permitted parent folders.",
+      "permission": "ui, storage.write:<folder>"
+    },
+    {
+      "name": "load_dir",
+      "types": [
+        "roller"
+      ],
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/text\""
+        },
+        {
+          "name": "root",
+          "type": "String",
+          "default": "\"/text\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Loads a directory listing with .. navigation up to the browser root.",
+      "permission": "ui, storage.read:<folder>"
+    },
+    {
+      "name": "load_dir_filtered",
+      "types": [
+        "roller"
+      ],
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/music/files\""
+        },
+        {
+          "name": "root",
+          "type": "String",
+          "default": "\"/music/files\""
+        },
+        {
+          "name": "extensions",
+          "type": "String",
+          "default": "\".mp3,.wav,.ogg,.aac,.m4a\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Loads folders and files with matching extensions, ignoring case.",
+      "permission": "ui, storage.read:<folder>"
+    },
+    {
+      "name": "load_pairs",
+      "types": [
+        "roller"
+      ],
+      "params": [
+        {
+          "name": "path",
+          "type": "String",
+          "default": "\"/music/webradio/webradio.txt\""
+        },
+        {
+          "name": "separator",
+          "type": "String",
+          "default": "\"|\""
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Loads the names from a name/value file as selectable options, up to 40 valid rows.",
+      "permission": "ui, storage.read:<folder>"
+    },
+    {
+      "name": "set_range",
+      "types": [
+        "slider"
+      ],
+      "params": [
+        {
+          "name": "min",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "max",
+          "type": "Integer",
+          "default": "1000"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Sets the range within -32768–32767; min must be less than max.",
+      "permission": "ui"
+    },
+    {
+      "name": "pixel",
+      "types": [
+        "canvas"
+      ],
+      "params": [
+        {
+          "name": "x",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "y",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "color",
+          "type": "Integer",
+          "default": "16777215"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Draws a pixel.",
+      "permission": "ui"
+    },
+    {
+      "name": "line",
+      "types": [
+        "canvas"
+      ],
+      "params": [
+        {
+          "name": "x1",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "y1",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "x2",
+          "type": "Integer",
+          "default": "100"
+        },
+        {
+          "name": "y2",
+          "type": "Integer",
+          "default": "100"
+        },
+        {
+          "name": "color",
+          "type": "Integer",
+          "default": "16777215"
+        },
+        {
+          "name": "width",
+          "type": "Integer",
+          "default": "2"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Draws a line with a width from 1 to 64.",
+      "permission": "ui"
+    },
+    {
+      "name": "rect",
+      "types": [
+        "canvas"
+      ],
+      "params": [
+        {
+          "name": "x",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "y",
+          "type": "Integer",
+          "default": "0"
+        },
+        {
+          "name": "width",
+          "type": "Integer",
+          "default": "100"
+        },
+        {
+          "name": "height",
+          "type": "Integer",
+          "default": "60"
+        },
+        {
+          "name": "color",
+          "type": "Integer",
+          "default": "16777215"
+        },
+        {
+          "name": "filled",
+          "type": "Boolean",
+          "default": "true"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Draws a rectangle.",
+      "permission": "ui"
+    },
+    {
+      "name": "circle",
+      "types": [
+        "canvas"
+      ],
+      "params": [
+        {
+          "name": "x",
+          "type": "Integer",
+          "default": "100"
+        },
+        {
+          "name": "y",
+          "type": "Integer",
+          "default": "100"
+        },
+        {
+          "name": "radius",
+          "type": "Integer",
+          "default": "30"
+        },
+        {
+          "name": "color",
+          "type": "Integer",
+          "default": "16777215"
+        },
+        {
+          "name": "filled",
+          "type": "Boolean",
+          "default": "true"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Draws a circle.",
+      "permission": "ui"
+    },
+    {
+      "name": "draw_text",
+      "types": [
+        "canvas"
+      ],
+      "params": [
+        {
+          "name": "x",
+          "type": "Integer",
+          "default": "10"
+        },
+        {
+          "name": "y",
+          "type": "Integer",
+          "default": "10"
+        },
+        {
+          "name": "text",
+          "type": "String",
+          "default": "\"Hello\""
+        },
+        {
+          "name": "color",
+          "type": "Integer",
+          "default": "16777215"
+        },
+        {
+          "name": "size",
+          "type": "Integer",
+          "default": "20"
+        }
+      ],
+      "result": "Boolean",
+      "doc": "Draws text using font size 20, 24, or 40.",
+      "permission": "ui"
+    }
+  ],
+  "properties": [
+    {
+      "name": "text",
+      "types": [
+        "label",
+        "button",
+        "textarea",
+        "checkbox",
+        "roller",
+        "dropdown"
+      ],
+      "result": "String",
+      "doc": "Text. For rollers and dropdowns, reads the selected text and writes options separated by \\n.",
+      "readonly": false
+    },
+    {
+      "name": "value",
+      "types": [
+        "roller",
+        "dropdown",
+        "slider",
+        "tabview"
+      ],
+      "result": "Integer",
+      "doc": "Zero-based selection index; the slider value for a slider, or the active tab for a tabview.",
+      "readonly": false
+    },
+    {
+      "name": "value",
+      "types": [
+        "switch",
+        "checkbox"
+      ],
+      "result": "Boolean",
+      "doc": "Toggle state.",
+      "readonly": false
+    },
+    {
+      "name": "checked",
+      "types": [
+        "switch",
+        "checkbox"
+      ],
+      "result": "Boolean",
+      "doc": "Toggle state.",
+      "readonly": false
+    },
+    {
+      "name": "hidden",
+      "types": [
+        "*"
+      ],
+      "result": "Boolean",
+      "doc": "Hides or shows the widget.",
+      "readonly": false
+    },
+    {
+      "name": "enabled",
+      "types": [
+        "*"
+      ],
+      "result": "Boolean",
+      "doc": "Enables or disables the widget.",
+      "readonly": false
+    },
+    {
+      "name": "pressed",
+      "types": [
+        "*"
+      ],
+      "result": "Boolean",
+      "doc": "Current LVGL pressed state; read-only.",
+      "readonly": true
+    }
+  ],
+  "events": [
+    {
+      "name": "click",
+      "types": [
+        "*"
+      ],
+      "doc": "The widget was clicked."
+    },
+    {
+      "name": "changed",
+      "types": [
+        "textarea",
+        "switch",
+        "checkbox",
+        "roller",
+        "dropdown",
+        "slider",
+        "tabview"
+      ],
+      "doc": "The value changed."
+    },
+    {
+      "name": "value_changed",
+      "types": [
+        "textarea",
+        "switch",
+        "checkbox",
+        "roller",
+        "dropdown",
+        "slider",
+        "tabview"
+      ],
+      "doc": "The value changed."
+    },
+    {
+      "name": "pressed",
+      "types": [
+        "button",
+        "switch",
+        "checkbox",
+        "slider"
+      ],
+      "doc": "The widget was pressed."
+    },
+    {
+      "name": "released",
+      "types": [
+        "button",
+        "switch",
+        "checkbox",
+        "slider"
+      ],
+      "doc": "The widget was released, including when touch is lost."
+    },
+    {
+      "name": "ready",
+      "types": [
+        "keyboard"
+      ],
+      "doc": "Keyboard input was confirmed."
+    },
+    {
+      "name": "cancel",
+      "types": [
+        "keyboard"
+      ],
+      "doc": "Keyboard input was cancelled."
+    },
+    {
+      "name": "pointer_down",
+      "types": [
+        "canvas",
+        "panel"
+      ],
+      "doc": "Touch event; read the coordinates with event_x() and event_y()."
+    },
+    {
+      "name": "pointer_move",
+      "types": [
+        "canvas",
+        "panel"
+      ],
+      "doc": "Touch event; read the coordinates with event_x() and event_y()."
+    },
+    {
+      "name": "pointer_up",
+      "types": [
+        "canvas",
+        "panel"
+      ],
+      "doc": "Touch event; read the coordinates with event_x() and event_y()."
+    }
+  ],
+  "systemEvents": [
+    "start",
+    "close",
+    "theme_changed",
+    "timer"
+  ],
+  "uiFields": {
+    "type": {
+      "doc": "LVGL widget type.",
+      "values": [
+        "label",
+        "button",
+        "textarea",
+        "switch",
+        "checkbox",
+        "panel",
+        "roller",
+        "dropdown",
+        "keyboard",
+        "canvas",
+        "slider",
+        "tabview",
+        "tab"
+      ]
+    },
+    "id": {
+      "doc": "Unique fScript ID: starts with a letter or underscore, followed by letters, underscores, or digits."
+    },
+    "parent": {
+      "doc": "ID of a previously declared parent object. A tab requires a tabview parent."
+    },
+    "target": {
+      "doc": "Text area ID for a keyboard; may be declared later.",
+      "types": [
+        "keyboard"
+      ]
+    },
+    "x": {
+      "doc": "X position relative to the parent object."
+    },
+    "y": {
+      "doc": "Y position relative to the parent object."
+    },
+    "w": {
+      "doc": "Width in pixels."
+    },
+    "h": {
+      "doc": "Height in pixels."
+    },
+    "text": {
+      "doc": "Text or options; use \\n for line breaks. A semicolon ends the field."
+    },
+    "placeholder": {
+      "doc": "Placeholder text.",
+      "types": [
+        "textarea"
+      ]
+    },
+    "bg": {
+      "doc": "Background color as 0xRRGGBB or a theme name.",
+      "values": [
+        "theme",
+        "surface",
+        "0x000000",
+        "0xFFFFFF"
+      ]
+    },
+    "fg": {
+      "doc": "Text color as 0xRRGGBB or a theme name.",
+      "values": [
+        "contrast",
+        "theme",
+        "0x000000",
+        "0xFFFFFF"
+      ]
+    },
+    "font": {
+      "doc": "Built-in font size; other sizes use the fallback.",
+      "values": [
+        "20",
+        "24",
+        "40"
+      ]
+    },
+    "align": {
+      "doc": "Text alignment.",
+      "values": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "radius": {
+      "doc": "Corner radius."
+    },
+    "border": {
+      "doc": "Border width."
+    },
+    "value": {
+      "doc": "Initial value or toggle state.",
+      "types": [
+        "slider",
+        "switch",
+        "checkbox"
+      ]
+    },
+    "min": {
+      "doc": "Slider minimum, at least -32768.",
+      "types": [
+        "slider"
+      ]
+    },
+    "max": {
+      "doc": "Slider maximum, at most 32767 and greater than min.",
+      "types": [
+        "slider"
+      ]
+    },
+    "tab_height": {
+      "doc": "Height of the top tab buttons.",
+      "types": [
+        "tabview"
+      ]
+    },
+    "max_length": {
+      "doc": "Maximum text length (1–1024).",
+      "types": [
+        "textarea"
+      ]
+    },
+    "hidden": {
+      "doc": "Initially hidden.",
+      "values": [
+        "true",
+        "false"
+      ]
+    },
+    "clickable": {
+      "doc": "Respond to touch.",
+      "values": [
+        "true",
+        "false"
+      ]
+    },
+    "scrollable": {
+      "doc": "Allow scrolling.",
+      "values": [
+        "true",
+        "false"
+      ]
+    },
+    "native_style": {
+      "doc": "Use the existing native LVGL style; the selection color still follows the theme.",
+      "values": [
+        "true",
+        "false"
+      ]
+    },
+    "one_line": {
+      "doc": "Single-line text area.",
+      "values": [
+        "true",
+        "false"
+      ],
+      "types": [
+        "textarea"
+      ]
+    },
+    "styleless": {
+      "doc": "Remove the default styles from a panel.",
+      "values": [
+        "true",
+        "false"
+      ],
+      "types": [
+        "panel"
+      ]
+    }
+  }
+}

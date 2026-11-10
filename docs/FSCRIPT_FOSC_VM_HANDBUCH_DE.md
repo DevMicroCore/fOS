@@ -1,6 +1,8 @@
+> Abgleich mit dem Quellcode: 2026-10-21. Paketstand: fOS 4.1.0, fosc 0.14.0, Bytecode 1.8. Relative Größen stehen in [UI_LAYOUTS.md](UI_LAYOUTS.md); gemeinsame Ordnerrechte in [APP_RUNTIME.md](APP_RUNTIME.md).
+
 # fScript-, fosc- und VM-Handbuch
 
-Stand: fOS 4.0.0, fScript 1.0.0, fosc 0.12.1, fosrun 0.2.1, fAPP 1.0, Bytecode 1.5
+Stand: fOS 4.1.0, fScript 1.0.0, fosc 0.14.0, fosrun 0.2.1, fAPP 1.0, Bytecode 1.8
 
 Dieses Handbuch beschreibt den vollständigen derzeit implementierten Umfang
 von fScript, dem PC-Compiler `fosc` und der fAPP-VM in fOS. Es ist zugleich
@@ -42,7 +44,7 @@ xcode-select --install
 Danach in den Compilerordner wechseln:
 
 ```bash
-cd ~/Downloads/fOS4.0/fScript_Development_Environment/fosc
+cd ~/Downloads/fOS4.1.0/fScript_Development_Environment/fosc
 ```
 
 Liegt der entpackte Ordner woanders, den Pfad entsprechend anpassen. Ein Ordner
@@ -59,7 +61,7 @@ make test
 Erwartete Version:
 
 ```text
-fosc 0.12.1
+fosc 0.14.0
 fScript 1.0.0
 ```
 
@@ -93,8 +95,7 @@ Empfohlener Aufbau:
 └── sound.mp3        # optionale Audiodatei
 ```
 
-fOS liest derzeit maximal sieben direkte Unterordner aus `/apps` in den
-Launcher ein.
+fOS liest bis zu **40** direkte App-Unterordner aus `/apps` ein. Davon getrennt sind die **7** Home-/Launcher-Plätze. App-Daten gehören vorzugsweise in `appdata`; Store-Updates erhalten diesen Ordner.
 
 ### 3.1 `app.json`
 
@@ -103,7 +104,7 @@ Launcher ein.
   "id": "de.beispiel.meine-app",
   "name": "Meine App",
   "version": "1.0.0",
-  "min_fos": "4.0.0",
+  "min_fos": "4.1.0",
   "type": "ui",
   "icon": "APP",
   "layout": "layout.ui",
@@ -138,18 +139,29 @@ App mit Oberfläche muss `"ui"` daher ausdrücklich in dieses Array aufnehmen.
 
 ### 3.2 Berechtigungen
 
-| Berechtigung | Erlaubte Operationen |
+| Berechtigung | Operationen |
 | --- | --- |
-| `ui` | UI lesen, verändern und UI-Methoden aufrufen |
-| `storage.read` | `file_read()`, `file_list()` |
-| `storage.write` | `file_write()` |
-| `network` | HTTP/JSON, URL-Encoding und `wifi_status()` |
-| `audio` | `audio_play()` |
-| `system.restart` | `system.restart()` |
+| `ui` | UI-Eigenschaften, Methoden und Ereignisse |
+| `storage.read` | Lesen/Auflisten im App-Ordner |
+| `storage.write` | Schreiben im App-Ordner |
+| `storage.read:/path` | Ordner und Unterordner lesen/auflisten |
+| `storage.write:/path` | Ordner und Unterordner schreiben |
+| `network` | HTTP/JSON, URL-Encoding, WLAN-Status und Audiostreams |
+| `audio` | Lokale Wiedergabe und Audiosteuerung; Streams zusätzlich network |
+| `system.restart` | Neustart anfordern |
 
-`date_weekday()`, `timer.start()` und `Serial.printf()` benötigen keine
-zusätzliche Berechtigung. Fehlende Berechtigungen führen zu einem kontrollierten
-VM-Fehler `permission denied`; fOS selbst läuft weiter.
+Ordnerrechte verwenden absolute SD-Pfade. `/` erlaubt Zugriff auf die gesamte
+SD-Karte **außer `/system`**, das einschließlich Unterordnern immer geschützt
+bleibt. Lesen und Schreiben separat freigeben; Schreibrecht enthält kein Leserecht.
+Ohne Pfad gelten Speicherrechte nur für den eigenen App-Ordner. `audio` erlaubt
+lokale Wiedergabe aus der App; für andere Ordner ist eine passende Lesefreigabe nötig.
+Maximal 8 Ordnerfreigaben mit zusammen 512 Pfadbytes einschließlich Terminatoren.
+
+```json
+"permissions": ["ui", "storage.read:/text", "storage.write:/text"]
+```
+
+Datei- und UI-Lademethoden prüfen dieselben Ordnerrechte. Fehlende Rechte führen zu einem VM-Fehler oder bei UI-Dateimethoden zu `false`; `/system` wird bei Root-Auflistungen ausgelassen. Der App-Store erhält `appdata` bei Updates, eine ausdrückliche Deinstallation entfernt die App samt Daten. Einzelheiten: [APP_RUNTIME.md](APP_RUNTIME.md).
 
 ### 3.3 Legacy-Datei `app.cfg`
 
@@ -168,12 +180,7 @@ ist `app.json` maßgeblich, weil nur dort Berechtigungen deklariert werden.
 
 ## 4. `layout.ui`
 
-Jede nichtleere Zeile beschreibt ein Objekt. Felder werden mit Semikolon
-getrennt; Zeilen mit `#` sind Kommentare.
-
-```text
-type=button;id=btn_ok;x=40;y=100;w=240;h=70;text=OK;bg=theme;fg=contrast
-```
+Jede nichtleere Zeile erzeugt ein Objekt; `;` trennt Felder und Zeilen mit `#` sind Kommentare. Keine String-Quoting-/Escape-Syntax für Semikolons.
 
 ### 4.1 Unterstützte Objekte
 
@@ -181,83 +188,75 @@ type=button;id=btn_ok;x=40;y=100;w=240;h=70;text=OK;bg=theme;fg=contrast
 | --- | --- |
 | `label` | Textanzeige |
 | `button` | Schaltfläche mit Text |
-| `textarea` | Ein- oder mehrzeilige Texteingabe |
+| `textarea` | Ein-/mehrzeilige Texteingabe |
 | `switch` | Ein/Aus-Schalter |
-| `checkbox` | Kontrollkästchen mit Text |
-| `panel` | Container für untergeordnete Objekte |
+| `checkbox` | Kontrollkästchen |
+| `panel` | Container |
 | `roller` | Rollbare Auswahlliste |
-| `dropdown` | Aufklappbare Auswahlliste |
-| `keyboard` | Bildschirmtastatur für eine Textarea |
+| `dropdown` | Aufklappliste |
+| `keyboard` | Textarea-Tastatur |
+| `canvas` | RGB565-Zeichenfläche im PSRAM |
+| `slider` | Ganzzahliger Regler |
+| `tabview` | Tab-Steuerung, aktiver Index in .value |
+| `tab` | Seite einer vorher erzeugten tabview |
 
-Nur Objekte mit `id=` sind aus fScript erreichbar. Die IDs müssen gültige
-fScript-Bezeichner sein und eindeutig bleiben. Unterstützte benannte Objekte
-bekommen in Dateireihenfolge die numerischen IDs 1 bis 64. Deshalb darf die
-Reihenfolge nach dem Kompilieren nicht geändert werden, ohne `main.fapp` neu zu
-bauen.
+Nur Objekte mit `id=` sind aus fScript erreichbar. IDs müssen eindeutige fScript-Bezeichner sein. Die bis zu 64 numerischen IDs folgen der Reihenfolge benannter Objekte im Layout; nach Reihenfolgeänderungen `main.fapp` neu bauen. Ein fehlgeschlagenes Canvas-/Keyboard-Objekt behält seinen reservierten ID-Platz. `parent` muss bereits existieren, sonst wird das Objekt im App-Hauptbereich erzeugt. `target` einer Tastatur wird dagegen **nach** dem gesamten Layout aufgelöst und darf später stehen.
 
-### 4.2 Allgemeine UI-Felder
+### 4.2 Felder und Größen
 
-| Feld | Bedeutung / Werte |
+| Feld | Bedeutung |
 | --- | --- |
-| `type` | Objekttyp |
-| `id` | fScript-Name; optional für rein visuelle Objekte |
-| `x`, `y` | Position, Standard 0 |
-| `w`, `h` | Breite/Höhe, Standard 220/50 |
-| `text` | Text bzw. Optionen; `\n` und `\t` werden dekodiert |
-| `bg`, `fg` | Hexfarbe, z. B. `0x2196F3` |
-| `bg`, `fg` | außerdem `theme`, `accent`, `surface`, `contrast`, `text` |
-| `font` | derzeit 20, 24 oder 40 |
-| `align` | `left`, `center`, `right` |
-| `parent` | ID eines vorher definierten Panels |
-| `radius` | Eckenradius |
-| `border` | Rahmenbreite |
-| `clickable` | `true/false`, `1/0`, `yes/no`, `on/off` |
-| `scrollable` | Scrollfähigkeit des Objekts |
-| `hidden` | Anfangs unsichtbar |
+| `type` | Objekttyp aus obiger Liste |
+| `id` | Eindeutiger fScript-Bezeichner; optional für reine Anzeige |
+| `x, y` | Position: Pixel, px oder %; Standard 0 |
+| `w, h` | Größe: Pixel, px oder %; Standard 220/50 |
+| `parent` | ID eines vorher erzeugten Containers |
+| `text` | Text/Optionen; \n und \t werden dekodiert |
+| `bg, fg` | RGB-Hexfarbe; theme/accent/surface/contrast/text und Theme-Aliase |
+| `font` | 20, 24, 40; andere Werte verwenden Objekt-Standard |
+| `align` | Textausrichtung left/center/right (label, roller) |
+| `radius, border` | Eckenradius und Rahmenbreite in Pixeln |
+| `clickable, scrollable, hidden` | Boolesche Objektflags; false/true, 0/1, no/yes, off/on |
+| `placeholder, one_line, max_length` | textarea; max_length wird für 1–1024 gesetzt |
+| `native_style` | textarea/roller: nativer LVGL-Stil; button mit bg=theme: dynamische Themebindung |
+| `styleless` | panel: LVGL-Grundstil entfernen |
+| `value` | switch/checkbox: Boolean; slider: Startwert |
+| `min, max` | slider: Standard 0/100; -32768…32767 und min < max |
+| `tab_height` | tabview: Pixel oder % der Tabview-Höhe; Standard 50 |
+| `target` | keyboard: Textarea-ID; darf später im Layout stehen |
 
-Objektspezifische Felder:
-
-| Objekt | Zusätzliche Felder |
-| --- | --- |
-| `textarea` | `placeholder`, `one_line`, `max_length` (maximal 1024) |
-| `switch`, `checkbox` | `value=true` für anfangs aktiviert |
-| `panel` | `styleless=true` entfernt den LVGL-Grundstil |
-| `keyboard` | `target=textarea_id`; Ziel muss vorher angelegt sein |
-| `roller`, `dropdown` | Optionen in `text`, getrennt durch `\n` |
-
-Eine Tastatur mit `target=` wird beim Antippen oder Fokussieren der Ziel-Textarea
-automatisch sichtbar gemacht und in den Vordergrund verschoben. Das Script kann
-die Tastatur zusätzlich mit `keyboard_id.hidden` steuern.
-
-Die wichtigsten Darstellungsfelder werden derzeit wie folgt angewendet:
-
-| Objekt | Wirksame Darstellungsfelder |
-| --- | --- |
-| `label` | `x`, `y`, `w`, `text`, `fg`, `font`, `align` |
-| `button` | `x`, `y`, `w`, `h`, `text`, `bg`, `fg`, `font` |
-| `textarea` | `x`, `y`, `w`, `h`, `text`, `bg`, `fg`, `font` plus Eingabefelder |
-| `switch` | `x`, `y`, `value`; Größe und Farben folgen dem fOS-Stil |
-| `checkbox` | `x`, `y`, `text`, `fg`, `value` |
-| `panel` | `x`, `y`, `w`, `h`, `bg`, `styleless` |
-| `roller`, `dropdown` | `x`, `y`, `w`, `h`, `text`, `bg`, `fg`, `font` |
-| `keyboard` | `x`, `y`, `w`, `h`, `font`, `target` |
-
-`id`, `parent`, `radius`, `border`, `clickable`, `scrollable` und `hidden`
-werden nach der Objekterzeugung allgemein verarbeitet. Nicht zur Objektart
-passende Felder werden ignoriert.
-
-Beispiel mit Suchpanel und Tastatur:
+`x`/`w` in Prozent beziehen sich auf die **Inhaltsbreite des Elternobjekts**,
+`y`/`h` auf dessen Inhaltshöhe. `tab_height` bezieht sich auf die eigene
+Tabview-Höhe. Dezimalpunkt verwenden (`12.5%`), nicht Dezimalkomma. Ohne Einheit
+oder mit `px` gelten Pixel; auf den nächsten Pixel runden. Ungültige Angaben,
+nicht endliche Zahlen und Werte außerhalb ±32767 fallen auf den Standard zurück.
+Die Auflösung erfolgt einmal beim Öffnen; kein automatisches laufendes Reflow.
+Farben, Schriftgrößen, Radien und Stiftbreiten bleiben Pixel-/Farbwerte.
 
 ```text
-type=panel;id=panel_search;x=10;y=10;w=760;h=420;bg=0x101418
-type=textarea;id=txt_search;parent=panel_search;x=15;y=15;w=570;h=55;placeholder=Ort suchen;one_line=true
-type=button;id=btn_search;parent=panel_search;x=600;y=15;w=140;h=55;text=Suchen;bg=theme
-type=keyboard;id=keyboard_search;parent=panel_search;target=txt_search;x=0;y=190;w=740;h=220
+type=tabview;id=tabs;x=0%;y=18%;w=100%;h=82%;tab_height=15%;font=20
+type=tab;id=page;parent=tabs;text=Controls
+type=slider;id=volume;parent=page;x=5%;y=10%;w=90%;h=8%;min=0;max=21;value=10
 ```
 
-`parent` und `target` werden beim zeilenweisen Aufbau nur unter bereits
-erzeugten benannten Objekten gesucht. Elternobjekt und Ziel müssen deshalb
-oberhalb des abhängigen Objekts stehen.
+`tab` muss eine vorher erzeugte `tabview` als Elternobjekt haben. Seine
+Position und Größe verwaltet die Tabview; x/y/w/h sind dort keine freie Geometrie.
+`switch` und `checkbox` verwenden die nativen Widgetgrößen statt w/h. `label`
+berücksichtigt h, wenn ausdrücklich gesetzt. `max_length` ist ein optionaler
+Eingabelimit-Setter, kein Limit von `textarea.load_file()` oder VM-Strings.
+
+Tastaturen sind begrenzte Overlays im App-Bereich, damit kleine Dialoge keine
+Tasten abschneiden. Standard w ist die Elternbreite, h = 197 Pixel und y =
+Elternhöhe minus h. Fokussieren des Ziels zeigt die Tastatur. Verborgene Eltern
+oder Ziele verbergen sie; `.hidden` hält den expliziten Skriptzustand fest.
+Maximal 8 Tastaturen pro App.
+
+Canvas benötigt PSRAM für `2 × Breite × Höhe` Byte RGB565. Der CrowPanel-Loader
+erlaubt höchstens 800×480, der P4-Loader 1024×600. Der Puffer wird beim Löschen
+freigegeben. Fehlende PSRAM-Zuweisung wird diagnostiziert; spätere IDs bleiben
+stabil. Zeichnen und Pointer-Koordinaten verwenden echte lokale Pixel.
+
+[UI_LAYOUTS.md](UI_LAYOUTS.md) enthält weitere Hinweise zu beiden Displaygrößen.
 
 ## 5. fScript-Sprachreferenz
 
@@ -428,96 +427,113 @@ daher Zahlen zu verwenden; `==` und `!=` funktionieren auch mit Strings.
 
 ## 6. Ereignisse
 
-Syntax:
-
 ```fscript
-on objekt_id.ereignis
-  // Anweisungen
+on object_id.event
+  // statements
 end
 ```
 
 ### 6.1 Systemereignisse
 
-| Ereignis | Zeitpunkt |
+| Event | Wirkung |
 | --- | --- |
-| `app.start` | Nach der Top-Level-Initialisierung |
-| `app.close` | Beim Schließen; begrenztes letztes Ausführungsfenster |
-| `app.theme_changed` | Nach einem fOS-Themewechsel, ohne VM-Neustart |
-| `app.timer` | Wiederkehrend, standardmäßig alle 60 Sekunden |
-
-```fscript
-on app.start
-  timer.start(5000)
-end
-
-on app.timer
-  Serial.printf("Timer ausgelöst\n")
-end
-```
+| `app.start` | Nach Top-Level-Initialisierung |
+| `app.close` | Begrenzter letzter Zeitschlitz beim Schließen |
+| `app.theme_changed` | Theme geändert; Globals bleiben erhalten |
+| `app.timer` | Wiederkehrend: 60000 ms Standard; timer.start ändert Intervall |
 
 ### 6.2 UI-Ereignisse
 
-| Ereignis | Geeignete Objekte |
+| Event | Objekte |
 | --- | --- |
-| `click` oder `clicked` | alle benannten UI-Objekte |
-| `change` oder `changed` | textarea, switch, checkbox, roller, dropdown |
-| `value_changed` | textarea, switch, checkbox, roller, dropdown |
-| `pressed` | button, switch, checkbox |
-| `released` | button, switch, checkbox |
-| `ready` | keyboard, z. B. Häkchentaste |
-| `cancel` oder `cancelled` | keyboard, Abbruchtaste |
+| `click`, `clicked` | alle benannten Objekte |
+| `change`, `changed`, `value_changed` | textarea, switch, checkbox, roller, dropdown, slider, tabview |
+| `pressed`, `released` | button, switch, checkbox, slider |
+| `ready`, `cancel`, `cancelled` | keyboard |
+| `pointer_down`, `pointer_move`, `pointer_up` | canvas, panel |
 
-Ein LVGL-Wertwechsel stellt `value_changed` und `changed` in die Warteschlange,
-sofern entsprechende Handler existieren. Pro Kombination aus Objekt und Event
-darf es nur einen Handler geben.
+`change` ist Alias für `changed`. Ein LVGL-Wertwechsel stellt sowohl
+`value_changed` als auch `changed` zu, falls Handler vorhanden sind. Pro
+Objekt/Event nur ein Handler. Programmatisches Setzen von Sliderwerten erzeugt
+kein entsprechendes Benutzerereignis. `pointer_up` wird auch bei Touch-Verlust
+zugestellt, sofern der Eingangstreiber das Ereignis meldet.
+
+`event_x()`/`event_y()` lesen den beim Ereignis gespeicherten Punkt relativ zur
+linken oberen Objektecke. `event_screen_x()`/`event_screen_y()` sind logische
+Displaykoordinaten. `event_pressed()` ist der gespeicherte Druckzustand. Nur
+Pointer-Handler haben diesen Kontext; sonst sind Koordinaten 0 und pressed
+false. Das ist kein allgemeines Live-Touch-Polling. `.pressed` liest dagegen
+den aktuellen LVGL-Zustand. Pointerpunkte können außerhalb des Objekts liegen.
+
+Die Warteschlange hat 8 Plätze. Aufeinanderfolgende pending `pointer_move`
+desselben Objekts werden zusammengefasst. Bei voller Queue kann `pointer_up`
+einen pending Move desselben Objekts ersetzen; ohne solchen Platz kann auch
+dieses Event verloren gehen. Handler kurz halten und keine Vollständigkeit
+aller Zwischenpunkte voraussetzen.
 
 ## 7. UI-Zugriff aus fScript
 
-Jeder UI-Zugriff benötigt `"ui"` im Manifest.
+Alle UI-Zugriffe benötigen `ui`. Keine allgemeinen .x/.y/.w/.h-Eigenschaften.
 
 ### 7.1 Eigenschaften
 
-| Eigenschaft | Typ | Objekte | Beispiel |
+| Eigenschaft | Typ | Objekte | Zugriff |
 | --- | --- | --- | --- |
-| `.text` | String | label, button, textarea, checkbox, roller, dropdown | `lbl.text = "OK"` |
-| `.value` | Boolean | switch, checkbox | `toggle.value = true` |
-| `.value` | Integer | roller, dropdown | `places.value = 2` |
-| `.checked` | Boolean | switch, checkbox | `box.checked = false` |
-| `.hidden` | Boolean | alle | `panel.hidden = true` |
-| `.enabled` | Boolean | alle | `btn.enabled = false` |
+| `.text` | String | label, button, textarea, checkbox, roller, dropdown | read/write |
+| `.value` | Boolean | switch, checkbox | read/write |
+| `.value` | Integer | roller, dropdown, slider, tabview | read/write |
+| `.checked` | Boolean | switch, checkbox | read/write |
+| `.hidden`, `.enabled` | Boolean | all | read/write |
+| `.pressed` | Boolean | all | read only |
 
-Lesen und Schreiben verwenden dieselbe Punktnotation:
-
-```fscript
-var selected = places.value
-var query = txt_search.text
-lbl_result.text = query
-```
-
-Für Textareas ist `.text` zu verwenden. `.value` wird von der aktuellen
-Laufzeit nicht als Textarea-Inhalt umgesetzt.
-
-Bei `roller.text` und `dropdown.text` wird die komplette Optionsliste mit
-Zeilenumbrüchen gesetzt; beim Lesen liefert `.text` die ausgewählte Option.
+Für Textarea-Inhalte `.text` verwenden. Der Compiler akzeptiert teilweise `.value` für Textareas, die Firmware implementiert dies aber nicht. Bei roller/dropdown setzt `.text` die gesamte Optionsliste (mit `\n`), liest jedoch die ausgewählte Option. `.value` ist ein nullbasierter Auswahl-/Tabindex bzw. Sliderwert. Sliderwerte sind signed 16-bit; für lange Medien einen skalierten Fortschritt 0–1000 verwenden.
 
 ### 7.2 Methoden
 
-Die Dateimethoden erwarten einen relativen Pfad; alle anderen UI-Methoden sind argumentlos:
+| Methode | Objekte | Rückgabe | Verhalten |
+| --- | --- | --- | --- |
+| `.clear()` | textarea | nil | Text leeren |
+| `.focus() / .blur()` | button, textarea, switch, checkbox, roller, dropdown, slider, tabview | nil | Fokus setzen/entfernen; focus zeigt zugeordnete Tastatur |
+| `.scroll_to_top() / .scroll_to_bottom()` | textarea, panel, roller | nil | Nach oben/unten scrollen |
+| `.load_file(path)` | textarea | Boolean | Bis 4000 Byte + Kürzungsmarker; ui + Leserechte |
+| `.save_file(path)` | textarea | Boolean | Speichern; Elternordner nur im erlaubten Schreibbereich erzeugen |
+| `.load_dir(path, root)` | roller | Boolean | Ordner, Dateien und .. innerhalb root; ui + Leserechte |
+| `.load_dir_filtered(path, root, extensions)` | roller | Boolean | Wie load_dir; Dateiendungen filtern, versteckte Einträge auslassen |
+| `.load_pairs(path, separator)` | roller | Boolean | Namen aus Name/Wert-Datei direkt als Optionen; ui + Leserechte |
+| `.set_range(min, max)` | slider | Boolean | Integer-Bereich -32768…32767, min < max |
+| `.clear(color)` | canvas | Boolean | Gesamte Zeichenfläche füllen |
+| `.pixel(x, y, color)` | canvas | Boolean | Ein Pixel |
+| `.line(x1, y1, x2, y2, color, width)` | canvas | Boolean | Linie; width 1–64 |
+| `.rect(x, y, w, h, color, filled)` | canvas | Boolean | Rechteck, w/h > 0, filled Boolean |
+| `.circle(x, y, radius, color, filled)` | canvas | Boolean | Kreis um Mittelpunkt; radius > 0 |
+| `.draw_text(x, y, text, color, font)` | canvas | Boolean | Text; Schrift 20/24/40, sonst Standardschrift |
 
-| Methode | Objekte | Wirkung |
-| --- | --- | --- |
-| `.clear()` | textarea | Text leeren |
-| `.focus()` | button, textarea, switch, checkbox, roller, dropdown | LVGL-Fokus setzen und Objekt sichtbar nach vorn holen |
-| `.blur()` | dieselben | Fokus entfernen |
-| `.scroll_to_top()` | textarea, panel, roller | nach oben scrollen |
-| `.scroll_to_bottom()` | textarea, panel, roller | nach unten scrollen |
-| `.load_file(path)` | textarea | App-Datei bis 4000 Byte direkt laden |
-| `.save_file(path)` | textarea | Text direkt in eine App-Datei speichern |
+Alle Canvas-Argumente sind Integer außer Text und dem Boolean `filled`. Farben im Script sind dezimale RGB-Zahlen 0–16777215 (z. B. Weiß = 16777215), nicht die Hex-Schreibweise der Layoutdatei. Koordinaten sind Pixel; Parameter begrenzen und nicht mit Prozentangaben an Zeichenmethoden übergeben.
+
+Verzeichnis-/Dateimethoden benötigen zusätzlich Leserechte bzw. `save_file` Schreibrechte. `load_dir` umgeht das 255-Byte-Stringlimit mit bis zu 16384 Optionsbytes. Ordner stehen zuerst, dann Dateien; keine zugesicherte Sortierung innerhalb dieser Gruppen. `extensions` ist z. B. `.mp3,.wav,.ogg`, ohne Beachtung der Großschreibung. `load_pairs` und `file_pair_value` verwenden denselben Leser: ein Separatorzeichen, Split am ersten Separator, Felder trimmen, ungültige/leere/überlange Zeilen überspringen. Maximal 40 gültige Zeilen aus 16 KiB, Name/Wert je höchstens 255 Byte.
+
+### 7.3 Canvas-Beispiel
+
+```text
+type=canvas;id=drawing;x=5%;y=20%;w=90%;h=70%;bg=0xFFFFFF
+```
 
 ```fscript
-on btn_clear.click
-  txt_input.clear()
-  txt_input.focus()
+on app.start
+  drawing.clear(16777215)
+  drawing.rect(10, 10, 50, 30, 255, false)
+  drawing.line(0, 0, 40, 40, 0, 3)
+  drawing.draw_text(15, 60, "Draw here", 0, 20)
+end
+
+on drawing.pointer_down
+  drawing.circle(event_x(), event_y(), 2, 0, true)
+end
+
+on drawing.pointer_move
+  if event_pressed() then
+    drawing.pixel(event_x(), event_y(), 0)
+  end
 end
 ```
 
@@ -525,29 +541,45 @@ end
 
 ### 8.1 Übersicht
 
-| Funktion | Rückgabe | Berechtigung |
-| --- | --- | --- |
-| `http_get(url)` | Boolean | `network` |
-| `http_status()` | Integer | `network` |
-| `http_json(path)` | String | `network` |
-| `http_text(offset)` | String | `network` |
-| `url_encode(text)` | String | `network` |
-| `date_weekday(date)` | String | keine |
-| `file_read(path)` | String | `storage.read` |
-| `file_write(path, data)` | Boolean | `storage.write` |
-| `file_list(path)` | String | `storage.read` |
-| `audio_play(path)` | Boolean | `audio` |
-| `wifi_status()` | Boolean | `network` |
-| `system.restart()` | nil | `system.restart` |
-| `timer.start(milliseconds)` | Boolean | keine |
-| `Serial.printf(text)` | nil | keine |
-| `text(value)` | String | keine |
-| `number_parse(text)` | Float | keine |
-| `round(number)` | Integer | keine |
-| `string_length(text)` | Integer | keine |
-| `string_slice(text, start, length)` | String | keine |
-| `string_last_index(text, needle)` | Integer | keine |
-| `math_eval(expression)` | String | keine |
+| Funktion | Rückgabe | Berechtigung | Verhalten |
+| --- | --- | --- | --- |
+| `http_get(url)` | Boolean | `network` | HTTP/HTTPS GET; true bei HTTP 200–299 |
+| `http_status()` | Integer | `network` | Letzter HTTP-Status oder negativer Clientfehler |
+| `http_json(path)` | String | `network` | Skalar aus letzter Antwort über JSON-Pfad |
+| `http_text(offset)` | String | `network` | Bis 255 Byte ab Byteoffset |
+| `url_encode(text)` | String | `network` | URL-Abfragewert kodieren |
+| `date_weekday(date)` | String | — | ISO-Datum YYYY-MM-DD → Sun…Sat |
+| `file_read(path)` | String | `storage.read` | Bis 255 Byte; leer bei fehlender/zu großer Datei |
+| `file_write(path, data)` | Boolean | `storage.write` | Datei ersetzen; Elternordner muss existieren |
+| `audio_play(path)` | Boolean | `audio + scope` | Lokale Datei; außerhalb der App zusätzliche Lesefreigabe |
+| `wifi_status()` | Boolean | `network` | Verbindungsstatus, startet kein WLAN |
+| `system.restart()` | nil | `system.restart` | Neustart nach aktuellem VM-Zeitschlitz anfordern |
+| `timer.start(milliseconds)` | Boolean | — | Wiederkehrender App-Timer, Integer 100–86400000 ms |
+| `Serial.printf(text)` | nil | — | Genau ein String; kein printf-Format mit weiteren Argumenten |
+| `text(value)` | String | — | Skalar in Text umwandeln |
+| `number_parse(text)` | Float | — | Zahl aus String; Dezimalpunkt/-komma |
+| `round(number)` | Integer | — | Runden; halbe Werte von null weg |
+| `string_length(text)` | Integer | — | Bytelänge, keine Unicode-Zeichenzahl |
+| `string_slice(text, start, length)` | String | — | Bytebereich; nullbasierter Start |
+| `math_eval(expression)` | String | — | Matheausdruck auswerten; Ergebnistext |
+| `string_last_index(text, needle)` | Integer | — | Letzter Byteindex ab 0; -1 falls nicht gefunden |
+| `file_list(path)` | String | `storage.read` | Direkte Einträge, durch Zeilenumbrüche getrennt; /system auslassen |
+| `event_x()` | Integer | — | Lokale X-Koordinate des Pointer-Ereignisses |
+| `event_y()` | Integer | — | Lokale Y-Koordinate des Pointer-Ereignisses |
+| `event_screen_x()` | Integer | — | X-Koordinate auf dem logischen Display |
+| `event_screen_y()` | Integer | — | Y-Koordinate auf dem logischen Display |
+| `event_pressed()` | Boolean | — | Gedrückt-Zustand im Pointer-Snapshot |
+| `audio_stream(url)` | Boolean | `audio + network` | HTTP/HTTPS-Stream; false bei fehlendem WLAN/OTA/Startfehler |
+| `audio_stop()` | Boolean | `audio` | Audio der aktiven fApp beenden |
+| `audio_set_volume(value)` | Boolean | `audio` | Gemeinsame Lautstärke; Integer 0–21 |
+| `audio_volume()` | Integer | `audio` | Aktuelle Lautstärke |
+| `audio_playing()` | Boolean | `audio` | Aktive Wiedergabe der fApp; false nach EOF |
+| `audio_position()` | Integer | `audio` | Lokale Position in Sekunden, sonst 0 |
+| `audio_duration()` | Integer | `audio` | Lokale Dauer in Sekunden; 0 wenn unbekannt/inaktiv/Stream |
+| `audio_seek(seconds)` | Boolean | `audio` | Integer 0–65535 Sekunden; nur aktive lokale Datei |
+| `file_pair_value(path, separator, index)` | String | `storage.read` | Wert der gültigen Name/Wert-Zeile ab Index 0; Separator ein Zeichen |
+
+`scope` bezeichnet die zusätzlichen Ordnerrechte aus Kapitel 3.2. Die Pointer-Helfer sind in Kapitel 6 erklärt. Fehlende Fähigkeiten erzeugen `permission denied`, auch wenn ein nativer Aufruf sonst `false` zurückgeben könnte.
 
 ### 8.2 HTTP und JSON
 
@@ -612,10 +644,16 @@ var old_state = file_read("data/state.txt")
 var saved = file_write("data/state.txt", "counter=" + counter)
 ```
 
-Pfade sind relativ zum aktiven App-Ordner. Unterordner sind erlaubt, müssen
-aber bereits existieren. Absolute Pfade, Rückstriche, leere Segmente, `.` und
-`..` werden abgewiesen. Eine App kann dadurch nicht auf fOS- oder fremde
-App-Dateien zugreifen.
+Pfade können absolut vom SD-Wurzelordner oder relativ zum aktiven App-Ordner
+angegeben werden. Ordnerrechte in `app.json` verwenden `storage.read:/ordner`
+und `storage.write:/ordner`; sie gelten einschließlich aller Unterordner.
+`/` gibt die gesamte SD-Karte frei, außer `/system`: Dieser Ordner bleibt immer
+für Lesen und Schreiben gesperrt. Die bisherigen Rechte `storage.read` und
+`storage.write` ohne Pfadangabe bleiben auf den eigenen App-Ordner begrenzt.
+Pfade werden vor der Rechteprüfung vereinheitlicht; `..` und andere Groß- oder
+Kleinschreibung umgehen den Schutz nicht. Rückstriche, Steuerzeichen und
+mehrdeutige abschließende Punkte/Leerzeichen werden abgewiesen.
+`file_write()` benötigt bereits vorhandene Elternordner.
 
 `file_read()` liest höchstens 255 Byte. Eine fehlende oder zu große Datei
 liefert `""`; damit ist `""` nicht von einer tatsächlich leeren Datei zu
@@ -623,7 +661,9 @@ unterscheiden. `file_write()` ersetzt den Dateiinhalt und liefert den Erfolg.
 `file_list()` liefert die direkten Einträge eines App-Unterordners, getrennt
 durch Zeilenumbrüche; Ordnernamen enden mit `/`. Für Texteditoren umgehen
 `textarea.load_file(path)` und `textarea.save_file(path)` das 255-Byte-Limit
-der VM-Strings. Sie bleiben auf den aktiven App-Ordner begrenzt.
+der VM-Strings. Sie beachten dieselben Ordnerrechte; `save_file()` darf Elternordner
+innerhalb des freigegebenen Schreibbereichs anlegen. `file_list("/")` lässt
+den geschützten Eintrag `system` aus.
 
 ### 8.5 Audio, WLAN, Neustart, Timer und Serial
 
@@ -634,8 +674,9 @@ var timer_ok = timer.start(10000)
 Serial.printf("Online: " + online + "\n")
 ```
 
-`audio_play()` spielt eine vorhandene Datei aus dem App-Verzeichnis über das
-bestehende fOS-Audiosystem. Vorherige Wiedergabe wird beendet; Schließen der App
+`audio_play()` spielt eine vorhandene Datei über das bestehende fOS-Audiosystem.
+`audio` erlaubt lokale Wiedergabe; andere SD-Ordner benötigen zusätzlich ein
+passendes `storage.read:/ordner`-Recht. `/system` bleibt unzugänglich. Vorherige Wiedergabe wird beendet; Schließen der App
 stoppt ihre Wiedergabe. Während OTA beginnt keine neue Wiedergabe.
 
 `wifi_status()` prüft nur den aktuellen Zustand und startet keine Verbindung.
@@ -672,6 +713,23 @@ einen begrenzten Ausschnitt und `string_last_index()` liefert den letzten Index
 oder `-1`. `math_eval()` wertet `+`, `-`, `*`, `/` mit Operatorrangfolge aus,
 akzeptiert Komma und Punkt und gibt `Math Error` als Text zurück, wenn der
 Ausdruck ungültig ist oder durch null geteilt wird.
+
+
+### 8.7 Audiostreams und begrenzte Konfigurationsdateien
+
+`audio_stream(url)` benötigt `audio` und `network`. HTTP/HTTPS sind erlaubt;
+ohne WLAN, während OTA oder bei Startfehlern wird false zurückgegeben. Lokales
+`audio_play()` verwendet die Ordnerrechte. Schließen der App stoppt ihre
+Wiedergabe. `audio_stop()` beendet statt pausiert; es gibt hier kein Resume.
+Die Lautstärke 0–21 wird mit der nativen Audio-Engine geteilt. Position/Dauer
+sind Sekunden; eine noch unbekannte Dauer ist 0. Spulen gilt nur für eine aktive
+lokale Datei, mit Integer-Sekunden 0–65535. Streams haben keine Seek-Position.
+
+`file_pair_value(path, separator, index)` liest den Wert aus denselben geprüften
+Zeilen wie `roller.load_pairs()`. Index ab 0. Fehlende Dateien/Zeilen ergeben
+leeren Text; unerlaubte native Pfade verursachen einen Fehler vor dem SD-Zugriff.
+Passende `storage.read`-Freigabe ist nötig. Die konkrete Radio-Bedienung steht in
+[FSCRIPT_RADIO_AUDIO.md](FSCRIPT_RADIO_AUDIO.md).
 
 ## 9. Alle `fosc`-Befehle
 
@@ -847,6 +905,9 @@ Weitere Optionen:
 
 | Option | Wirkung |
 | --- | --- |
+| `--ui <file>` | Layoutdatei (erforderlich) |
+| `--size WIDTHxHEIGHT` | Vorschaugröße, Standard 800x480; je Dimension 64–4096 |
+| `--sd-root <directory>` | SD-Abbild lesend einbinden, Audio simulieren |
 | `--no-start` | `app.start` nicht automatisch ausführen |
 | `--no-dump` | finalen UI-Zustand nicht ausgeben |
 | `--trace-native` | simulierte native API-Aufrufe anzeigen |
@@ -888,7 +949,7 @@ Compiler-Rückgabecodes:
 Das fAPP-Format 1.0 ist little-endian und besitzt einen festen 80-Byte-Header.
 Er enthält `FAPP`-Magic, Format- und Bytecodeversion, Dateigröße, CRC-32,
 Abschnitte für Konstanten/Funktionen/Events/Code, Quellhash und minimale
-fOS-Version. Bytecode 1.5 wird erzeugt; fOS 4.0.0 akzeptiert kompatible ältere
+fOS-Version. Bytecode 1.8 wird erzeugt; fOS 4.1.0 akzeptiert kompatible ältere
 Minor-Versionen weiterhin.
 
 | Offset | Größe | Headerfeld |
@@ -928,8 +989,7 @@ Minor-Versionen weiterhin.
 | Logik | `AND`, `OR` |
 | Kontrolle | `JUMP`, `JUMP_IF_FALSE` |
 
-Native Funktions-IDs 1 bis 13 bleiben in Bytecode 1.5 unveraendert.
-Dadurch bleiben vorhandene HTTP-, Wetter- und System-API-Apps binaer kompatibel.
+Native Funktions-IDs wurden bis Bytecode 1.8 nur ergänzt; bestehende IDs bleiben stabil. Die vollständige aktuelle Tabelle lautet:
 
 | ID | Native Funktion |
 | ---: | --- |
@@ -954,6 +1014,20 @@ Dadurch bleiben vorhandene HTTP-, Wetter- und System-API-Apps binaer kompatibel.
 | 19 | `math_eval` |
 | 20 | `string_last_index` |
 | 21 | `file_list` |
+| 22 | `event_x` |
+| 23 | `event_y` |
+| 24 | `event_screen_x` |
+| 25 | `event_screen_y` |
+| 26 | `event_pressed` |
+| 27 | `audio_stream` |
+| 28 | `audio_stop` |
+| 29 | `audio_set_volume` |
+| 30 | `audio_volume` |
+| 31 | `audio_playing` |
+| 32 | `audio_position` |
+| 33 | `audio_duration` |
+| 34 | `audio_seek` |
+| 35 | `file_pair_value` |
 
 ## 12. VM-System in fOS
 
@@ -980,8 +1054,7 @@ Dadurch bleiben vorhandene HTTP-, Wetter- und System-API-Apps binaer kompatibel.
 Die Hauptschleife gibt der VM pro Update standardmaessig hoechstens 256
 Instruktionen oder 4000 Mikrosekunden. Danach erhält fOS wieder Kontrolle über
 LVGL, Audio, WLAN und OTA. Events werden in einer FIFO-Warteschlange gesammelt;
-die Kapazität beträgt 8. Eine volle Warteschlange verwirft weitere Events,
-statt Speicher unbegrenzt wachsen zu lassen.
+die Kapazität beträgt 8. Eine volle Warteschlange verwirft weitere Events; Pointer-Moves können jedoch zusammengefasst und durch Pointer-Up ersetzt werden (Kapitel 6).
 
 Bei einem Themewechsel bleiben Globals und Ausführungszustand erhalten. Beim
 Schließen erhält `app.close` maximal 512 Instruktionen bzw. 5000 Mikrosekunden.
@@ -1006,6 +1079,20 @@ Fehlermeldung innerhalb der App an.
 | `layout.ui` | 32000 Zeichen |
 | `app.json` | 4096 Byte |
 | HTTP-Antwort | 32768 Byte |
+
+| Ressource | Grenze |
+| --- | --- |
+| Installed apps / home slots | 40 / 7 |
+| Keyboard overlays | 8 |
+| Folder grants / path storage | 8 / 512 bytes |
+| Canvas buffer | 2 × width × height bytes; PSRAM |
+| Canvas maximum | 800×480 CrowPanel; 1024×600 P4 |
+| Slider range | -32768…32767 |
+| Textarea load_file | 4000 bytes + truncation marker |
+| Roller directory options | 16384 bytes |
+| Name/value configuration | 16384 bytes; 40 valid rows |
+| Executable cache | 65536 bytes; larger executable falls back to file reads |
+
 
 ### 12.4 VM-Fehler
 
@@ -1044,12 +1131,14 @@ beheben; spätere Meldungen können Folgefehler sein.
 
 ## 14. Vollständige kleine Beispiel-App
 
+Dieses vollständige Beispiel liegt zusätzlich unter `docs/examples/counter`. Die folgenden Shell-Befehle werden in `fScript_Development_Environment/fosc` ausgeführt.
+
 `layout.ui`:
 
 ```text
-type=label;id=lbl_status;x=20;y=20;w=500;h=50;text=Bereit;fg=0xFFFFFF;font=24
-type=button;id=btn_add;x=20;y=100;w=240;h=70;text=Erhöhen;bg=theme;fg=contrast
-type=button;id=btn_reset;x=280;y=100;w=240;h=70;text=Reset;bg=0x555555;fg=0xFFFFFF
+type=label;id=lbl_status;x=20%;y=18%;w=75%;h=12%;text=Count: 0;font=24;fg=0xFFFFFF
+type=button;id=btn_add;x=20%;y=40%;w=30%;h=15%;text=+1;bg=theme
+type=button;id=btn_reset;x=60%;y=40%;w=30%;h=15%;text=Reset;bg=theme
 ```
 
 `main.fscript`:
@@ -1058,7 +1147,7 @@ type=button;id=btn_reset;x=280;y=100;w=240;h=70;text=Reset;bg=0x555555;fg=0xFFFF
 var counter = 0
 
 function show_counter()
-  lbl_status.text = "Zähler: " + counter
+  lbl_status.text = "Count: " + counter
 end
 
 on app.start
@@ -1077,7 +1166,7 @@ on btn_reset.click
 end
 
 on app.timer
-  Serial.printf("Aktueller Zähler: " + counter + "\n")
+  Serial.printf("Count: " + counter + "\n")
 end
 ```
 
@@ -1085,39 +1174,58 @@ end
 
 ```json
 {
-  "id": "de.beispiel.counter",
+  "id": "org.example.counter",
   "name": "Counter",
   "version": "1.0.0",
-  "min_fos": "4.0.0",
+  "min_fos": "4.1.0",
   "type": "ui",
   "icon": "+1",
   "layout": "layout.ui",
   "executable": "main.fapp",
   "scrollable": false,
-  "permissions": ["ui"]
+  "permissions": [
+    "ui"
+  ]
 }
 ```
 
-Bauen:
-
-```bash
-./build/fosc check /Pfad/counter/main.fscript --ui /Pfad/counter/layout.ui
-./build/fosc build /Pfad/counter/main.fscript --ui /Pfad/counter/layout.ui \
-  -o /Pfad/counter/main.fapp
-./build/fosc verify /Pfad/counter/main.fapp
+```sh
+./build/fosc check ../../docs/examples/counter/main.fscript --ui ../../docs/examples/counter/layout.ui
+./build/fosc build ../../docs/examples/counter/main.fscript --ui ../../docs/examples/counter/layout.ui -o ../../docs/examples/counter/main.fapp
+./build/fosc verify ../../docs/examples/counter/main.fapp
+./build/fosrun ../../docs/examples/counter/main.fapp --ui ../../docs/examples/counter/layout.ui --size 800x480 --event btn_add.click
+./build/fosrun ../../docs/examples/counter/main.fapp --ui ../../docs/examples/counter/layout.ui --size 1024x600 --event btn_add.click
 ```
 
-Danach den Ordner `counter` vollständig nach `/apps/counter` auf die SD-Karte
-kopieren und den fOS-App-Launcher neu öffnen.
+Erwarteter Labeltext: `Count: 1`. Den Ordner `counter` mit der erzeugten `main.fapp` nach `/apps/counter` kopieren. Nur Geometrieänderungen ohne Änderung der benannten Objektfolge benötigen keinen neuen Bytecode; Script- oder ID-Änderungen dagegen neu bauen und verifizieren.
 
 ## 15. Derzeitige Grenzen
 
-fScript 1.0.0 besitzt noch keine Arrays, Maps, Klassen, Imports, Module,
-Threads, frei definierbaren Systemzugriff oder Ausnahmebehandlung.
-Native HTTP-Aufrufe sind synchron. UI und Runtime verwenden feste Grenzen für
-vorhersagbaren RAM-Verbrauch. Die Quelldatei selbst ist nicht nötig, um eine
-App auf fOS auszuführen; sie sollte dennoch für Wartung und erneutes Kompilieren
-im App-Projekt aufbewahrt werden.
+fScript hat keine Arrays, Maps, Klassen, Imports/Module, Threads oder
+Ausnahmebehandlung. HTTP bleibt synchron und kann die Oberfläche bis zum
+Timeout verzögern; ein VM-Zeitbudget unterbricht keinen laufenden nativen Aufruf.
+Zahlenoperationen `< <= > >=` auf Strings sind nicht zuverlässig implementiert;
+Zahlen verwenden. UI-Koordinaten/Größen sind nicht als Script-Properties zugänglich.
+Die Browser-Vorschau simuliert native APIs, spielt kein Audio und ist keine
+pixelgenaue LVGL-Emulation. Hardware-, Touch-, WLAN- und Codec-Verhalten am Board prüfen.
 
-Bei Änderungen an der Reihenfolge benannter UI-Elemente, am Script oder an der
-Compiler-/Bytecodeversion muss `main.fapp` neu gebaut und verifiziert werden.
+Die fScript-APIs sind auf beiden Boards gleich. P4-USB-Massenspeicher, RTC-/VBAT-
+Steuerung und der BOOT-Batterieruhezustand sind Firmwarefunktionen, keine hier
+exponierten fScript-Befehle. Während USB die P4-SD besitzt, pausiert fOS lokale
+Apps/Dateiarbeit und App-Timer. Siehe [WAVESHARE.md](WAVESHARE.md).
+
+Neue APIs und Tabellen wurden mit dem enthaltenen Compiler/Runtime-Quellstand
+abgeglichen. Weitere Anleitungen stehen im [Dokumentationsindex](INDEX.md).
+
+
+### Quellen dieses Abgleichs
+
+- [Compiler-API-IDs und Signaturen](../fScript_Development_Environment/fosc/bytecode/Bytecode.cpp)
+- [Semantische UI-Prüfungen](../fScript_Development_Environment/fosc/semantic/SemanticAnalyzer.cpp)
+- [Runtime-Grenzen und Queue](../fOS_Waveshare_P4/src/fapp/FAppRuntime.h)
+- [UI-Adapter](../fOS_Waveshare_P4/src/fapp/LvglFAppUiApi.cpp)
+- [Ordnerrechte](../fOS_Waveshare_P4/src/fapp/FAppStoragePolicy.h)
+- [Kopierbares Zähler-Beispiel](examples/counter/main.fscript)
+
+CrowPanel verwendet dieselbe fScript-API mit LVGL 8 statt LVGL 9.
+Die Hauptsketches erstellen das Layout und setzen die Board-spezifischen Größenlimits.

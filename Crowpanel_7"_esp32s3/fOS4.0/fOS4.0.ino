@@ -1,3 +1,5 @@
+#include "src/fapp/FAppRadioLayout.h"
+#include "src/fapp/FAppLayoutUnits.h"
 #include <lvgl.h>
 #include "LGFX_CrowPanel.h"
 #include "ui.h"
@@ -35,6 +37,7 @@
 
 void setup();
 void loop();
+static int getUiFieldPixels(const String& line, const char* key, int parent, int fallback);
 void audioEvent(Audio::msg_t info);
 
 #define WIFI_DIR  "/system/wifi"
@@ -68,7 +71,6 @@ void audioEvent(Audio::msg_t info);
 #define EMAIL_MAX_FETCH_PER_RUN 10
 #define MAX_WIFI_PROFILES 5
 #define MAX_SCANNED_NETWORKS 20
-#define FAPP_KEYBOARD_BINDING_CAPACITY 8U
 #define MAX_WEATHER_SEARCH_RESULTS 6U
 #define MAX_WEBRADIO_STATIONS 40U
 #define WEATHER_REFRESH_INTERVAL_MS (15UL * 60UL * 1000UL)
@@ -115,7 +117,8 @@ struct LauncherAppEntry {
 static LauncherAppEntry gLauncherApps[MAX_INSTALLED_APPS];
 static FAppLoader gFAppLoader;
 static FAppUiRegistry gFAppUiRegistry;
-static LvglFAppUiApi gFAppUiApi(gFAppUiRegistry);
+static FAppKeyboardController gFAppKeyboards;
+static LvglFAppUiApi gFAppUiApi(gFAppUiRegistry, &gFAppKeyboards);
 static FAppRuntime gFAppRuntime;
 static FAppEventBridge gFAppEventBridge;
 static FAppHttpApi gFAppHttpApi;
@@ -124,9 +127,6 @@ static unsigned long gFAppLastTimerMs = 0;
 static uint32_t gFAppTimerIntervalMs = 60000UL;
 static bool gFAppRestartPending = false;
 static bool gFAppAudioPlaying = false;
-static lv_obj_t * gFAppKeyboardTargets[FAPP_KEYBOARD_BINDING_CAPACITY] = { NULL };
-static lv_obj_t * gFAppKeyboards[FAPP_KEYBOARD_BINDING_CAPACITY] = { NULL };
-static uint8_t gFAppKeyboardBindingCount = 0;
 static uint8_t gLauncherAppCount = 0;
 static uint8_t gLauncherAppIndices[MAX_LAUNCHER_APPS];
 static String gDemoButtonMessage = "Button gedrueckt!";
@@ -354,8 +354,6 @@ static uint32_t getUiFieldColor(const String& line, const char* key, uint32_t de
 static bool getUiFieldBool(const String& line, const char* key, bool defaultValue);
 static bool renderAppLayout(const LauncherAppEntry& app);
 static void resetFAppKeyboardBindings();
-static void registerFAppKeyboardBinding(lv_obj_t * keyboard, lv_obj_t * textarea);
-static void fappKeyboardTargetEvent(lv_event_t * e);
 static bool renderAppTextContent(const LauncherAppEntry& app);
 static void resetCalculatorState();
 static bool isCalcOperatorChar(char c);
@@ -1650,46 +1648,13 @@ static lv_text_align_t getUiTextAlign(const String& line)
 
 static void resetFAppKeyboardBindings()
 {
-  for (size_t i = 0; i < FAPP_KEYBOARD_BINDING_CAPACITY; ++i) {
-    gFAppKeyboardTargets[i] = NULL;
-    gFAppKeyboards[i] = NULL;
-  }
-  gFAppKeyboardBindingCount = 0;
+  gFAppKeyboards.reset();
 }
 
-static void fappKeyboardTargetEvent(lv_event_t * e)
+static int getUiFieldPixels(const String& line, const char* key, int parent, int fallback)
 {
-  if (e == NULL) return;
-  const lv_event_code_t code = lv_event_get_code(e);
-  if (code != LV_EVENT_CLICKED && code != LV_EVENT_FOCUSED) return;
-
-  lv_obj_t * textarea = lv_event_get_target(e);
-  lv_obj_t * keyboard = (lv_obj_t *)lv_event_get_user_data(e);
-  if (textarea == NULL || keyboard == NULL) return;
-
-  lv_keyboard_set_textarea(keyboard, textarea);
-  lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_move_foreground(keyboard);
-}
-
-static void registerFAppKeyboardBinding(lv_obj_t * keyboard, lv_obj_t * textarea)
-{
-  if (keyboard == NULL || textarea == NULL) return;
-
-  for (uint8_t i = 0; i < gFAppKeyboardBindingCount; ++i) {
-    if (gFAppKeyboardTargets[i] == textarea && gFAppKeyboards[i] == keyboard) return;
-  }
-  if (gFAppKeyboardBindingCount >= FAPP_KEYBOARD_BINDING_CAPACITY) {
-    Serial.println("[FAPP] Too many keyboard bindings in layout.");
-    return;
-  }
-
-  gFAppKeyboardTargets[gFAppKeyboardBindingCount] = textarea;
-  gFAppKeyboards[gFAppKeyboardBindingCount] = keyboard;
-  ++gFAppKeyboardBindingCount;
-  lv_keyboard_set_textarea(keyboard, textarea);
-  lv_obj_add_event_cb(textarea, fappKeyboardTargetEvent, LV_EVENT_CLICKED, keyboard);
-  lv_obj_add_event_cb(textarea, fappKeyboardTargetEvent, LV_EVENT_FOCUSED, keyboard);
+  const String value = getUiField(line, key);
+  return fos_layout_pixels(value.c_str(), parent, fallback);
 }
 
 static bool renderAppLayout(const LauncherAppEntry& app)
@@ -1712,6 +1677,14 @@ static bool renderAppLayout(const LauncherAppEntry& app)
     lv_obj_set_scrollbar_mode(uic_AppContentArea, LV_SCROLLBAR_MODE_OFF);
   }
 
+  gFAppKeyboards.configure(uic_AppContentArea);
+  Serial.println("[FAPP-KB2] Layout keyboard loader v2");
+  lv_obj_update_layout(uic_AppContentArea);
+  Serial.printf("[FAPP-LAYOUT] Relative units enabled; viewport=%dx%d\n",
+    (int)lv_obj_get_content_width(uic_AppContentArea), (int)lv_obj_get_content_height(uic_AppContentArea));
+  String keyboardTargetNames[FAppKeyboardController::kCapacity];
+  lv_obj_t * pendingKeyboards[FAppKeyboardController::kCapacity] = { NULL };
+  uint8_t pendingKeyboardCount = 0;
   int lineStart = 0;
   uint16_t nextObjectId = 1;
   String namedObjectNames[FAppUiRegistry::kCapacity];
@@ -1728,10 +1701,6 @@ static bool renderAppLayout(const LauncherAppEntry& app)
       String type = getUiField(line, "type");
       type.toLowerCase();
 
-      int x = getUiFieldInt(line, "x", 0);
-      int y = getUiFieldInt(line, "y", 0);
-      int w = getUiFieldInt(line, "w", 220);
-      int h = getUiFieldInt(line, "h", 50);
       String text = decodeEscapedText(getUiField(line, "text"));
       uint32_t defaultBg = 0x000000;
       if (type == "button") defaultBg = getThemeAccentColor();
@@ -1745,21 +1714,25 @@ static bool renderAppLayout(const LauncherAppEntry& app)
       String parentId = getUiField(line, "parent");
       String targetId = getUiField(line, "target");
       lv_obj_t * parentObject = uic_AppContentArea;
-      lv_obj_t * targetObject = NULL;
       for (size_t objectIndex = 0; objectIndex < namedObjectCount; ++objectIndex) {
         if (parentId.length() > 0 && namedObjectNames[objectIndex] == parentId) {
           parentObject = namedObjects[objectIndex];
         }
-        if (targetId.length() > 0 && namedObjectNames[objectIndex] == targetId) {
-          targetObject = namedObjects[objectIndex];
-        }
       }
+      lv_obj_update_layout(parentObject);
+      const int layoutWidth = lv_obj_get_content_width(parentObject);
+      const int layoutHeight = lv_obj_get_content_height(parentObject);
+      int x = getUiFieldPixels(line, "x", layoutWidth, 0);
+      int y = getUiFieldPixels(line, "y", layoutHeight, 0);
+      int w = getUiFieldPixels(line, "w", layoutWidth, 220);
+      int h = getUiFieldPixels(line, "h", layoutHeight, 50);
       lv_obj_t * createdObject = NULL;
       FAppUiObjectType createdObjectType = FAppUiObjectType::Unknown;
 
       if (type == "label") {
         lv_obj_t * obj = lv_label_create(parentObject);
         lv_label_set_text(obj, text.c_str());
+        if (getUiField(line, "h").length() > 0 && h > 0) lv_obj_set_height(obj, h);
         if (w > 0) {
           lv_obj_set_width(obj, w);
           lv_label_set_long_mode(obj, LV_LABEL_LONG_WRAP);
@@ -1777,6 +1750,10 @@ static bool renderAppLayout(const LauncherAppEntry& app)
         lv_obj_set_pos(btn, x, y);
         lv_obj_set_style_bg_color(btn, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        if (getUiFieldBool(line, "native_style", false) && getUiField(line, "bg") == "theme") {
+          ui_object_set_themeable_style_property(btn, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
+          ui_object_set_themeable_style_property(btn, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
+        }
 
         lv_obj_t * label = lv_label_create(btn);
         lv_label_set_text(label, text.c_str());
@@ -1786,6 +1763,35 @@ static bool renderAppLayout(const LauncherAppEntry& app)
         lv_obj_center(label);
         createdObject = btn;
         createdObjectType = FAppUiObjectType::Button;
+      } else if (type == "slider") {
+        lv_obj_t * slider = lv_slider_create(parentObject);
+        lv_obj_set_size(slider, w, h);
+        lv_obj_set_pos(slider, x, y);
+        int minimum = getUiFieldInt(line, "min", 0);
+        int maximum = getUiFieldInt(line, "max", 100);
+        if (minimum < -32768 || maximum > 32767 || minimum >= maximum) { minimum = 0; maximum = 100; }
+        lv_slider_set_range(slider, minimum, maximum);
+        lv_slider_set_value(slider, getUiFieldInt(line, "value", 0), LV_ANIM_OFF);
+        ui_object_set_themeable_style_property(slider, LV_PART_INDICATOR | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
+        ui_object_set_themeable_style_property(slider, LV_PART_KNOB | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
+        createdObject = slider;
+        createdObjectType = FAppUiObjectType::Slider;
+      } else if (type == "tabview") {
+        lv_obj_t * tabs = lv_tabview_create(parentObject, LV_DIR_TOP, getUiFieldPixels(line, "tab_height", h, 50));
+        lv_obj_set_size(tabs, w, h);
+        lv_obj_set_pos(tabs, x, y);
+        const lv_font_t * font = getUiFont(line, NULL);
+        if (font != NULL) lv_obj_set_style_text_font(lv_tabview_get_tab_btns(tabs), font, LV_PART_ITEMS | LV_STATE_DEFAULT);
+        ui_object_set_themeable_style_property(lv_tabview_get_tab_btns(tabs), LV_PART_ITEMS | LV_STATE_CHECKED, LV_STYLE_TEXT_COLOR, _ui_theme_color_MainTheme);
+        ui_object_set_themeable_style_property(lv_tabview_get_tab_btns(tabs), LV_PART_ITEMS | LV_STATE_CHECKED, LV_STYLE_BORDER_COLOR, _ui_theme_color_MainTheme);
+        ui_object_set_themeable_style_property(lv_tabview_get_tab_btns(tabs), LV_PART_ITEMS | LV_STATE_CHECKED, LV_STYLE_BORDER_OPA, _ui_theme_alpha_MainTheme);
+        createdObject = tabs;
+        createdObjectType = FAppUiObjectType::TabView;
+      } else if (type == "tab") {
+        if (parentObject != uic_AppContentArea && lv_obj_check_type(parentObject, &lv_tabview_class)) {
+          createdObject = lv_tabview_add_tab(parentObject, text.c_str());
+          createdObjectType = FAppUiObjectType::Tab;
+        } else if (sourceId.length() > 0) ++nextObjectId;
       } else if (type == "textarea") {
         lv_obj_t * ta = lv_textarea_create(parentObject);
         lv_obj_set_size(ta, w, h);
@@ -1794,13 +1800,24 @@ static bool renderAppLayout(const LauncherAppEntry& app)
         String placeholder = decodeEscapedText(getUiField(line, "placeholder"));
         if (placeholder.length() > 0) lv_textarea_set_placeholder_text(ta, placeholder.c_str());
         lv_textarea_set_one_line(ta, getUiFieldBool(line, "one_line", false));
+        lv_obj_set_height(ta, h); // one_line resets height to content; honor layout geometry
         const int maxLength = getUiFieldInt(line, "max_length", 0);
         if (maxLength > 0 && maxLength <= 1024) lv_textarea_set_max_length(ta, maxLength);
-        lv_obj_set_style_bg_color(ta, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_text_color(ta, lv_color_hex(fg), LV_PART_MAIN | LV_STATE_DEFAULT);
+        const bool nativeStyle = getUiFieldBool(line, "native_style", false);
+        if (!nativeStyle) {
+          lv_obj_set_style_bg_color(ta, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
+          lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+          lv_obj_set_style_text_color(ta, lv_color_hex(fg), LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
         const lv_font_t * font = getUiFont(line, NULL);
-        if (font != NULL) lv_obj_set_style_text_font(ta, font, LV_PART_MAIN | LV_STATE_DEFAULT);
+        if (font != NULL) {
+          lv_obj_set_style_text_font(ta, font, LV_PART_MAIN | LV_STATE_DEFAULT);
+          if (nativeStyle) {
+            lv_obj_set_style_text_font(ta, font, LV_PART_SELECTED | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(ta, font, LV_PART_CURSOR | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(ta, font, LV_PART_TEXTAREA_PLACEHOLDER | LV_STATE_DEFAULT);
+          }
+        }
         createdObject = ta;
         createdObjectType = FAppUiObjectType::TextArea;
       } else if (type == "switch") {
@@ -1846,11 +1863,16 @@ static bool renderAppLayout(const LauncherAppEntry& app)
           lv_obj_set_style_text_font(roller, font, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_text_font(roller, font, LV_PART_SELECTED | LV_STATE_DEFAULT);
         }
-        lv_obj_set_style_bg_color(roller, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_text_color(roller, lv_color_hex(fg), LV_PART_MAIN | LV_STATE_DEFAULT);
+        if (!getUiFieldBool(line, "native_style", false)) {
+          lv_obj_set_style_bg_color(roller, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
+          lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+          lv_obj_set_style_text_color(roller, lv_color_hex(fg), LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        // The selected row follows the fOS theme even with native_style=true.
         ui_object_set_themeable_style_property(roller, LV_PART_SELECTED | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_MainTheme);
         ui_object_set_themeable_style_property(roller, LV_PART_SELECTED | LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_MainTheme);
+        if (getUiField(line, "align").length() > 0)
+          lv_obj_set_style_text_align(roller, getUiTextAlign(line), LV_PART_MAIN | LV_STATE_DEFAULT);
         createdObject = roller;
         createdObjectType = FAppUiObjectType::Roller;
       } else if (type == "dropdown") {
@@ -1873,14 +1895,26 @@ static bool renderAppLayout(const LauncherAppEntry& app)
         createdObject = dropdown;
         createdObjectType = FAppUiObjectType::DropDown;
       } else if (type == "keyboard") {
-        lv_obj_t * keyboard = lv_keyboard_create(parentObject);
-        lv_obj_set_size(keyboard, w, h);
-        lv_obj_set_pos(keyboard, x, y);
-        const lv_font_t * font = getUiFont(line, NULL);
-        if (font != NULL) lv_obj_set_style_text_font(keyboard, font, LV_PART_ITEMS | LV_STATE_DEFAULT);
-        if (targetObject != NULL) registerFAppKeyboardBinding(keyboard, targetObject);
-        createdObject = keyboard;
-        createdObjectType = FAppUiObjectType::Keyboard;
+        // Keyboards are independent overlays. Their logical parent still
+        // controls coordinates and visibility, but cannot clip their keys.
+        if (getUiField(line, "w").length() == 0) w = layoutWidth;
+        if (getUiField(line, "h").length() == 0) h = 197;
+        if (getUiField(line, "y").length() == 0) y = layoutHeight - h;
+        lv_obj_t * keyboard = gFAppKeyboards.create(
+          parentObject, x, y, w, h, getUiFieldBool(line, "hidden", false));
+        if (keyboard != NULL) {
+          const lv_font_t * font = getUiFont(line, NULL);
+          if (font != NULL) lv_obj_set_style_text_font(keyboard, font, LV_PART_ITEMS | LV_STATE_DEFAULT);
+          pendingKeyboards[pendingKeyboardCount] = keyboard;
+          keyboardTargetNames[pendingKeyboardCount++] = targetId;
+          Serial.printf("[FAPP-KB2] Created '%s', target='%s', requested=%d,%d %dx%d\n",
+            sourceId.c_str(), targetId.c_str(), x, y, w, h);
+          createdObject = keyboard;
+          createdObjectType = FAppUiObjectType::Keyboard;
+        } else {
+          Serial.printf("[FAPP-KB2] Cannot create keyboard '%s' (limit/size/allocation).\n", sourceId.c_str());
+          if (sourceId.length() > 0) ++nextObjectId;
+        }
       } else if (type == "canvas") {
         if (w > 0 && h > 0 && w <= 800 && h <= 480) {
           const size_t pixelCount = static_cast<size_t>(w) * static_cast<size_t>(h);
@@ -1942,6 +1976,29 @@ static bool renderAppLayout(const LauncherAppEntry& app)
 
     if (lineEnd >= (int)layoutText.length()) break;
     lineStart = lineEnd + 1;
+  }
+
+  // Resolve targets after every named object has been created. Keyboard
+  // declarations can now precede their textarea without losing the binding.
+  for (uint8_t keyboardIndex = 0; keyboardIndex < pendingKeyboardCount; ++keyboardIndex) {
+    lv_obj_t * targetObject = NULL;
+    for (size_t objectIndex = 0; objectIndex < namedObjectCount; ++objectIndex) {
+      if (namedObjectNames[objectIndex] == keyboardTargetNames[keyboardIndex]) {
+        targetObject = namedObjects[objectIndex];
+        break;
+      }
+    }
+    const bool bound = gFAppKeyboards.bind(pendingKeyboards[keyboardIndex], targetObject);
+    Serial.printf("[FAPP-KB2] Target '%s': %s\n", keyboardTargetNames[keyboardIndex].c_str(),
+      bound ? "bound" : "missing or not a textarea");
+  }
+  gFAppKeyboards.update();
+  for (uint8_t keyboardIndex = 0; keyboardIndex < pendingKeyboardCount; ++keyboardIndex) {
+    lv_area_t bounds;
+    lv_obj_get_coords(pendingKeyboards[keyboardIndex], &bounds);
+    Serial.printf("[FAPP-KB2] Keyboard %u: actual=%d,%d..%d,%d hidden=%d\n",
+      keyboardIndex, bounds.x1, bounds.y1, bounds.x2, bounds.y2,
+      lv_obj_has_flag(pendingKeyboards[keyboardIndex], LV_OBJ_FLAG_HIDDEN));
   }
 
   return createdAny;
@@ -2536,6 +2593,46 @@ static bool fappPlayAudioFile(const char * path)
   return true;
 }
 
+static bool fappControlAudio(FAppNativeFunction function, const FAppValue * arguments, uint8_t, FAppValue * result)
+{
+  switch (function) {
+    case FAppNativeFunction::AudioStream: {
+      if (WiFi.status() != WL_CONNECTED || OTARecovery_IsBusy()) { *result = FAppValue::boolean(false); return true; }
+      stopRadioPlayback();
+      const bool started = audio.connecttohost(arguments[0].asString());
+      if (started) {
+        gRadioPlaying = true;
+        gRadioSource = RADIO_SOURCE_WEB;
+        gRadioCurrentWebUrl = arguments[0].asString();
+        gFAppAudioPlaying = true;
+      }
+      *result = FAppValue::boolean(started); return true;
+    }
+    case FAppNativeFunction::AudioStop:
+      if (gFAppAudioPlaying) stopRadioPlayback();
+      *result = FAppValue::boolean(true); return true;
+    case FAppNativeFunction::AudioSetVolume:
+      audio.setVolume(static_cast<uint8_t>(arguments[0].asInteger()));
+      *result = FAppValue::boolean(true); return true;
+    case FAppNativeFunction::AudioVolume:
+      *result = FAppValue::integer(audio.getVolume()); return true;
+    case FAppNativeFunction::AudioPlaying:
+      if (gFAppAudioPlaying && !audio.isRunning()) stopRadioPlayback();
+      *result = FAppValue::boolean(gFAppAudioPlaying && gRadioPlaying); return true;
+    case FAppNativeFunction::AudioPosition:
+      *result = FAppValue::integer(gFAppAudioPlaying && gRadioSource == RADIO_SOURCE_FILE ? audio.getAudioCurrentTime() : 0); return true;
+    case FAppNativeFunction::AudioDuration:
+      *result = FAppValue::integer(gFAppAudioPlaying && gRadioSource == RADIO_SOURCE_FILE ? audio.getAudioFileDuration() : 0); return true;
+    case FAppNativeFunction::AudioSeek: {
+      const bool allowed = gFAppAudioPlaying && gRadioPlaying && gRadioSource == RADIO_SOURCE_FILE;
+      bool sought = false;
+      if (allowed) sought = audio.setAudioPlayTime(static_cast<uint16_t>(arguments[0].asInteger()));
+      *result = FAppValue::boolean(sought); return true;
+    }
+    default: return false;
+  }
+}
+
 static void fappRequestSystemRestart()
 {
   gFAppRestartPending = true;
@@ -2733,6 +2830,8 @@ static void renderRadioApp()
   fillWebRadioRoller();
   updateRadioToggleButtonLabel();
   updateRadioProgressSlider();
+  fos_radio_fit_layout(uic_AppContentArea, gRadioToggleButton, gRadioVolumeSlider,
+    gRadioProgressSlider, gRadioTabView, gRadioFileRoller, gRadioWebRoller);
 }
 
 void audioEvent(Audio::msg_t info)
@@ -6928,9 +7027,22 @@ static void showAppContentForIndex(int appIndex)
   }
 
   if (app.appType == "ui") {
-    const bool layoutRendered = renderAppLayout(app);
     const String appDirectory = String(APPS_DIR) + "/" + app.folderName;
-    gFAppUiApi.configureFileContext(SD, appDirectory.c_str());
+    FAppManifest activeManifest;
+    const FAppStoragePolicy * storagePolicy = NULL;
+    if (app.manifestPresent) {
+      if (activeManifest.load(SD, (appDirectory + "/app.json").c_str()) != FAppManifestStatus::Ready) {
+        Serial.printf("[FAPP] Cannot load active manifest: %s\n", activeManifest.errorMessage());
+        lv_obj_t * errorLabel = lv_label_create(uic_AppContentArea);
+        lv_label_set_text(errorLabel, activeManifest.errorMessage());
+        lv_obj_center(errorLabel);
+        return;
+      }
+      app.permissions = activeManifest.permissions();
+      storagePolicy = &activeManifest.storagePolicy();
+    }
+    const bool layoutRendered = renderAppLayout(app);
+    gFAppUiApi.configureFileContext(SD, appDirectory.c_str(), storagePolicy);
     const FAppLoaderStatus loaderStatus = gFAppLoader.prepare(
       appDirectory.c_str(),
       app.layoutFile.c_str(),
@@ -6944,7 +7056,8 @@ static void showAppContentForIndex(int appIndex)
       if (runtimeLoaded) {
         gFAppHttpApi.configure(
           SD, appDirectory.c_str(), fappPlayAudioFile,
-          fappRequestSystemRestart, fappStartTimer);
+          fappRequestSystemRestart, fappStartTimer, storagePolicy);
+        gFAppHttpApi.setAudioControl(fappControlAudio);
       }
       if (runtimeLoaded && gFAppRuntime.start()) {
         gFAppLastTimerMs = millis();
@@ -8098,6 +8211,7 @@ extern "C" void OpenNewFile_Data(lv_event_t * e)
 void setup()
 {
   Serial.begin(115200);
+  Serial.println("[FAPP-KB2] Firmware contains keyboard loader v2");
   Serial.printf(
     "Boot diagnostics: reset=%d wake=%d\n",
     static_cast<int>(esp_reset_reason()),
@@ -8218,6 +8332,7 @@ void loop()
     // UI timers can open the SD card. Pause them while the OTA worker owns
     // the update file; OTARecovery_Tick below still updates progress state.
     if (!gDisplaySuspended && !OTARecovery_IsBusy()) {
+      gFAppKeyboards.update();
       lv_timer_handler();
     }
   }
@@ -8257,6 +8372,7 @@ void loop()
       gFAppRuntime.notifyTimer();
     }
     gFAppRuntime.update(256, 4000);
+    gFAppKeyboards.update();
   }
   if (gFAppRestartPending) {
     Serial.println("[FAPP] Controlled system restart requested.");

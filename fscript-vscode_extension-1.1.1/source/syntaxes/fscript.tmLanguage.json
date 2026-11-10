@@ -1,0 +1,105 @@
+{
+  "name": "fScript",
+  "scopeName": "source.fscript",
+  "patterns": [
+    {
+      "name": "comment.line.double-dash.fscript",
+      "match": "(?:--|//).*$"
+    },
+    {
+      "name": "comment.block.fscript",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    {
+      "name": "string.quoted.double.fscript",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.fscript",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.single.fscript",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.fscript",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "match": "\\b(function)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "storage.type.function.fscript"
+        },
+        "2": {
+          "name": "entity.name.function.fscript"
+        }
+      }
+    },
+    {
+      "match": "\\b(on)\\s+([A-Za-z_]\\w*)(\\.)([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.fscript"
+        },
+        "2": {
+          "name": "variable.other.object.fscript"
+        },
+        "3": {
+          "name": "punctuation.accessor.fscript"
+        },
+        "4": {
+          "name": "entity.name.function.event.fscript"
+        }
+      }
+    },
+    {
+      "name": "support.function.fscript",
+      "match": "\\b(?:http_get|http_status|http_json|http_text|url_encode|date_weekday|file_read|file_write|file_list|file_pair_value|audio_play|audio_stream|audio_stop|audio_set_volume|audio_volume|audio_playing|audio_position|audio_duration|audio_seek|wifi_status|system\\.restart|timer\\.start|Serial\\.printf|text|number_parse|round|string_length|string_slice|string_last_index|math_eval|event_x|event_y|event_screen_x|event_screen_y|event_pressed)\\b(?=\\s*\\()"
+    },
+    {
+      "name": "keyword.control.fscript",
+      "match": "\\b(?:if|then|elseif|else|end|return|while|for|to|step|break|continue|on)\\b"
+    },
+    {
+      "name": "storage.type.fscript",
+      "match": "\\b(?:var|function)\\b"
+    },
+    {
+      "name": "constant.language.fscript",
+      "match": "\\b(?:true|false|nil)\\b"
+    },
+    {
+      "name": "keyword.operator.fscript",
+      "match": "\\b(?:and|or|not)\\b|&&|\\|\\||==|!=|<=|>=|[-+*/%=<>!]"
+    },
+    {
+      "name": "constant.numeric.fscript",
+      "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"
+    },
+    {
+      "name": "variable.other.object.fscript",
+      "match": "\\b[A-Za-z_]\\w*(?=\\.)"
+    },
+    {
+      "name": "support.variable.property.fscript",
+      "match": "(?<=\\.)(?:text|value|checked|hidden|enabled|pressed)\\b"
+    },
+    {
+      "name": "entity.name.function.fscript",
+      "match": "\\b[A-Za-z_]\\w*(?=\\s*\\()"
+    },
+    {
+      "name": "punctuation.separator.fscript",
+      "match": "[(),.]"
+    }
+  ]
+}

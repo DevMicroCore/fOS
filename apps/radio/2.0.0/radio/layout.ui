@@ -1,0 +1,10 @@
+# Relative geometry: x/w = % of parent content width; y/h = % of parent content height.
+# Same layout for 800x480 (CrowPanel) and 1024x600 (Waveshare P4).
+type=button;id=btn_play;x=42.375%;y=1.666667%;w=15.25%;h=9.375%;text=>;font=24;bg=theme;fg=0x000000;radius=7;native_style=true;scrollable=false
+type=slider;id=slider_volume;x=3.75%;y=16.041667%;w=92.5%;h=3.75%;min=0;max=21;value=15;native_style=true;scrollable=false
+type=slider;id=slider_progress;x=3.75%;y=27.291667%;w=92.5%;h=3.75%;min=0;max=1000;value=0;native_style=true;scrollable=false
+type=tabview;id=tabs_music;x=0%;y=37.291667%;w=100%;h=61.458333%;tab_height=16.949153%;font=24;scrollable=false
+type=tab;id=tab_files;parent=tabs_music;text=File Player;scrollable=false
+type=roller;id=roller_files;parent=tab_files;x=1%;y=3%;w=98%;h=94%;text=Keine Dateien;font=20;native_style=true;scrollable=false
+type=tab;id=tab_web;parent=tabs_music;text=Web Radio;scrollable=false
+type=roller;id=roller_web;parent=tab_web;x=1%;y=3%;w=98%;h=94%;text=Keine Sender;font=20;native_style=true;scrollable=false

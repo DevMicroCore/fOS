@@ -1,0 +1,6 @@
+# Relative geometry: x/w = % of parent content width; y/h = % of parent content height.
+# Same layout for 800x480 (CrowPanel) and 1024x600 (Waveshare P4).
+type=label;id=lbl_title;x=20%;y=5.833333%;w=52.5%;h=9.166667%;text=fScript Counter;fg=0xFFFFFF
+type=label;id=lbl_status;x=3.75%;y=21.875%;w=52.5%;h=14.583333%;text=Wird gestartet...;fg=0xFFFFFF
+type=button;id=btn_add;x=10%;y=42.708333%;w=40%;h=17.708333%;text=Zaehler erhoehen;bg=theme;fg=0xFFFFFF
+type=button;id=btn_reset;x=10%;y=65.625%;w=40%;h=14.583333%;text=Zuruecksetzen;bg=0x505050;fg=0xFFFFFF

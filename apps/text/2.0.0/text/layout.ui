@@ -1,0 +1,16 @@
+# Relative geometry: x/w = % of parent content width; y/h = % of parent content height.
+# Same layout for 800x480 (CrowPanel) and 1024x600 (Waveshare P4).
+type=button;id=btn_new;x=20.75%;y=1.041667%;w=25%;h=10.416667%;text=Open New File;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true
+type=button;id=btn_save_as;x=47%;y=1.041667%;w=25%;h=10.416667%;text=Save as . . .;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true
+type=button;id=btn_open;x=73.25%;y=1.041667%;w=25%;h=10.416667%;text=Open file;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true
+type=textarea;id=txt_editor;x=1.625%;y=14.375%;w=96.75%;h=42.291667%;text=;placeholder=You can enter your text here ...;font=20;native_style=true
+type=keyboard;id=keyboard_editor;x=0.375%;y=57.5%;w=99.125%;h=41.041667%;target=txt_editor;font=20
+type=panel;id=panel_save;x=12.5%;y=18.333333%;w=75%;h=29.166667%;bg=0xFAFAFA;radius=12;styleless=true;clickable=false;scrollable=false;hidden=true
+type=textarea;id=txt_filename;parent=panel_save;x=1.833333%;y=8.571429%;w=96.166667%;h=37.142857%;text=;placeholder=File name . . .;font=20;max_length=240;native_style=true
+type=button;id=btn_save_confirm;parent=panel_save;x=2.333333%;y=55.714286%;w=26.666667%;h=35.714286%;text=Save;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true
+type=button;id=btn_save_cancel;parent=panel_save;x=31%;y=55.714286%;w=26.666667%;h=35.714286%;text=Cancel;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true
+type=keyboard;id=keyboard_filename;x=0.375%;y=57.5%;w=99.125%;h=41.041667%;target=txt_filename;font=20;hidden=true
+type=panel;id=panel_open;x=12.5%;y=4.791667%;w=75%;h=72.916667%;bg=0xFAFAFA;radius=12;styleless=true;clickable=false;scrollable=false;hidden=true
+type=roller;id=roller_files;parent=panel_open;x=2%;y=3.428571%;w=96%;h=76%;text=No file found;font=20;align=left;native_style=true
+type=button;id=btn_open_confirm;parent=panel_open;x=2.333333%;y=82.857143%;w=26.666667%;h=14.285714%;text=Open;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true
+type=button;id=btn_open_cancel;parent=panel_open;x=31%;y=82.857143%;w=26.666667%;h=14.285714%;text=Cancel;bg=theme;fg=0x000000;font=24;radius=7;scrollable=false;native_style=true

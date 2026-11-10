@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fosc VERSION 0.12.1 LANGUAGES CXX)
+project(fosc VERSION 0.13.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -29,13 +29,13 @@ add_executable(fosc main.cpp)
 target_link_libraries(fosc PRIVATE fosc_frontend)
 add_executable(fosrun
   runner/FosRun.cpp
-  ../../fOS4.0/src/fapp/FAppLoader.cpp
-  ../../fOS4.0/src/fapp/FAppRuntime.cpp
-  ../../fOS4.0/src/fapp/FAppManifest.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppLoader.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppRuntime.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppManifest.cpp
 )
 target_include_directories(fosrun BEFORE PRIVATE
   tests/arduino_stubs
-  ../../fOS4.0
+  ../../fOS_Waveshare_P4
 )
 target_link_libraries(fosrun PRIVATE fosc_frontend)
 enable_testing()
@@ -56,33 +56,46 @@ target_link_libraries(fosc_optimizer_verifier_tests PRIVATE fosc_frontend)
 add_test(NAME optimizer_verifier COMMAND fosc_optimizer_verifier_tests)
 add_executable(fosc_embedded_loader_tests
   tests/EmbeddedLoaderTests.cpp
-  ../../fOS4.0/src/fapp/FAppLoader.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppLoader.cpp
 )
 target_include_directories(fosc_embedded_loader_tests BEFORE PRIVATE
   tests/arduino_stubs
-  ../../fOS4.0
+  ../../fOS_Waveshare_P4
 )
 target_link_libraries(fosc_embedded_loader_tests PRIVATE fosc_frontend)
 add_test(NAME embedded_loader COMMAND fosc_embedded_loader_tests)
 add_executable(fosc_runtime_manifest_tests
   tests/RuntimeManifestTests.cpp
-  ../../fOS4.0/src/fapp/FAppLoader.cpp
-  ../../fOS4.0/src/fapp/FAppRuntime.cpp
-  ../../fOS4.0/src/fapp/FAppManifest.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppLoader.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppRuntime.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppManifest.cpp
 )
 target_include_directories(fosc_runtime_manifest_tests BEFORE PRIVATE
   tests/arduino_stubs
-  ../../fOS4.0
+  ../../fOS_Waveshare_P4
 )
 target_link_libraries(fosc_runtime_manifest_tests PRIVATE fosc_frontend)
 add_test(NAME runtime_manifest COMMAND fosc_runtime_manifest_tests)
 add_executable(fosc_http_api_tests
   tests/HttpApiTests.cpp
-  ../../fOS4.0/src/fapp/FAppHttpApi.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppHttpApi.cpp
 )
 target_include_directories(fosc_http_api_tests BEFORE PRIVATE
   tests/http_stubs
   tests/arduino_stubs
-  ../../fOS4.0
+  ../../fOS_Waveshare_P4
 )
 add_test(NAME http_api COMMAND fosc_http_api_tests)
+
+add_executable(fosc_storage_access_tests
+  tests/StorageAccessTests.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppManifest.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppHttpApi.cpp
+  ../../fOS_Waveshare_P4/src/fapp/LvglFAppUiApi.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppUiRegistry.cpp
+  ../../fOS_Waveshare_P4/src/fapp/FAppKeyboardController.cpp
+)
+target_include_directories(fosc_storage_access_tests BEFORE PRIVATE
+  tests/http_stubs tests/keyboard_lvgl tests/lvgl_stubs ../../fOS_Waveshare_P4
+)
+add_test(NAME storage_access COMMAND fosc_storage_access_tests)

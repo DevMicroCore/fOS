@@ -15,7 +15,10 @@ enum class FAppUiObjectType : uint8_t {
   Roller,
   DropDown,
   Keyboard,
-  Canvas
+  Canvas,
+  Slider,
+  TabView,
+  Tab
 };
 
 class FAppUiRegistry {

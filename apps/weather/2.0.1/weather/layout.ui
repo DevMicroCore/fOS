@@ -1,0 +1,12 @@
+# Relative geometry: x/w = % of parent content width; y/h = % of parent content height.
+# Same layout for 800x480 (CrowPanel) and 1024x600 (Waveshare P4).
+type=panel;x=0%;y=0%;w=100%;h=100%;bg=0x0D1217;border=0;radius=0;clickable=false;scrollable=false
+type=label;id=lbl_temperature;x=25%;y=4.375%;w=50%;h=10.416667%;text=--°C   --%;fg=0xFFFFFF;font=40;align=center
+type=label;id=lbl_information;x=8.75%;y=17.083333%;w=82.5%;h=10.833333%;text=No weather data found;fg=0xFFFFFF;font=40;align=center
+type=roller;id=roller_forecast;x=2.5%;y=37.083333%;w=95%;h=58.541667%;text=No Data;bg=0x28272F;fg=0xFFFFFF;font=20;radius=9;border=0
+type=button;id=btn_open_search;x=83.125%;y=1.041667%;w=14.875%;h=10.416667%;text=Search;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false
+type=panel;id=panel_search;x=0%;y=0%;w=100%;h=100%;bg=0x000000;border=0;radius=0;styleless=true;clickable=false;scrollable=false;hidden=true
+type=textarea;id=txt_search;parent=panel_search;x=2%;y=13.333333%;w=95.875%;h=14.583333%;text=;placeholder=Search for a place ...;one_line=true;max_length=48;bg=0x28272F;fg=0xFFFFFF;font=20
+type=dropdown;id=dropdown_places;parent=panel_search;x=2%;y=28.75%;w=95.875%;h=10.416667%;text=Current Location;bg=0x28272F;fg=0xFFFFFF;font=20
+type=keyboard;id=keyboard_search;x=0%;y=57.708333%;w=100%;h=41.041667%;target=txt_search;font=20;hidden=true
+type=button;id=btn_confirm;parent=panel_search;x=83.125%;y=1.041667%;w=14.875%;h=10.416667%;text=Confirm;bg=theme;fg=0x000000;font=24;radius=7;border=0;scrollable=false

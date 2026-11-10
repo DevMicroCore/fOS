@@ -1,0 +1,17 @@
+{
+  "id": "devmicro.fscript-radio",
+  "name": "Radio",
+  "version": "2.0.0",
+  "min_fos": "4.1.0",
+  "type": "ui",
+  "icon": "RAD",
+  "layout": "layout.ui",
+  "executable": "main.fapp",
+  "scrollable": false,
+  "permissions": [
+    "ui",
+    "audio",
+    "network",
+    "storage.read:/music"
+  ]
+}
