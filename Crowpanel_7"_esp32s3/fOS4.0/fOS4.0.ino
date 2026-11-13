@@ -525,12 +525,40 @@ void requestNtpSync(bool force)
   if (!force && millis() - lastNtpSyncAttempt < 30000) return;
   lastNtpSyncAttempt = millis();
 
+  // Arduino-ESP32 Core 3.3.x can trigger a lwIP TCPIP-core-lock assert
+  // when a concurrent HTTPS hostname lookup flushes the DNS cache while
+  // an SNTP hostname lookup is pending (upstream issue #13055).
+  // Resolve NTP names up front and pass numeric IPs to SNTP.  Subsequent
+  // SNTP refreshes cannot have pending DNS callbacks; the timezone itself
+  // is unchanged, including CET/CEST transitions.
+  const char * const ntpHosts[] = {"pool.ntp.org", "time.nist.gov", "time.google.com"};
+  // ESP-IDF lwIP SNTP stores pointers to server names rather than copying
+  // the strings. NEVER pass c_str() of a local String here. Two static banks
+  // also keep the previous configuration valid while configTzTime stops it.
+  static char ntpServerStorage[2][3][16] = {};
+  static uint8_t nextBank = 0;
+  char (*const serverIps)[16] = ntpServerStorage[nextBank];
+  size_t ntpCount = 0;
+  for (const char * host : ntpHosts) {
+    IPAddress ip;
+    if (WiFi.hostByName(host, ip) == 1 && ip != IPAddress(0, 0, 0, 0)) {
+      const String numeric = ip.toString();
+      snprintf(serverIps[ntpCount++], sizeof(serverIps[0]), "%s", numeric.c_str());
+    }
+  }
+  if (ntpCount == 0) {
+    Serial.println("[NTP] DNS not available; will retry later without starting hostname SNTP");
+    return;
+  }
   configTzTime(
     kTimeZones[currentTimeZoneIndex].tzRule,
-    "pool.ntp.org",
-    "time.nist.gov",
-    "time.google.com"
+    serverIps[0],
+    ntpCount > 1 ? serverIps[1] : nullptr,
+    ntpCount > 2 ? serverIps[2] : nullptr
   );
+  nextBank ^= 1;
+  Serial.printf("[NTP] Started with %u numeric IPs (avoids lwIP DNS callback race)\n",
+                static_cast<unsigned>(ntpCount));
 }
 
 void applyTimeZone(int index, bool syncNtp)

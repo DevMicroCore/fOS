@@ -1,4 +1,4 @@
-# Dokumentation fOS 4.1.0
+# Dokumentation fOS 4.1.1
 
 Alle hier genannten Dateipfade und Befehle beziehen sich auf den
 Projekt-Hauptordner, sofern nicht anders angegeben.
@@ -18,7 +18,7 @@ Projekt-Hauptordner, sofern nicht anders angegeben.
 | Full fScript manual in English | [FSCRIPT_FOSC_VM_MANUAL_EN.md](FSCRIPT_FOSC_VM_MANUAL_EN.md) |
 | Radio und Audio-/UI-API | [FSCRIPT_RADIO_AUDIO.md](FSCRIPT_RADIO_AUDIO.md) |
 | GitHub, App-Store und OTA-Indizes | [GITHUB.md](GITHUB.md) |
-| Aktuelle Versionshinweise | [RELEASE_NOTES_4.1.0.md](RELEASE_NOTES_4.1.0.md) |
+| Aktuelle Versionshinweise | [RELEASE_NOTES_4.1.1.md](RELEASE_NOTES_4.1.1.md) |
 | Build- und Prüfnachweise | [VALIDATION.md](VALIDATION.md) |
 | Lizenzen | [LICENSES.md](LICENSES.md) |
 

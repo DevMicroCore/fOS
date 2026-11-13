@@ -211,7 +211,7 @@ lv_obj_set_height( ui_LabelSoftwareInformationData, 170);
 lv_obj_set_x( ui_LabelSoftwareInformationData, 292 );
 lv_obj_set_y( ui_LabelSoftwareInformationData, 200 );
 lv_obj_set_align( ui_LabelSoftwareInformationData, LV_ALIGN_CENTER );
-lv_label_set_text(ui_LabelSoftwareInformationData,"fOS version:                                 4.1.0\nESP32-Core:                               3.3.12\nLVGL:                                             9.2.2\nDeveloper:               DevMicroCore");
+lv_label_set_text(ui_LabelSoftwareInformationData,"fOS version:                                 4.1.1\nESP32-Core:                               3.3.12\nLVGL:                                             9.2.2\nDeveloper:               DevMicroCore");
 lv_obj_set_style_text_font(ui_LabelSoftwareInformationData, &lv_font_montserrat_24, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_ButtonSettingsUpdater = lv_button_create(ui_ScreenSettings);

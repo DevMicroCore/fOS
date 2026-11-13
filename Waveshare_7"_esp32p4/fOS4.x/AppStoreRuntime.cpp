@@ -43,6 +43,8 @@ namespace {
 #define APPSTORE_MAX_DOWNLOAD_DEPTH 5U
 #define APPSTORE_HTTP_RETRIES 2U
 #define APPSTORE_REFRESH_TASK_STACK 8192U
+// The TLS/SD transfer must never run in the LVGL event handler.
+#define APPSTORE_DOWNLOAD_TASK_STACK 12288U
 
 struct RemoteAppEntry {
   String folderName;
@@ -69,6 +71,28 @@ enum class StoreRefreshState : uint8_t {
   Failed
 };
 
+enum class AppTransferState : uint8_t {
+  Idle = 0,
+  Running,
+  Installed,
+  Deleted,
+  DeleteFailed,
+  BlockedByBackup,
+  CleanupFailed,
+  DownloadFailed,
+  InstallFailed
+};
+
+enum class AppTransferPhase : uint8_t { Preparing, Downloading, Installing };
+
+struct AppTransferJob {
+  String folderName;
+  String displayName;
+  String apiUrl;
+  bool previouslyInstalled = false;
+  bool deleting = false;
+};
+
 struct InstalledAppEntry {
   String folderName;
   String displayName;
@@ -83,7 +107,11 @@ uint8_t gInstalledAppCount = 0;
 bool gAssignmentsExplicit = false;
 lv_obj_t * gStatusLabel = nullptr;
 lv_timer_t * gStoreRefreshTimer = nullptr;
-uint16_t gDownloadedFileCount = 0;
+lv_timer_t * gAppTransferTimer = nullptr;
+AppTransferJob gAppTransferJob;
+volatile AppTransferState gAppTransferState = AppTransferState::Idle;
+volatile AppTransferPhase gAppTransferPhase = AppTransferPhase::Preparing;
+volatile uint16_t gDownloadedFileCount = 0;
 bool gStorePathChecked = false;
 volatile StoreRefreshState gStoreRefreshState = StoreRefreshState::Idle;
 volatile uint8_t gRefreshFoldersScanned = 0;
@@ -467,7 +495,11 @@ bool loadStoreIndex(const String& indexUrl, String * payload)
 
 void showStatus(const String& text, lv_color_t color = lv_color_hex(0xFFFFFF))
 {
-  if (gStatusLabel == nullptr) return;
+  // A screen switch may have destroyed the previous status label.
+  if (gStatusLabel == nullptr || !lv_obj_is_valid(gStatusLabel)) {
+    gStatusLabel = nullptr;
+    return;
+  }
   lv_label_set_text(gStatusLabel, text.c_str());
   lv_obj_set_style_text_color(gStatusLabel, color, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_clear_flag(gStatusLabel, LV_OBJ_FLAG_HIDDEN);
@@ -983,7 +1015,9 @@ void storeRefreshTask(void *)
 
 void beginStoreRefresh()
 {
-  if (gStoreRefreshState == StoreRefreshState::Running) return;
+  // Do not race the installer for TLS memory or SD filesystem operations.
+  if (gAppTransferState != AppTransferState::Idle ||
+      gStoreRefreshState == StoreRefreshState::Running) return;
   gRemoteAppCount = 0;
   gRefreshFoldersScanned = 0;
   gRefreshStoreCount = 0;
@@ -1004,10 +1038,20 @@ void beginStoreRefresh()
   }
 }
 
+bool appStoreVisible()
+{
+  // AppContent is shared with all fApps. Only touch AppStore widgets when the
+  // actual AppStore tabview still belongs to the active content container.
+  return ui_AppContent != nullptr && lv_scr_act() == ui_AppContent &&
+    uic_AppContentArea != nullptr && lv_obj_is_valid(uic_AppContentArea) &&
+    ui_TabView4 != nullptr && lv_obj_is_valid(ui_TabView4) &&
+    lv_obj_get_parent(ui_TabView4) == uic_AppContentArea;
+}
+
 void storeRefreshTimer(lv_timer_t * timer)
 {
   if (timer == nullptr) return;
-  const bool visible = ui_AppContent != nullptr && lv_scr_act() == ui_AppContent;
+  const bool visible = appStoreVisible();
   if (!visible) {
     if (gStoreRefreshState != StoreRefreshState::Running) {
       if (gStoreRefreshTimer == timer) gStoreRefreshTimer = nullptr;
@@ -1017,6 +1061,7 @@ void storeRefreshTimer(lv_timer_t * timer)
   }
 
   if (gStoreRefreshState == StoreRefreshState::Idle) {
+    if (gAppTransferState != AppTransferState::Idle) return;
     beginStoreRefresh();
     return;
   }
@@ -1198,9 +1243,7 @@ bool downloadIndexedDirectory(const String& source, const String& destination, b
     if (!fileDownloaded) return false;
     ++downloaded;
     ++gDownloadedFileCount;
-    if ((gDownloadedFileCount % 2U) == 0U) {
-      showStatus(String("Downloading files: ") + gDownloadedFileCount);
-    }
+    // Progress is displayed by an LVGL timer, never from this worker task.
   }
   return downloaded > 0;
 }
@@ -1218,7 +1261,6 @@ bool downloadFile(
   }
   if (!downloaded) return false;
   ++gDownloadedFileCount;
-  if ((gDownloadedFileCount % 2U) == 0U) showStatus(String("Downloading files: ") + gDownloadedFileCount);
   return true;
 }
 
@@ -1293,6 +1335,58 @@ bool installDownloadedApp(const String& temporary, const String& target, const S
     Serial.println("[APPSTORE] Updated app installed; old app files retained in backup.");
   }
   return true;
+}
+
+// Transfer worker: ONLY network and SD operations. LVGL is not thread-safe.
+// The UI task prepares launcher assignments before this worker starts and
+// updates the visible widgets after the completion flag is published.
+void appTransferTask(void *)
+{
+  const String target = String(APPSTORE_APPS_DIRECTORY) + "/" + gAppTransferJob.folderName;
+  const String temporary = String(APPSTORE_APPS_DIRECTORY) + "/.store_tmp_" + gAppTransferJob.folderName;
+  const String backup = String(APPSTORE_APPS_DIRECTORY) + "/.store_backup_" + gAppTransferJob.folderName;
+  // Uninstall also runs on the worker stack. Recursive FAT directory removal
+  // must not execute in the LVGL callback / small Arduino loopTask stack.
+  if (gAppTransferJob.deleting) {
+    const bool deleted = removeRecursively(target);
+    Serial.printf("[APPSTORE] Delete %s: %s\n",
+      gAppTransferJob.folderName.c_str(), deleted ? "complete" : "failed");
+    __sync_synchronize();
+    gAppTransferState = deleted ? AppTransferState::Deleted : AppTransferState::DeleteFailed;
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  AppTransferState result = AppTransferState::DownloadFailed;
+  if (SD_MMC.exists(backup + "/" + APPSTORE_APPDATA_DIRECTORY)) {
+    result = AppTransferState::BlockedByBackup;
+  } else if (SD_MMC.exists(temporary) && !removeRecursively(temporary)) {
+    result = AppTransferState::CleanupFailed;
+  } else {
+    gAppTransferPhase = AppTransferPhase::Downloading;
+    const bool downloaded = gAppTransferJob.apiUrl.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)
+      ? downloadIndexedDirectory(gAppTransferJob.apiUrl, temporary, gAppTransferJob.previouslyInstalled)
+      : downloadDirectory(gAppTransferJob.apiUrl, temporary, 0, gAppTransferJob.previouslyInstalled);
+    if (!downloaded) {
+      // A failed network transfer must never replace the installed app.
+      removeRecursively(temporary);
+      result = AppTransferState::DownloadFailed;
+    } else {
+      gAppTransferPhase = AppTransferPhase::Installing;
+      if (installDownloadedApp(temporary, target, backup)) {
+        result = AppTransferState::Installed;
+      } else {
+        removeRecursively(temporary);
+        result = AppTransferState::InstallFailed;
+      }
+    }
+  }
+
+  Serial.printf("[APPSTORE] Transfer result=%u, files=%u\n",
+    static_cast<unsigned>(result), static_cast<unsigned>(gDownloadedFileCount));
+  __sync_synchronize();
+  gAppTransferState = result;
+  vTaskDelete(nullptr);
 }
 
 void clearAssignmentsForFolder(const String& folder)
@@ -1535,6 +1629,13 @@ extern "C" void StartAppStore_Data(lv_event_t * event)
 
   applySystemTheme();
   createRuntimeUi(host);
+  // Opening AppStore again during an installation must not trigger concurrent
+  // SD scans or HTTPS catalog refreshes. The transfer timer will finish the UI.
+  if (gAppTransferState != AppTransferState::Idle) {
+    fillRemoteRoller();
+    showStatus("AppStore operation in progress ...");
+    return;
+  }
   AppStoreEnsureSystemFiles(SD_MMC);
   fillAssignmentDropdowns();
   if (uic_AppDownloadRoller != nullptr) {
@@ -1554,9 +1655,127 @@ extern "C" void StartAppStore_Data(lv_event_t * event)
   }
 }
 
+// Only this timer updates LVGL and launcher widgets after a transfer.
+void appTransferTimer(lv_timer_t * timer)
+{
+  if (timer == nullptr) return;
+  const AppTransferState state = gAppTransferState;
+  if (state == AppTransferState::Running) {
+    if (appStoreVisible()) {
+      if (gAppTransferJob.deleting) {
+        showStatus("Deleting " + gAppTransferJob.displayName + " ...");
+      } else if (gAppTransferPhase == AppTransferPhase::Preparing) {
+        showStatus("Preparing app download ...");
+      } else if (gAppTransferPhase == AppTransferPhase::Installing) {
+        showStatus("Installing " + gAppTransferJob.displayName + " ...");
+      } else {
+        showStatus("Downloading " + gAppTransferJob.displayName + ": " +
+          String(static_cast<unsigned>(gDownloadedFileCount)) + " files");
+      }
+    }
+    return;
+  }
+  if (state == AppTransferState::Idle) return;
+  __sync_synchronize();
+  const bool visible = appStoreVisible();
+  if (state == AppTransferState::Deleted) {
+    clearAssignmentsForFolder(gAppTransferJob.folderName);
+    StartAppLauncher_Data(nullptr);
+    if (visible) {
+      refreshInstalledStateForRemoteEntries();
+      showStatus(gAppTransferJob.displayName + " deleted");
+    }
+  } else if (state == AppTransferState::Installed) {
+    if (!gAppTransferJob.previouslyInstalled)
+      assignNewAppToFirstFreeSlot(gAppTransferJob.folderName);
+    StartAppLauncher_Data(nullptr);
+    if (visible) {
+      refreshInstalledStateForRemoteEntries();
+      showStatus(gAppTransferJob.displayName + " installed");
+    }
+  } else if (visible) {
+    if (state == AppTransferState::DeleteFailed)
+      showStatus("App could not be deleted", lv_color_hex(0xFF8080));
+    else if (state == AppTransferState::BlockedByBackup)
+      showStatus("Previous app/data backup needs recovery", lv_color_hex(0xFF8080));
+    else if (state == AppTransferState::CleanupFailed)
+      showStatus("Temporary folder could not be cleared", lv_color_hex(0xFF8080));
+    else if (state == AppTransferState::InstallFailed)
+      showStatus("App update failed; previous data preserved", lv_color_hex(0xFF8080));
+    else
+      showStatus("Download failed", lv_color_hex(0xFF8080));
+  }
+  // Publish Idle only after all SD/launcher and UI post-processing is complete.
+  gAppTransferState = AppTransferState::Idle;
+  if (gAppTransferTimer == timer) gAppTransferTimer = nullptr;
+  lv_timer_del(timer);
+}
+
 extern "C" void AppStoreDownloadApp(lv_event_t * event)
 {
   if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+  if (gAppTransferState != AppTransferState::Idle) {
+    showStatus("App download already in progress", lv_color_hex(0xFFCC80));
+    return;
+  }
+  if (gStoreRefreshState == StoreRefreshState::Running) {
+    showStatus("App list is still loading", lv_color_hex(0xFFCC80));
+    return;
+  }
+  if (gRemoteAppCount == 0 || uic_AppDownloadRoller == nullptr) {
+    showStatus("No app selected", lv_color_hex(0xFF8080));
+    return;
+  }
+  int selected = lv_roller_get_selected(uic_AppDownloadRoller);
+  if (selected < 0 || selected >= gRemoteAppCount) selected = 0;
+  const RemoteAppEntry& app = gRemoteApps[selected];
+  if (!isSafePathPart(app.folderName)) {
+    showStatus("Invalid app folder", lv_color_hex(0xFF8080));
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    showStatus("No WiFi connection", lv_color_hex(0xFF8080));
+    return;
+  }
+
+  // This fast SD operation runs before the worker changes /apps, preserving
+  // existing homescreen slots and the current appdata handling.
+  preserveCurrentLauncherAssignments();
+  gAppTransferJob.folderName = app.folderName;
+  gAppTransferJob.displayName = app.displayName;
+  gAppTransferJob.apiUrl = app.apiUrl;
+  gAppTransferJob.previouslyInstalled = SD_MMC.exists(
+    String(APPSTORE_APPS_DIRECTORY) + "/" + app.folderName);
+  gAppTransferJob.deleting = false;
+  gDownloadedFileCount = 0;
+  gAppTransferPhase = AppTransferPhase::Preparing;
+  gAppTransferState = AppTransferState::Running;
+  gAppTransferTimer = lv_timer_create(appTransferTimer, 150, nullptr);
+  if (gAppTransferTimer == nullptr) {
+    gAppTransferState = AppTransferState::Idle;
+    showStatus("Could not create download progress timer", lv_color_hex(0xFF8080));
+    return;
+  }
+  const BaseType_t created = xTaskCreate(
+    appTransferTask, "appdownload", APPSTORE_DOWNLOAD_TASK_STACK, nullptr, 1, nullptr);
+  if (created != pdPASS) {
+    lv_timer_del(gAppTransferTimer);
+    gAppTransferTimer = nullptr;
+    gAppTransferState = AppTransferState::Idle;
+    Serial.println("[APPSTORE] Could not create download task.");
+    showStatus("Not enough RAM to start app download", lv_color_hex(0xFF8080));
+    return;
+  }
+  showStatus("Downloading " + app.displayName + " ...");
+}
+
+extern "C" void AppStoreDeleteApp(lv_event_t * event)
+{
+  if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+  if (gAppTransferState != AppTransferState::Idle) {
+    showStatus("Wait for the app download to finish", lv_color_hex(0xFFCC80));
+    return;
+  }
   if (gStoreRefreshState == StoreRefreshState::Running) {
     showStatus("App list is still loading", lv_color_hex(0xFFCC80));
     return;
@@ -1572,81 +1791,46 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
     showStatus("Invalid app folder", lv_color_hex(0xFF8080));
     return;
   }
-  if (WiFi.status() != WL_CONNECTED) {
-    showStatus("No WiFi connection", lv_color_hex(0xFF8080));
-    return;
-  }
-
-  const String target = String(APPSTORE_APPS_DIRECTORY) + "/" + app.folderName;
-  const String temporary = String(APPSTORE_APPS_DIRECTORY) + "/.store_tmp_" + app.folderName;
-  const String backup = String(APPSTORE_APPS_DIRECTORY) + "/.store_backup_" + app.folderName;
-  const bool updating = SD_MMC.exists(target);
-  if (SD_MMC.exists(backup + "/" + APPSTORE_APPDATA_DIRECTORY)) {
-    showStatus("Previous app/data backup needs recovery", lv_color_hex(0xFF8080));
-    return;
-  }
-  if (SD_MMC.exists(temporary) && !removeRecursively(temporary)) {
-    showStatus("Temporary folder could not be cleared", lv_color_hex(0xFF8080));
-    return;
-  }
-  gDownloadedFileCount = 0;
-  showStatus("Downloading " + app.displayName + " ...");
-  const bool downloaded = app.apiUrl.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)
-    ? downloadIndexedDirectory(app.apiUrl, temporary, updating)
-    : downloadDirectory(app.apiUrl, temporary, 0, updating);
-  if (!downloaded) {
-    removeRecursively(temporary);
-    showStatus("Download failed", lv_color_hex(0xFF8080));
-    return;
-  }
-
-  // Freeze the current launcher layout before changing /apps. This prevents a
-  // newly downloaded directory from displacing an existing Home-screen app.
-  preserveCurrentLauncherAssignments();
-  if (!installDownloadedApp(temporary, target, backup)) {
-    removeRecursively(temporary);
-    showStatus("App update failed; previous data preserved", lv_color_hex(0xFF8080));
-    return;
-  }
-  if (!app.installed) assignNewAppToFirstFreeSlot(app.folderName);
-  StartAppLauncher_Data(nullptr);
-  refreshInstalledStateForRemoteEntries();
-  showStatus(app.displayName + " installed");
-}
-
-extern "C" void AppStoreDeleteApp(lv_event_t * event)
-{
-  if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
-  if (gStoreRefreshState == StoreRefreshState::Running) {
-    showStatus("App list is still loading", lv_color_hex(0xFFCC80));
-    return;
-  }
-  if (gRemoteAppCount == 0 || uic_AppDownloadRoller == nullptr) {
-    showStatus("No app selected", lv_color_hex(0xFF8080));
-    return;
-  }
-  int selected = lv_roller_get_selected(uic_AppDownloadRoller);
-  if (selected < 0 || selected >= gRemoteAppCount) selected = 0;
-  const RemoteAppEntry app = gRemoteApps[selected];
   const String target = String(APPSTORE_APPS_DIRECTORY) + "/" + app.folderName;
   if (!app.installed || !SD_MMC.exists(target)) {
     showStatus("App is not installed", lv_color_hex(0xFFCC80));
     return;
   }
-  showStatus("Deleting " + app.displayName + " ...");
-  if (!removeRecursively(target)) {
-    showStatus("App could not be deleted", lv_color_hex(0xFF8080));
+  // All filesystem recursion runs on the same background worker used by
+  // installation. UI and launcher updates occur only in appTransferTimer.
+  gAppTransferJob.folderName = app.folderName;
+  gAppTransferJob.displayName = app.displayName;
+  gAppTransferJob.apiUrl = "";
+  gAppTransferJob.previouslyInstalled = true;
+  gAppTransferJob.deleting = true;
+  gAppTransferPhase = AppTransferPhase::Preparing;
+  gAppTransferState = AppTransferState::Running;
+  gAppTransferTimer = lv_timer_create(appTransferTimer, 150, nullptr);
+  if (gAppTransferTimer == nullptr) {
+    gAppTransferState = AppTransferState::Idle;
+    showStatus("Could not create delete progress timer", lv_color_hex(0xFF8080));
     return;
   }
-  clearAssignmentsForFolder(app.folderName);
-  StartAppLauncher_Data(nullptr);
-  refreshInstalledStateForRemoteEntries();
-  showStatus(app.displayName + " deleted");
+  const BaseType_t created = xTaskCreate(
+    appTransferTask, "appdelete", APPSTORE_DOWNLOAD_TASK_STACK, nullptr, 1, nullptr);
+  if (created != pdPASS) {
+    lv_timer_del(gAppTransferTimer);
+    gAppTransferTimer = nullptr;
+    gAppTransferState = AppTransferState::Idle;
+    Serial.println("[APPSTORE] Could not create delete task.");
+    showStatus("Not enough RAM to delete app", lv_color_hex(0xFF8080));
+    return;
+  }
+  showStatus("Deleting " + app.displayName + " ...");
 }
 
 extern "C" void AssignAppsConfirm(lv_event_t * event)
 {
   if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+  if (gAppTransferState != AppTransferState::Idle) {
+    showStatus("Wait for the app download to finish", lv_color_hex(0xFFCC80));
+    return;
+  }
   if (gStoreRefreshState == StoreRefreshState::Running) {
     showStatus("App list is still loading", lv_color_hex(0xFFCC80));
     return;
@@ -1680,5 +1864,6 @@ extern "C" void AssignAppsConfirm(lv_event_t * event)
 }
 
 bool AppStoreStorageBusy() {
-  return gStoreRefreshState == StoreRefreshState::Running;
+  return gStoreRefreshState == StoreRefreshState::Running ||
+         gAppTransferState != AppTransferState::Idle;
 }

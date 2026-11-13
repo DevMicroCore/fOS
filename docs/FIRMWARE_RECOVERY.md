@@ -1,5 +1,13 @@
 # Firmware und Recovery
 
+**Hinweis für fOS 4.1.1:** Alle bereits im Ordner `firmware/` enthaltenen
+`.bin`-Dateien stammen aus dem hochgeladenen Vorgängerpaket. Sie wurden
+**nicht** mit den 4.1.1-Änderungen neu kompiliert. Beide Hauptsketche aus
+diesem Paket müssen mit der Arduino IDE neu gebaut und als neue `.bin`-Dateien
+exportiert werden, bevor sie als 4.1.1 per OTA bereitgestellt werden. Die
+Recovery-Images und Board-Partitionen bleiben unverändert.
+
+
 Alle Pfade und Befehle in diesem Dokument beziehen sich auf den Projekt-Hauptordner.
 Die Binärdateien sind Einzelkomponenten, keine zusammengeführten Flash-Images.
 Für den ersten Haupt-Sketch-Upload die Arduino IDE verwenden.

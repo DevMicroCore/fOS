@@ -1,12 +1,20 @@
 #include "AppStoreRuntime.h"
 
 #include <ctype.h>
+#include <string.h>
 #include <HTTPClient.h>
+#include "esp_heap_caps.h"
 #include <SD.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#if defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#include "freertos/idf_additions.h"
+#define APPSTORE_EXTERNAL_TASK_STACK_AVAILABLE 1
+#else
+#define APPSTORE_EXTERNAL_TASK_STACK_AVAILABLE 0
+#endif
 
 #include "ui.h"
 #include "ui_AppStore.h"
@@ -43,6 +51,14 @@ namespace {
 #define APPSTORE_MAX_DOWNLOAD_DEPTH 5U
 #define APPSTORE_HTTP_RETRIES 2U
 #define APPSTORE_REFRESH_TASK_STACK 8192U
+// The TLS/SD transfer must never run in the LVGL event handler.
+// Reserve the full 12 KiB stack in external PSRAM when FreeRTOS was built
+// with support for external task stacks.  Otherwise use the same 8 KiB
+// internal stack already used by the AppStore catalog downloader.
+// This is crucial on the CrowPanel: an internal 12 KiB stack fragmented the
+// largest TLS-capable block from ~31 KiB to ~18 KiB (actual device logs).
+#define APPSTORE_DOWNLOAD_TASK_STACK 12288U
+#define APPSTORE_DOWNLOAD_TASK_FALLBACK_STACK 8192U
 
 struct RemoteAppEntry {
   String folderName;
@@ -69,6 +85,25 @@ enum class StoreRefreshState : uint8_t {
   Failed
 };
 
+enum class AppTransferState : uint8_t {
+  Idle = 0,
+  Running,
+  Installed,
+  BlockedByBackup,
+  CleanupFailed,
+  DownloadFailed,
+  InstallFailed
+};
+
+enum class AppTransferPhase : uint8_t { Preparing, Downloading, Installing };
+
+struct AppTransferJob {
+  String folderName;
+  String displayName;
+  String apiUrl;
+  bool previouslyInstalled = false;
+};
+
 struct InstalledAppEntry {
   String folderName;
   String displayName;
@@ -83,12 +118,49 @@ uint8_t gInstalledAppCount = 0;
 bool gAssignmentsExplicit = false;
 lv_obj_t * gStatusLabel = nullptr;
 lv_timer_t * gStoreRefreshTimer = nullptr;
-uint16_t gDownloadedFileCount = 0;
+lv_timer_t * gAppTransferTimer = nullptr;
+AppTransferJob gAppTransferJob;
+volatile AppTransferState gAppTransferState = AppTransferState::Idle;
+char gExternalStackTaskToken = 0;  // Stable task parameter; no shared mutable creation flag.
+volatile AppTransferPhase gAppTransferPhase = AppTransferPhase::Preparing;
+volatile uint16_t gDownloadedFileCount = 0;
+volatile int gLastHttpFailureCode = 0;
 bool gStorePathChecked = false;
 volatile StoreRefreshState gStoreRefreshState = StoreRefreshState::Idle;
 volatile uint8_t gRefreshFoldersScanned = 0;
 volatile uint8_t gRefreshStoreCount = 0;
 volatile uint8_t gRefreshSuccessfulStores = 0;
+// Keep the catalog used by the UI for the subsequent install. On the
+// CrowPanel it is important not to open an extra TLS connection just to
+// download an index that was already read or loaded from flash.
+// A copy of an online catalog is kept in PSRAM, not scarce internal RAM.
+char * gCachedDefaultIndex = nullptr;
+bool gCachedDefaultIndexIsFlash = false;
+
+void clearDefaultIndexCache()
+{
+  if (gCachedDefaultIndex != nullptr) {
+    heap_caps_free(gCachedDefaultIndex);
+    gCachedDefaultIndex = nullptr;
+  }
+  gCachedDefaultIndexIsFlash = false;
+}
+
+void rememberDefaultIndex(const String& index)
+{
+  clearDefaultIndexCache();
+  if (index.length() == 0 || index.length() > 65536U) return;
+  // OPI PSRAM is mandatory for this display, but gracefully fall back to
+  // downloading again if it is unavailable or too fragmented.
+  char * storage = static_cast<char *>(heap_caps_malloc(
+    index.length() + 1U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (storage == nullptr) {
+    Serial.println("[APPSTORE] PSRAM catalog cache unavailable; will refetch if needed.");
+    return;
+  }
+  memcpy(storage, index.c_str(), index.length() + 1U);
+  gCachedDefaultIndex = storage;
+}
 
 extern "C" void StartAppLauncher_Data(lv_event_t * e);
 extern "C" lv_obj_t * PrepareAppStoreContent_Data(void);
@@ -327,6 +399,42 @@ bool nextJsonObject(const String& json, int * cursor, String * object)
   return false;
 }
 
+// HTTPClient reports -1 for failures establishing the connection; it cannot
+// by itself distinguish network rejection from TLS allocation exhaustion.
+// The internal heap's largest free block is especially relevant for mbedTLS.
+void logHttpsConnectionDiagnostics(int code)
+{
+  if (code >= 0) return;
+  Serial.printf("[APPSTORE] HTTPS diagnostic: error=%d, WiFi=%d, RSSI=%d dBm, "
+                "internal free=%u, largest=%u bytes\n",
+    code, static_cast<int>(WiFi.status()), WiFi.RSSI(),
+    static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+    static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+}
+// Diagnose only after the final failed TLS attempt. An ordinary TCP probe
+// distinguishes an unreachable GitHub host from a TLS handshake failure, and
+// never replaces HTTPS for actual file content.
+void diagnoseGithubTransport(const String& url)
+{
+  if (WiFi.status() != WL_CONNECTED) return;
+  const int scheme = url.indexOf("://");
+  if (scheme < 0) return;
+  const int hostStart = scheme + 3;
+  const int slash = url.indexOf('/', hostStart);
+  const String host = url.substring(hostStart, slash < 0 ? url.length() : slash);
+  if (host.length() == 0) return;
+  IPAddress ip;
+  if (WiFi.hostByName(host.c_str(), ip) != 1) {
+    Serial.printf("[APPSTORE] Network check: DNS lookup failed for %s\n", host.c_str());
+    return;
+  }
+  WiFiClient tcp;
+  const bool reachable = tcp.connect(ip, 443, 2500) == 1;
+  tcp.stop();
+  Serial.printf("[APPSTORE] Network check: %s -> %s, TCP/443=%s\n",
+    host.c_str(), ip.toString().c_str(), reachable ? "reachable (check TLS heap)" : "unreachable");
+}
+
 bool httpGetText(
   const String& url,
   String * payload,
@@ -362,6 +470,7 @@ bool httpGetText(
     const int code = http.GET();
     if (lastStatus != nullptr) *lastStatus = code;
     if (code == HTTP_CODE_OK) {
+      gLastHttpFailureCode = 0;
       *payload = http.getString();
       if (payload->length() > 0) {
         http.end();
@@ -371,14 +480,25 @@ bool httpGetText(
       const String error = HTTPClient::errorToString(code);
       Serial.printf("[APPSTORE] GET failed (%d, %s, try %u): %s\n",
         code, error.c_str(), attempt, url.c_str());
+      gLastHttpFailureCode = code;
+      logHttpsConnectionDiagnostics(code);
+      if (code < 0) {
+        // HTTPClient -1 does not distinguish DNS, TCP and TLS errors.
+        // Ask the underlying TLS client BEFORE http.end() destroys the state.
+        char tlsError[128] = {};
+        const int tlsCode = client.lastError(tlsError, sizeof(tlsError));
+        Serial.printf("[APPSTORE] TLS details: error=%d, message=%s\n",
+                      tlsCode, tlsError[0] ? tlsError : "no TLS detail");
+      }
     }
     http.end();
+    if (attempt == APPSTORE_HTTP_RETRIES && code < 0) diagnoseGithubTransport(url);
     // Permanent client errors and rate limits must not be retried immediately.
     // GitHub explicitly warns that repeated 403/429 requests can prolong a
     // block. Network errors, timeouts and server errors remain retryable.
     if (code > 0 && code != 408 && code != 429 && code < 500) break;
     if (code == 429) break;
-    delay(120);
+    delay(code < 0 ? 750 : 120);
   }
   return false;
 }
@@ -450,15 +570,37 @@ String storeIndexUrl(String url)
     "/" + branch + "/" + path + "/" + APPSTORE_INDEX_FILE;
 }
 
-bool loadStoreIndex(const String& indexUrl, String * payload)
+bool loadStoreIndex(const String& indexUrl, String * payload, bool installPhase = false)
 {
   if (payload == nullptr || indexUrl.length() == 0) return false;
+  const bool defaultStore = indexUrl == APPSTORE_DEFAULT_INDEX;
+  // The catalog was already selected during refresh. Do not make a second
+  // HTTPS connection with the installation task and its tighter TLS heap.
+  if (installPhase && defaultStore) {
+    if (gCachedDefaultIndex != nullptr) {
+      *payload = gCachedDefaultIndex;
+      Serial.println("[APPSTORE] Using PSRAM-cached AppStore index for installation.");
+      return true;
+    }
+    if (gCachedDefaultIndexIsFlash) {
+      *payload = FOSDefaultIndexes::kAppStore;
+      Serial.println("[APPSTORE] Using built-in AppStore index for installation.");
+      return true;
+    }
+    // A refresh cannot select a default-store app without selecting a catalog.
+    // In case the cache was not retained, prefer a fresh online request to
+    // accidentally installing a different version from the flash catalog.
+  }
   int status = 0;
   if (httpGetText(indexUrl, payload, false, &status) &&
-      payload->startsWith(APPSTORE_INDEX_HEADER)) return true;
-
-  if (indexUrl == APPSTORE_DEFAULT_INDEX) {
+      payload->startsWith(APPSTORE_INDEX_HEADER)) {
+    if (defaultStore) rememberDefaultIndex(*payload);
+    return true;
+  }
+  if (defaultStore) {
     *payload = FOSDefaultIndexes::kAppStore;
+    clearDefaultIndexCache();
+    gCachedDefaultIndexIsFlash = true;
     Serial.printf("[APPSTORE] Online index unavailable (%d); using built-in catalog.\n", status);
     return true;
   }
@@ -467,7 +609,11 @@ bool loadStoreIndex(const String& indexUrl, String * payload)
 
 void showStatus(const String& text, lv_color_t color = lv_color_hex(0xFFFFFF))
 {
-  if (gStatusLabel == nullptr) return;
+  // A screen switch may have destroyed the previous status label.
+  if (gStatusLabel == nullptr || !lv_obj_is_valid(gStatusLabel)) {
+    gStatusLabel = nullptr;
+    return;
+  }
   lv_label_set_text(gStatusLabel, text.c_str());
   lv_obj_set_style_text_color(gStatusLabel, color, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_clear_flag(gStatusLabel, LV_OBJ_FLAG_HIDDEN);
@@ -983,7 +1129,11 @@ void storeRefreshTask(void *)
 
 void beginStoreRefresh()
 {
-  if (gStoreRefreshState == StoreRefreshState::Running) return;
+  // Do not race the installer for TLS memory or SD filesystem operations.
+  if (gAppTransferState != AppTransferState::Idle ||
+      gStoreRefreshState == StoreRefreshState::Running) return;
+  // No transfer is running here; release the previous catalog safely.
+  clearDefaultIndexCache();
   gRemoteAppCount = 0;
   gRefreshFoldersScanned = 0;
   gRefreshStoreCount = 0;
@@ -1004,10 +1154,20 @@ void beginStoreRefresh()
   }
 }
 
+bool appStoreVisible()
+{
+  // AppContent is shared with all fApps. Only touch AppStore widgets when the
+  // actual AppStore tabview still belongs to the active content container.
+  return ui_AppContent != nullptr && lv_scr_act() == ui_AppContent &&
+    uic_AppContentArea != nullptr && lv_obj_is_valid(uic_AppContentArea) &&
+    ui_TabView4 != nullptr && lv_obj_is_valid(ui_TabView4) &&
+    lv_obj_get_parent(ui_TabView4) == uic_AppContentArea;
+}
+
 void storeRefreshTimer(lv_timer_t * timer)
 {
   if (timer == nullptr) return;
-  const bool visible = ui_AppContent != nullptr && lv_scr_act() == ui_AppContent;
+  const bool visible = appStoreVisible();
   if (!visible) {
     if (gStoreRefreshState != StoreRefreshState::Running) {
       if (gStoreRefreshTimer == timer) gStoreRefreshTimer = nullptr;
@@ -1017,6 +1177,7 @@ void storeRefreshTimer(lv_timer_t * timer)
   }
 
   if (gStoreRefreshState == StoreRefreshState::Idle) {
+    if (gAppTransferState != AppTransferState::Idle) return;
     beginStoreRefresh();
     return;
   }
@@ -1082,6 +1243,11 @@ bool downloadFileFromUrl(
 {
   for (uint8_t attempt = 1; attempt <= APPSTORE_HTTP_RETRIES; ++attempt) {
     if (WiFi.status() != WL_CONNECTED) return false;
+    Serial.printf("[APPSTORE] File TLS heap before try %u: internal free=%u, largest=%u, PSRAM free=%u\n",
+      attempt,
+      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+      static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
     WiFiClientSecure client;
     client.setInsecure();
     client.setHandshakeTimeout(20);
@@ -1107,12 +1273,24 @@ bool downloadFileFromUrl(
       const String error = HTTPClient::errorToString(code);
       Serial.printf("[APPSTORE] File GET failed (%d, %s, try %u): %s\n",
         code, error.c_str(), attempt, url.c_str());
+      gLastHttpFailureCode = code;
+      logHttpsConnectionDiagnostics(code);
+      if (code < 0) {
+        char tlsError[128] = {};
+        const int tlsCode = client.lastError(tlsError, sizeof(tlsError));
+        Serial.printf("[APPSTORE] File TLS details: error=%d, message=%s\n",
+                      tlsCode, tlsError[0] ? tlsError : "no TLS detail");
+      }
       http.end();
+      if (attempt == APPSTORE_HTTP_RETRIES && code < 0) diagnoseGithubTransport(url);
       if (code > 0 && code != 408 && code != 429 && code < 500) break;
       if (code == 429) break;
-      delay(120);
+      delay(code < 0 ? 750 : 120);
       continue;
     }
+    // The HTTPS connection worked; any subsequent failure is an SD/stream
+    // issue and should not be displayed as a connection error.
+    gLastHttpFailureCode = 0;
     if (SD.exists(destination)) SD.remove(destination);
     File file = SD.open(destination, FILE_WRITE);
     if (!file) {
@@ -1160,7 +1338,7 @@ bool downloadIndexedDirectory(const String& source, const String& destination, b
       !tabField(fields, 3, &remoteDirectory) || !isSafeRelativePath(remoteDirectory)) return false;
 
   String payload;
-  if (!loadStoreIndex(indexUrl, &payload)) return false;
+  if (!loadStoreIndex(indexUrl, &payload, true)) return false;
   const int lastSlash = indexUrl.lastIndexOf('/');
   if (lastSlash <= 8) return false;
   const String rawBase = indexUrl.substring(0, lastSlash);
@@ -1198,9 +1376,7 @@ bool downloadIndexedDirectory(const String& source, const String& destination, b
     if (!fileDownloaded) return false;
     ++downloaded;
     ++gDownloadedFileCount;
-    if ((gDownloadedFileCount % 2U) == 0U) {
-      showStatus(String("Downloading files: ") + gDownloadedFileCount);
-    }
+    // Progress is displayed by an LVGL timer, never from this worker task.
   }
   return downloaded > 0;
 }
@@ -1218,7 +1394,6 @@ bool downloadFile(
   }
   if (!downloaded) return false;
   ++gDownloadedFileCount;
-  if ((gDownloadedFileCount % 2U) == 0U) showStatus(String("Downloading files: ") + gDownloadedFileCount);
   return true;
 }
 
@@ -1293,6 +1468,55 @@ bool installDownloadedApp(const String& temporary, const String& target, const S
     Serial.println("[APPSTORE] Updated app installed; old app files retained in backup.");
   }
   return true;
+}
+
+// Transfer worker: ONLY network and SD operations. LVGL is not thread-safe.
+// The UI task prepares launcher assignments before this worker starts and
+// updates the visible widgets after the completion flag is published.
+void appTransferTask(void *parameter)
+{
+  // A stable per-creation token avoids a race with a subsequent installation.
+  const bool externalStack = (parameter == &gExternalStackTaskToken);
+  const String target = String(APPSTORE_APPS_DIRECTORY) + "/" + gAppTransferJob.folderName;
+  const String temporary = String(APPSTORE_APPS_DIRECTORY) + "/.store_tmp_" + gAppTransferJob.folderName;
+  const String backup = String(APPSTORE_APPS_DIRECTORY) + "/.store_backup_" + gAppTransferJob.folderName;
+  AppTransferState result = AppTransferState::DownloadFailed;
+
+  if (SD.exists(backup + "/" + APPSTORE_APPDATA_DIRECTORY)) {
+    result = AppTransferState::BlockedByBackup;
+  } else if (SD.exists(temporary) && !removeRecursively(temporary)) {
+    result = AppTransferState::CleanupFailed;
+  } else {
+    gAppTransferPhase = AppTransferPhase::Downloading;
+    const bool downloaded = gAppTransferJob.apiUrl.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)
+      ? downloadIndexedDirectory(gAppTransferJob.apiUrl, temporary, gAppTransferJob.previouslyInstalled)
+      : downloadDirectory(gAppTransferJob.apiUrl, temporary, 0, gAppTransferJob.previouslyInstalled);
+    if (!downloaded) {
+      // A failed network transfer must never replace the installed app.
+      removeRecursively(temporary);
+      result = AppTransferState::DownloadFailed;
+    } else {
+      gAppTransferPhase = AppTransferPhase::Installing;
+      if (installDownloadedApp(temporary, target, backup)) {
+        result = AppTransferState::Installed;
+      } else {
+        removeRecursively(temporary);
+        result = AppTransferState::InstallFailed;
+      }
+    }
+  }
+
+  Serial.printf("[APPSTORE] Transfer result=%u, files=%u\n",
+    static_cast<unsigned>(result), static_cast<unsigned>(gDownloadedFileCount));
+  __sync_synchronize();
+  gAppTransferState = result;
+#if APPSTORE_EXTERNAL_TASK_STACK_AVAILABLE
+  if (externalStack) {
+    vTaskDeleteWithCaps(nullptr);
+    return;
+  }
+#endif
+  vTaskDelete(nullptr);
 }
 
 void clearAssignmentsForFolder(const String& folder)
@@ -1535,6 +1759,13 @@ extern "C" void StartAppStore_Data(lv_event_t * event)
 
   applySystemTheme();
   createRuntimeUi(host);
+  // Opening AppStore again during an installation must not trigger concurrent
+  // SD scans or HTTPS catalog refreshes. The transfer timer will finish the UI.
+  if (gAppTransferState != AppTransferState::Idle) {
+    fillRemoteRoller();
+    showStatus("App download in progress ...");
+    return;
+  }
   AppStoreEnsureSystemFiles(SD);
   fillAssignmentDropdowns();
   if (uic_AppDownloadRoller != nullptr) {
@@ -1554,9 +1785,62 @@ extern "C" void StartAppStore_Data(lv_event_t * event)
   }
 }
 
+// Only this timer updates LVGL and launcher widgets after a transfer.
+void appTransferTimer(lv_timer_t * timer)
+{
+  if (timer == nullptr) return;
+  const AppTransferState state = gAppTransferState;
+  if (state == AppTransferState::Running) {
+    if (appStoreVisible()) {
+      if (gAppTransferPhase == AppTransferPhase::Preparing) {
+        showStatus("Preparing app download ...");
+      } else if (gAppTransferPhase == AppTransferPhase::Installing) {
+        showStatus("Installing " + gAppTransferJob.displayName + " ...");
+      } else {
+        showStatus("Downloading " + gAppTransferJob.displayName + ": " +
+          String(static_cast<unsigned>(gDownloadedFileCount)) + " files");
+      }
+    }
+    return;
+  }
+  if (state == AppTransferState::Idle) return;
+  __sync_synchronize();
+  const bool visible = appStoreVisible();
+  if (state == AppTransferState::Installed) {
+    if (!gAppTransferJob.previouslyInstalled)
+      assignNewAppToFirstFreeSlot(gAppTransferJob.folderName);
+    StartAppLauncher_Data(nullptr);
+    if (visible) {
+      refreshInstalledStateForRemoteEntries();
+      showStatus(gAppTransferJob.displayName + " installed");
+    }
+  } else if (visible) {
+    if (state == AppTransferState::BlockedByBackup)
+      showStatus("Previous app/data backup needs recovery", lv_color_hex(0xFF8080));
+    else if (state == AppTransferState::CleanupFailed)
+      showStatus("Temporary folder could not be cleared", lv_color_hex(0xFF8080));
+    else if (state == AppTransferState::InstallFailed)
+      showStatus("App update failed; previous data preserved", lv_color_hex(0xFF8080));
+    else if (gLastHttpFailureCode < 0)
+      showStatus("Download failed: HTTPS connection", lv_color_hex(0xFF8080));
+    else if (gLastHttpFailureCode >= 400)
+      showStatus("Download failed: HTTP " + String(gLastHttpFailureCode), lv_color_hex(0xFF8080));
+    else
+      showStatus("Download failed", lv_color_hex(0xFF8080));
+  }
+  // Publish Idle only after all SD/launcher and UI post-processing is complete.
+  gAppTransferState = AppTransferState::Idle;
+  if (gAppTransferTimer == timer) gAppTransferTimer = nullptr;
+  lv_timer_del(timer);
+}
+
 extern "C" void AppStoreDownloadApp(lv_event_t * event)
 {
   if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+  if (gAppTransferState != AppTransferState::Idle) {
+    showStatus("App download already in progress", lv_color_hex(0xFFCC80));
+    return;
+  }
   if (gStoreRefreshState == StoreRefreshState::Running) {
     showStatus("App list is still loading", lv_color_hex(0xFFCC80));
     return;
@@ -1567,7 +1851,7 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
   }
   int selected = lv_roller_get_selected(uic_AppDownloadRoller);
   if (selected < 0 || selected >= gRemoteAppCount) selected = 0;
-  const RemoteAppEntry app = gRemoteApps[selected];
+  const RemoteAppEntry& app = gRemoteApps[selected];
   if (!isSafePathPart(app.folderName)) {
     showStatus("Invalid app folder", lv_color_hex(0xFF8080));
     return;
@@ -1577,46 +1861,73 @@ extern "C" void AppStoreDownloadApp(lv_event_t * event)
     return;
   }
 
-  const String target = String(APPSTORE_APPS_DIRECTORY) + "/" + app.folderName;
-  const String temporary = String(APPSTORE_APPS_DIRECTORY) + "/.store_tmp_" + app.folderName;
-  const String backup = String(APPSTORE_APPS_DIRECTORY) + "/.store_backup_" + app.folderName;
-  const bool updating = SD.exists(target);
-  if (SD.exists(backup + "/" + APPSTORE_APPDATA_DIRECTORY)) {
-    showStatus("Previous app/data backup needs recovery", lv_color_hex(0xFF8080));
-    return;
-  }
-  if (SD.exists(temporary) && !removeRecursively(temporary)) {
-    showStatus("Temporary folder could not be cleared", lv_color_hex(0xFF8080));
-    return;
-  }
-  gDownloadedFileCount = 0;
-  showStatus("Downloading " + app.displayName + " ...");
-  const bool downloaded = app.apiUrl.startsWith(APPSTORE_INDEX_SOURCE_PREFIX)
-    ? downloadIndexedDirectory(app.apiUrl, temporary, updating)
-    : downloadDirectory(app.apiUrl, temporary, 0, updating);
-  if (!downloaded) {
-    removeRecursively(temporary);
-    showStatus("Download failed", lv_color_hex(0xFF8080));
-    return;
-  }
-
-  // Freeze the current launcher layout before changing /apps. This prevents a
-  // newly downloaded directory from displacing an existing Home-screen app.
+  // This fast SD operation runs before the worker changes /apps, preserving
+  // existing homescreen slots and the current appdata handling.
   preserveCurrentLauncherAssignments();
-  if (!installDownloadedApp(temporary, target, backup)) {
-    removeRecursively(temporary);
-    showStatus("App update failed; previous data preserved", lv_color_hex(0xFF8080));
+  gAppTransferJob.folderName = app.folderName;
+  gAppTransferJob.displayName = app.displayName;
+  gAppTransferJob.apiUrl = app.apiUrl;
+  gAppTransferJob.previouslyInstalled = SD.exists(
+    String(APPSTORE_APPS_DIRECTORY) + "/" + app.folderName);
+  gDownloadedFileCount = 0;
+  gLastHttpFailureCode = 0;
+  gAppTransferPhase = AppTransferPhase::Preparing;
+  gAppTransferState = AppTransferState::Running;
+  gAppTransferTimer = lv_timer_create(appTransferTimer, 150, nullptr);
+  if (gAppTransferTimer == nullptr) {
+    gAppTransferState = AppTransferState::Idle;
+    showStatus("Could not create download progress timer", lv_color_hex(0xFF8080));
     return;
   }
-  if (!app.installed) assignNewAppToFirstFreeSlot(app.folderName);
-  StartAppLauncher_Data(nullptr);
-  refreshInstalledStateForRemoteEntries();
-  showStatus(app.displayName + " installed");
+  // An internal FreeRTOS stack competes with mbedTLS for scarce, contiguous
+  // DRAM.  Only this SD/HTTPS worker uses a PSRAM stack: OTA/recovery workers
+  // continue on internal stacks because they may write internal flash.
+  BaseType_t created = pdFAIL;
+  Serial.printf("[APPSTORE] Before download task: internal free=%u, largest=%u, PSRAM free=%u\n",
+    static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+    static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+    static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+#if APPSTORE_EXTERNAL_TASK_STACK_AVAILABLE
+  if (psramFound() &&
+      heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) >= 32768U) {
+    created = xTaskCreateWithCaps(appTransferTask, "appdownload",
+      APPSTORE_DOWNLOAD_TASK_STACK, &gExternalStackTaskToken, 1, nullptr,
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (created == pdPASS) {
+      Serial.println("[APPSTORE] Download worker stack: PSRAM (12 KiB)");
+    } else {
+      Serial.println("[APPSTORE] PSRAM stack creation failed; using internal fallback");
+    }
+  }
+#endif
+  if (created != pdPASS) {
+    // Keep fallback conservative; do not reduce below the 8 KiB that the
+    // existing catalog HTTPS task already uses.  Print heap diagnostics so
+    // firmware builds without external stacks remain actionable.
+    created = xTaskCreate(appTransferTask, "appdownload",
+      APPSTORE_DOWNLOAD_TASK_FALLBACK_STACK, nullptr, 1, nullptr);
+    if (created == pdPASS) {
+      Serial.println("[APPSTORE] Download worker stack: internal fallback (8 KiB)");
+    }
+  }
+  if (created != pdPASS) {
+    lv_timer_del(gAppTransferTimer);
+    gAppTransferTimer = nullptr;
+    gAppTransferState = AppTransferState::Idle;
+    Serial.println("[APPSTORE] Could not create download task.");
+    showStatus("Not enough RAM to start app download", lv_color_hex(0xFF8080));
+    return;
+  }
+  showStatus("Downloading " + app.displayName + " ...");
 }
 
 extern "C" void AppStoreDeleteApp(lv_event_t * event)
 {
   if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+  if (gAppTransferState != AppTransferState::Idle) {
+    showStatus("Wait for the app download to finish", lv_color_hex(0xFFCC80));
+    return;
+  }
   if (gStoreRefreshState == StoreRefreshState::Running) {
     showStatus("App list is still loading", lv_color_hex(0xFFCC80));
     return;
@@ -1647,6 +1958,10 @@ extern "C" void AppStoreDeleteApp(lv_event_t * event)
 extern "C" void AssignAppsConfirm(lv_event_t * event)
 {
   if (event != nullptr && lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+  if (gAppTransferState != AppTransferState::Idle) {
+    showStatus("Wait for the app download to finish", lv_color_hex(0xFFCC80));
+    return;
+  }
   if (gStoreRefreshState == StoreRefreshState::Running) {
     showStatus("App list is still loading", lv_color_hex(0xFFCC80));
     return;

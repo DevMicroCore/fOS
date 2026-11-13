@@ -1,4 +1,4 @@
-# fOS 4.1.0
+# fOS 4.1.1
 
 fOS is a touch interface for the **7-inch CrowPanel with ESP32-S3** and the
 **7-inch Waveshare with ESP32-P4**. It combines built-in applications,
@@ -8,6 +8,17 @@ firmware updates.
 ## Features available on both boards
 
 The following features are included in both the CrowPanel and Waveshare projects.
+
+**4.1.1:** App downloads and installations now run in a separate FreeRTOS
+worker instead of blocking the LVGL UI. See [release notes](docs/RELEASE_NOTES_4.1.1.md).
+The precompiled binaries in `firmware/` are inherited from the earlier package
+and **do not contain these 4.1.1 fixes**. Build and export a new binary for
+**each board** before performing OTA; do not publish the inherited binaries as
+4.1.1.
+**2026-11-11 follow-up:** Waveshare app deletion is now also handled by the
+AppStore worker to prevent `loopTask` stack overflows. CrowPanel failed HTTPS
+connections now report Wi-Fi and TLS-heap diagnostics. See the release notes
+for what is and is not verified on hardware.
 
 | Area | Features | Detailed documentation |
 | --- | --- | --- |
@@ -78,7 +89,7 @@ connections and flashing instructions are documented in the
 | Folder | Contents |
 | --- | --- |
 | `apps` | Shared apps to copy into `/apps` on the SD card |
-| `firmware` | Prebuilt images; CrowPanel images are in the `CrowPanel` subfolder |
+| `firmware` | **Earlier-version prebuilt images (not 4.1.1)**; CrowPanel images are in the `CrowPanel` subfolder |
 | `fScript_Development_Environment/fosc` | Shared fosc/fosrun source code, examples and tests |
 | `github_repository_files` | Prepared App Store and OTA files for both boards |
 | `tools` | Index generator and required tests |
@@ -95,3 +106,8 @@ connections and flashing instructions are documented in the
 
 Preserve your own `appdata` folders when updating apps. Device-bound Wi-Fi
 and email credentials must be entered again when moving to a different board.
+
+
+## CrowPanel AppStore HTTPS follow-up (2026-11-11)
+
+See [`docs/CROWPANEL_APPSTORE_HTTPS_411.md`](docs/CROWPANEL_APPSTORE_HTTPS_411.md) for the PSRAM catalog-cache optimization, error diagnostics and retest procedure. These source changes require a new CrowPanel build; bundled old binaries were not rebuilt.
